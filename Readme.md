@@ -8,11 +8,11 @@ This package is a tool chain to perform necessary edits to exported Koikatsu (KK
 I made it to allow others exploring the possibility of using KK as alternative to searching the Internet for models. Half of the time, the model exists and may even be decently made. But you wouldn't be here if you were satisfied with that. This project might be what you want if any of the following applies to you:
 
  - You simply cannot find the model you desire or don't trust shady links.
- - The model exists, but may otherwise be incomplete for your purposes (Physics, different costume, Doll Anatomy, ...)
+ - The model exists, but may otherwise be incomplete for your purposes (Physics, costume, Doll Anatomy, ...)
  - You want an easy way to (re)create your OC and making it move over the screen without having to learn / buy sophisticated modeling programs.
-    - (... or any target-of-affection, be it waifu or husbando).
- - Already use KK and complain about any restrictions that CharaStudio has when compared with MMD.
- - Already use the Export Mod yourself but realize that a good model takes a lot of effort to just get the basics done.
+    - ... or any target-of-affection, be it waifu or husbando.
+ - You already use KK and complain about any restrictions that CharaStudio has when compared with MMD.
+ - You already use the Export Mod yourself but realize that a good model takes a lot of effort to just get the basics done.
 
 ## Legal (from nuthouse01)
 
