@@ -379,7 +379,7 @@ jpAccs = ['グローブ','チョーカー','ブーツ','帽子','頭リボン','
 #>> パーカー(Parker), スカート(Skirt), パンツ(Pantsu)
 #### EN originals
 enMats =  ['Head','Face','Teeth','Eyes?','Tng','Tongue','Lash','Ears?','Hair','Horns?','Neck']
-enMats += ['Skin','Chest','Tummy','Foot','Feet','Body','Tail']
+enMats += ['Skin','Chest','Tummy','Foot','Feet','Body','Tail','breasts?']
 enAccs = ['Accessories','Bracelet','Crown','Armband','Scrunchie','Headband','Flowers']
 #### KK-Models
 ## All core mats
@@ -643,6 +643,7 @@ It will generate two morphs to pull the seam apart. For that it will ask which d
 Example: To cut a vertical window (== rotated capital H): (aligned to Y-Axis; Rotate the instructions depending on the chosen "Up" Direction)
 [1] Lasso-select the vertex path and note the vertices with [Selection Guide]
 [2] Perform a cut with 25 (or 24 on the back) -- This is the 'bridge' of the "H"
+-- -- This means starting this mode, then using options '2' and ('5' or '4')
 [3] Select either head or tail of the line (including the newly added vertex) and add their direct neighbour on the left and right
 [4] Perform a cut with 05 (04 on the back) -- 'Old' Morph opens upwards
 [5] Repeat [3] for the other tail / head

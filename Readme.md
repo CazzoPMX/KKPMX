@@ -9,8 +9,8 @@ I made it to allow others exploring the possibility of using KK as alternative t
 
  - You simply cannot find the model you desire or don't trust shady links.
  - The model exists, but may otherwise be incomplete for your purposes (Physics, costume, Doll Anatomy, ...)
- - You want an easy way to (re)create your OC and making it move over the screen without having to learn / buy sophisticated modeling programs.
-    - ... or any target-of-affection, be it waifu or husbando.
+ - You want an easy way to (re)create your OC* and making it move over the screen without having to learn / buy sophisticated modeling programs.
+    - *... or any target-of-affection, be it waifu or husbando.
  - You already use KK and complain about any restrictions that CharaStudio has when compared with MMD.
  - You already use the Export Mod yourself but realize that a good model takes a lot of effort to just get the basics done.
 
@@ -64,7 +64,7 @@ See the [Help]-Section of [Scan Plugin File] for more details of which are curre
 The model should be (almost) ready, but some last adjustments have to be done manually.
 
  10. Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
- 11. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[view center]`)
+ 11. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
  12. When making heavy use of morph sliders, adjust the order of the materials to prevent them getting invisible.
 
 ## tl;dr: Minimum steps to make the exported model work immediately
@@ -81,7 +81,7 @@ If you just want to test out some things with minimum set of work, perform these
 The model should now work properly in MMD, but may perform weird with most TDA Dances. To further fix that:
 
  6. Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
- 7. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[view center]`)
+ 7. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
 
 ## To compile it yourself
 
@@ -311,6 +311,7 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  Example: To cut a vertical window (== rotated capital H): (aligned to Y-Axis; Rotate the instructions depending on the chosen "Up" Direction)
 >  1. Lasso-select the vertex path and note the vertices with `[Selection Guide]`
 >  2. Perform a cut with 25 (or 24 on the back) -- This is the 'bridge' of the "H"
+>    - This means starting this mode, then using options '2' and ('5' or '4')
 >  3. Select either head or tail of the line (including the newly added vertex) and add their direct neighbour on the left and right
 >  4. Perform a cut with 05 (04 on the back) -- 'Old' Morph opens upwards
 >  5. Repeat `[3]` for the other tail / head
