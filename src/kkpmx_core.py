@@ -29,8 +29,9 @@ except ImportError as eee:
 	exit()
 	core = pmxlib = pmxstruct = morph_scale = bonelib = None
 
-
-DEBUG = True
+## Global "moreinfo"
+DEBUG = False
+## Certain things which are only useful when developing
 DEVDEBUG = False
 insert_bone = bonelib.insert_single_bone
 
@@ -101,7 +102,7 @@ def main(moreinfo=True):
 	# prompt PMX name
 	core.MY_PRINT_FUNC(">> The script can be terminated at any point by pressing Ctrl+C")
 	core.MY_PRINT_FUNC("Please enter name of PMX input file:")
-	input_filename_pmx = core.MY_FILEPROMPT_FUNC('.pmx .pmx"').strip('"')
+	input_filename_pmx = core.MY_FILEPROMPT_FUNC('.pmx')
 	
 	pmx = pmxlib.read_pmx(input_filename_pmx, moreinfo=moreinfo)
 	choices[idx][1](pmx, input_filename_pmx)
@@ -149,7 +150,7 @@ Output: PMX File '[filename]_cleaned.pmx'
 		mat.name_jp = kk_re.sub("", mat.name_jp)
 		mat.name_en = kk_re.sub("", mat.name_en)
 		
-		### Materials with own texture rarely use the diffuse color
+		### KK Materials with own texture rarely use the diffuse color
 		### So replace it with [1,1,1] to make it fully visible
 		if (mat.tex_idx != -1):
 			if mat.diffRGB != [1,1,1]:
@@ -188,12 +189,12 @@ Output: PMX File '[filename]_cleaned.pmx'
 	
 	###### ---- bones
 	def rename_bone(org, newJP, newEN):
-		tmp = find_bone(pmx, org, True)
+		tmp = find_bone(pmx, org, False)
 		if tmp is not None:
 			pmx.bones[tmp].name_jp = newJP
 			pmx.bones[tmp].name_en = newEN
 	## rename Eyes: [両目x] to [両目], [左目x] to [左目], [右目x] to [右目]
-	rename_bone("両目x", "両目", "both eye")
+	rename_bone("両目x", "両目", "both eyes")
 	rename_bone("左目x", "左目", "eye L")
 	rename_bone("右目x", "右目", "eye R")
 	
@@ -211,13 +212,13 @@ Output: PMX File '[filename]_cleaned.pmx'
 	## add [groove] to [center]
 	## add [waist] to [lower body]
 	
-	### Clean up dispframes
+	### Clean up invalid dispframes
 	for disp in pmx.frames:
 		disp.items = list(filter(lambda x: x[1] not in [-1,None], disp.items))
 	
 	return end(pmx if write_model else None, input_filename_pmx, "_cleaned", "Performed minimal cleanup for working MMD")
 
-def kk_quick_convert(pmx, input_filename_pmx): ## <<< some explaination at the end is missing
+def kk_quick_convert(pmx, input_filename_pmx):
 	"""
 All-in-one Converter
 
@@ -238,7 +239,7 @@ All of which can be done individually through either the above list or the GUI o
 
 There are some additional steps that cannot be done by a script; They will be mentioned again at the end
 -- Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
--- [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except [view center])
+-- [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except [Camera Bone])
 """
 	def section(msg): print("------\n> "+msg+"\n------")
 	## ask if doing new model per step or only one at the end
@@ -288,14 +289,10 @@ There are some additional steps that cannot be done by a script; They will be me
 	## ask to run make_material_morphs --- [3rd] to make use of untranslated names for sorting
 	if util.ask_yes_no("Generate Material Morphs", "y"):
 		## -- run make_material_morphs
-		path = make_material_morphs(pmx, input_filename_pmx, write_model)
+		path = make_material_morphs(pmx, input_filename_pmx, write_model, moreinfo=moreinfo)
 		if write_model: util.copy_file(path, input_filename_pmx)
 	#-------------#
 	section("[4] General Cleanup")
-	##--- Backup some bones used by [bleed-through]
-	#bone1 = pmx.bones[find_bone(pmx, "cf_hit_spine02_L", True)]
-	#bone2 = pmx.bones[find_bone(pmx, "cf_j_spinesk_02", True)]
-	#bone3 = pmx.bones[find_bone(pmx, "cf_hit_bust00", True)]
 	
 	## run [core] general cleanup
 	import model_overall_cleanup
@@ -303,10 +300,7 @@ There are some additional steps that cannot be done by a script; They will be me
 	path = input_filename_pmx[0:-4] + "_better.pmx"
 	util.copy_file(path, input_filename_pmx)
 	#if not write_model: delete the "_better" file (?)
-	##--- Re-add the bones
-	#if bone1: pmx.bones.append(bone1)
-	#if bone2: pmx.bones.append(bone2)
-	#if bone3: pmx.bones.append(bone3)
+	
 	#-------------#
 	section("[5] Fixing material bleed-through")
 	print("Warning: Depending on the model size and the chosen bounding box, this can take some time.")
@@ -317,7 +311,7 @@ There are some additional steps that cannot be done by a script; They will be me
 	print("Do not forget to apply the additional fixes as explained above.")
 	print("""
 -- Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
--- [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except [view center])
+-- [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or apply all (except [Camera Bone])
 	""")
 	## -- Tell that bounce will break all morphs if RegionSettings use ',' as separator
 	## Tell to run semi-standard bones (PMX)
@@ -374,9 +368,9 @@ def __append_vertexmorph(items, idx, move, name): ## morphtype: 1
 
 #### JP originals
 jpMats = ['[上下]半身','白目','眼','耳','頭','顔','体','舌','瞳','まぶた','口内','ハイライト']
-# 眼(Eyes), 白目(sirome), 瞳(hitomi),  まぶた(eyelids), ハイライト(Highlights)
-# 顔(Face), 口内 (Inside of Mouth), 舌(Tongue), 耳(Ears)
-# 頭(Head), 体(Body),
+# 眼(Eyes), 白目(sirome), 瞳(hitomi), まぶた(eyelids), ハイライト(Highlights)
+# 顔(Face), 口内(Inside of Mouth), 舌(Tongue), 耳(Ears)
+# 頭(Head), 体(Body), [上下]半身(upper / lower body)
 jpHair = ['もみあげ','まつ毛','まゆ毛','サイドテール','横髪','あほ毛','前髪','後ろ髪']
 # もみあげ(Sideburns), 前髪(Forelock), 後ろ髪(Back Hair)
 jpAccs = ['グローブ','チョーカー','ブーツ','帽子','頭リボン','ニーハイ', 'ソックス','靴','アクセサリー']
@@ -418,7 +412,7 @@ slotMostly = slot_dict["hand"] + slot_dict["foot"] + ["ct_gloves", "ct_socks", "
 slotMed    = slot_dict["body"] + slot_dict["nether"]
 slotFull   = slot_dict["lower"] + slot_dict["upper"]
 
-def make_material_morphs(pmx, input_filename_pmx, write_model=True): ## [02]
+def make_material_morphs(pmx, input_filename_pmx, write_model=True, moreinfo=False): ## [02]
 	"""
 Generates a Material Morph for each material to toggle its visibility (hide if visible, show if hidden).
 - Note: This works for any model, not just from KK (albeit accuracy might suffer without standard names).
@@ -451,11 +445,11 @@ Generates a Material Morph for each material to toggle its visibility (hide if v
 
 Output: PMX file '[modelname]_morphs.pmx'
 """
+	moreinfo = moreinfo or DEBUG
 	itemsCloth = []
 	itemsAcc = []
 	itemsSlots = { "always": [], "mostly": [], "med": [], "full": [], "slotMatch": False }
-	flag = core.MY_GENERAL_INPUT_FUNC(lambda x: True, "Emit morphs for body-like materials? (y/[n])")
-	flag = (flag is None) or (flag == "y") or (flag == "Y")
+	flag = util.ask_yes_no("Emit morphs for body-like materials", "n")
 	for idx, mat in enumerate(pmx.materials):
 		### Filter out what we do not want
 		if re.search(rgxSkip, mat.name_jp): continue
@@ -474,8 +468,8 @@ Output: PMX file '[modelname]_morphs.pmx'
 		### Make sure the morph has a proper name regardless
 		name_en = translate_name(mat.name_jp, mat.name_en)
 		
-		name_jp = re.sub(r'( \(Instance\))+','',mat.name_jp)
-		name_en = re.sub(r'^cf_m_+|^acs_m_+|( \(Instance\))+','',name_en)
+		name_jp = re.sub(r'( \(Instance\))+', '', mat.name_jp)
+		name_en = re.sub(r'^cf_m_+|^acs_m_+|( \(Instance\))+', '', name_en)
 		pmx.morphs.append(pmxstruct.PmxMorph(name_jp, name_en, 4, 8, items))
 		### Check if comments contain Slot names (added by Plugin Parser)
 		if re.search(r'\[:Slot:\]', mat.comment):
@@ -485,7 +479,7 @@ Output: PMX file '[modelname]_morphs.pmx'
 			if m in slotMostly : __append_itemmorph_add(itemsSlots["mostly"], idx)
 			if m in slotMed    : __append_itemmorph_add(itemsSlots["med"]   , idx)
 			if m in slotFull   : __append_itemmorph_add(itemsSlots["full"]  , idx)
-		else: print(f"{mat.name_jp} did not match any slot")
+		elif moreinfo: print(f"{mat.name_jp} did not match any slot")
 		## Sort into Body, Accessories, Cloth
 		if isBody: continue
 		if re.search(rgxAcc, name_both, re.I): __append_itemmorph_mul(itemsAcc, idx)
@@ -815,8 +809,8 @@ def from_material_get_faces(pmx, mat_idx, returnIdx=False):
 	if returnIdx: return range(start, stop)
 	return pmx.faces[start:stop]
 
-def from_faces_get_vertices(pmx, faces, returnIdx=True, moreinfo=None):
-	if (moreinfo == True | DEBUG):
+def from_faces_get_vertices(pmx, faces, returnIdx=True, moreinfo=False):
+	if (moreinfo or DEBUG):
 		print("First Face has: {} \n Last Face has: {}".format(str(faces[0]),str(faces[1])))
 	vert_idx = list(set(core.flatten(faces)))
 	vert_idx.sort()
@@ -1081,58 +1075,31 @@ def ask_for_material(pmx, extra = None, default = "cf_m_body", returnIdx = False
 	"""
 	extra :: Append some text to the Input message
 	default :: Name of texture to use if no input is provided.
+	-- Will be ignored if not found in the model
 	
 	[return] :: An PmxMaterial instance
 	"""
-	msg = "Enter material idx or name (empty for '" + default + "')"
-	if extra != None: msg = msg + ' ' + extra
+	_valid_def = find_mat(pmx, default, False) not in [-1, None]
+	
+	msg = "Enter material idx or name"
+	if _valid_def: msg += f" (empty for '{default}')"
+	if extra != None: msg += ' ' + extra
 	def __valid_check(txt):
-		if txt == None or len(txt) == 0: return True
+		if txt == None or len(txt) == 0: return _valid_def
 		try: pmx.materials[txt]
 		except:
 			try: pmx.materials[find_mat(pmx, txt)]
-			except: 
-				print("> ID or Name does not exist")
+			except:
+				if DEVDEBUG: print("> ID or Name does not exist")
 				return False
 		return True
 	text = core.MY_GENERAL_INPUT_FUNC(__valid_check, msg)
-	if text == None or len(text) == 0: idx = find_mat(pmx, default)
+	if _valid_def and text in [None,""]: idx = find_mat(pmx, default)
 	elif type(text) is str: idx = find_mat(pmx, text)
 	else: idx = int(text)
 	return idx if returnIdx else pmx.materials[idx]
 
-def __do(pmx, input_filename_pmx):
-	todo = """
-	=== export_material_surface:
-	- Reason: unsure if vertices of one material are always one isolated block
-	- make sure new vertices index also work if non-consecutive
-	=== make_material_morphs
-	- with STDIN flag
-	- - Mode 0: No merges
-	- - Mode 1: Add merged morphs at the end
-	- - Mode 2: Only combine multi part materials (Merge X with *1, *2, ...)
-	- - Mode 3: Category based morphs: Face, Hair(+ Ears), Body(+Tails), multi (emblem to jacket, etc.)
-	- with STDIN flag
-	- - Special morph: Hide inside of mouth (tang, tooth)
-	=== That KK Mod to generate the JSON files
-	=== Making an image func lib to share among the scripts
-	=== << new print >> 
-	start at root bone
-	Through parent_idx, render a node tree
-	for each bone:
-	>	show ROT MVN IK VIS Enable (all flags, incl. ROT+, MOV+ ...)
-	>	Link to -- Bone or Offset (except if -1 \\ 0 0 0)
-	>	If any, target_idx ++ List of IKLink
-	>**	[Optional]: how many vertices use it as weight over certain threshold
-	>**	[Optional]: through above, how many faces are connected --> main material
-	>**	If any, in which BoneMorph(s) it is used // pre compile dict
-	>	If any, in which [Display Frame] // pre compile dict
-	>	If any, list of bound RigidBody (Type(G,R,Y), Group, NC ++ Radius, Height, Width, ...)
-	>	if any, Joint that [A] used this as Bone Position (Pos is equal)
-	>	>	or [B] (if A hard to do) is connected to any of above RigidBody
-	"""
-	#print(todo)
-	GenerateJsonFile(pmx, input_filename_pmx)
+def __do(pmx, input_filename_pmx): pass
 
 def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 	"""
@@ -1153,7 +1120,8 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 		paths = os.path.split(output_filename_pmx)
 		path = os.path.join(paths[0], "editlog.log")
 		if type(log_line) is str: log_line = [ log_line ]
-		msg = "\n---- ".join([""]+log_line)
+		msg = "\n---- ".join([""] + log_line)
+		## Add name of target file that contains the change 
 		if has_model:
 			with open(path, "a") as f: f.write(f"\n--[{util.now()}][{paths[1][0:-4]}]{msg}")
 		else:
@@ -1164,16 +1132,12 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 	return None
 
 if __name__ == '__main__':
-	print("Cazoo - 2021-05-15 - v.OwO")
+	print("Cazoo - 2021-06-16 - v.1.O.1")
 	if DEBUG:
 		main()
 		core.pause_and_quit("Done with everything! Goodbye!")
 	else:
 		try:
-			# print info to explain the purpose of this file
-			#core.MY_PRINT_FUNC(helptext)
-			#core.MY_PRINT_FUNC("")
-			
 			main()
 			core.pause_and_quit("Done with everything! Goodbye!")
 		except (KeyboardInterrupt, SystemExit):
@@ -1182,4 +1146,4 @@ if __name__ == '__main__':
 		except Exception as ee:
 			# if an unexpected error occurs, catch it and print it and call pause_and_quit so the window stays open for a bit
 			print(ee)
-			core.pause_and_quit("ERROR: something truly strange and unexpected has occurred, sorry, good luck figuring out what tho")
+			core.pause_and_quit("ERROR: something truly strange and unexpected has occurred, sorry!")

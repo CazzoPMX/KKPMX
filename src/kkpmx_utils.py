@@ -57,6 +57,7 @@ def load_json_file(path=None, extra=None):
 		try:
 			result = json.loads(json_message)
 		except Exception as e:
+			# Only continue on invalid escapes
 			if str(e).find("Invalid \escape") == -1:
 				print(e)
 				return None
@@ -71,6 +72,7 @@ def load_json_file(path=None, extra=None):
 			new_message = ''.join(json_message)
 			return fix_JSON(json_message=new_message)
 		return result
+	## Validate path
 	if path and (not os.path.exists(path)):
 		print(f">> Requested file '{path}' does not exist!")
 		path = None
@@ -79,11 +81,13 @@ def load_json_file(path=None, extra=None):
 		path = core.MY_FILEPROMPT_FUNC("json")
 		print("----")
 	else: print("-- Parsing " + path)
+	### Read file
 	try:
 		with open(path, 'r') as myfile: raw_data = myfile.read()
 	except Error as e:
 		print(e)
 		return None
+	### Parse JSON
 	if extra: raw_data = extra(raw_data)
 	def replFnc(m):
 		for x in range(1,3):
@@ -99,9 +103,11 @@ def load_json_file(path=None, extra=None):
 	return data
 
 def write_jsonX(data, path, **kwargs):
+	""" Wraps 'with open(path, "w").write(...)' for json.dumps """
 	with open(path, "w") as f: f.write(json.dumps(data, **kwargs))
-	
+
 def write_json(data, path, indent=True):
+	""" Shorthand for writing a JSON file; Adds '.json' if missing """
 	if not path.endswith(".json"): path += ".json"
 	_indent = "\t" if indent else None
 	with open(path, "w") as f:
@@ -134,7 +140,7 @@ def ask_yes_no(message, default=None):
 	txt = "[y]/n" if default == "y" else "y/[n]"
 	value = core.MY_GENERAL_INPUT_FUNC(lambda x: x in ['y','n',None,""], message + f" ({txt})?")
 	if value in [None,""]: return default == "y"
-	return value
+	return value == "y"
 
 def now(epoch=False): ## :: str(dt) == dt.isoformat(' ')
 	"""
@@ -256,7 +262,7 @@ def __test__types_py(): #>> Special build-ins (types.py)
 	_c.close()  # Prevent ResourceWarning
 
 	async def _ag():  yield
-	__typePrinter(_ag(),                 enum="AsyncGenerator")
+	__typePrinter(_ag(),               enum="AsyncGenerator")
 
 	try:   raise TypeError
 	except TypeError:

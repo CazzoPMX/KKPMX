@@ -237,7 +237,7 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  
 >  There are some additional steps that cannot be done by a script; They will be mentioned again at the end
 >  - Go to the `[TransformView (F9)]` -> Search for `[bounce]` -> Set to 100% -> Menu=`[File]`: Update Model
->  - `[Edit(E)]` -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[view center]`)
+>  - `[Edit(E)]` -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
 
 ### (6) ----------
 
