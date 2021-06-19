@@ -370,8 +370,12 @@ def __append_vertexmorph(items, idx, move, name): ## morphtype: 1
 jpMats = ['[上下]半身','白目','眼','耳','頭','顔','体','舌','瞳','まぶた','口内','ハイライト']
 # 眼(Eyes), 白目(sirome), 瞳(hitomi), まぶた(eyelids), ハイライト(Highlights)
 # 顔(Face), 口内(Inside of Mouth), 舌(Tongue), 耳(Ears)
-# 頭(Head), 体(Body), [上下]半身(upper / lower body)
-jpHair = ['もみあげ','まつ毛','まゆ毛','サイドテール','横髪','あほ毛','前髪','後ろ髪']
+# 頭(Head), 体(Body), [上下]半身(upper / lower body), 肌(Skin), 首(Neck)
+jpMats += ['肌', '首', '脚', '手', '歯', '目']
+# 脚(Leg)  手(Hand)  歯(Teeth)  目(eye)
+
+
+jpHair = ['髪', 'もみあげ','まつ毛','まゆ毛','サイドテール','横髪','あほ毛','前髪','後ろ髪','睫毛']
 # もみあげ(Sideburns), 前髪(Forelock), 後ろ髪(Back Hair)
 jpAccs = ['グローブ','チョーカー','ブーツ','帽子','頭リボン','ニーハイ', 'ソックス','靴','アクセサリー']
 # ソックス(Socks), 靴(Shoes), アクセサリー(Accessories)
@@ -391,8 +395,10 @@ hairAcc = ['mat_body','kamidome'] ## Common hair accs
 accOnlyMats = ['socks','shoes','gloves','miku_headset','hood']
 accOnlyMats += ['^acs_m_', '^cf_m_acs_']
 ####--- 
-rgxBase = 'cf_m_(' + '|'.join(baseMats) + ')|' + '|'.join(accMats)
-rgxBase += '|' + '|'.join(jpMats + jpHair + enMats)
+rgxBase = 'cf_m_(' + '|'.join(baseMats) + ')'
+rgxBase += '|' + '|'.join(accMats)
+rgxBase += '|\\b(' + '|'.join(jpMats + jpHair) + ')'
+rgxBase += '|' + '|'.join(enMats)
 
 rgxAcc  = '|'.join(accOnlyMats + jpAccs + enAccs)
 rgxSkip = '|'.join(["Bonelyfans","shadowcast","Standard"])
@@ -510,80 +516,32 @@ def do_ver3_check(pmx):
 	"""
 	Checks for the existence of the naming scheme from a very specific group of models
 	"""
-	if find_mat(pmx, "【M1】上半身", False) is not None:
-		core.MY_PRINT_FUNC("-- Trying to add [M1] morph...")
-		try: 
-			items = []
-			__append_itemmorph_add(items, find_mat(pmx, "【M1】ボディ胸中下着用--------"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M1】上半身"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M1】下半身"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M1】"))
-			pmx.morphs.append(pmxstruct.PmxMorph("【M1】", "Toggle [M1]", 4, 8, items))
-		except Exception as ee:
-			print(ee)
-			core.MY_PRINT_FUNC("Could not add [M1] morph!")
 	if find_mat(pmx, "【M2】上半身", False) is None: return
+	ver3List = [x.name_jp for x in pmx.materials]
+	ver3Dict = { key: idx for (idx, key) in enumerate(ver3List) }
 	
-	core.MY_PRINT_FUNC("-- Trying to add [M3] morph...")
-	try: ### Add morph to toggle all parts of M3
+	def addMorphs(name, indices=None):
+		## get all values
+		names = list(filter(lambda x: x.startswith(name), ver3Dict.keys()))
+		if len(names) == 0: return
+		if indices == None: indices = [ver3Dict[key] for key in names]
+		core.MY_PRINT_FUNC(f"-- Trying to add {name} morph...")
+		### Add "Toggle On"
 		items = []
-		isVisible = pmx.materials[find_mat(pmx, "【M3】ブラ胸中(共通)--------")].alpha
-		if isVisible:
-			__append_itemmorph_mul(items, find_mat(pmx, "【M3】ブラ胸中(共通)--------"))
-			__append_itemmorph_mul(items, find_mat(pmx, "【M3】ワイヤー（共通）"))
-			__append_itemmorph_mul(items, find_mat(pmx, "【M3】下中心（共通）"))
-			__append_itemmorph_mul(items, find_mat(pmx, "【M3】留具（共通）"))
-			__append_itemmorph_mul(items, find_mat(pmx, "【M3】カップ縫(選択2)"))
-			__append_itemmorph_sub(items, find_mat(pmx, "【M3】カップ(選択1"))
-			__append_itemmorph_sub(items, find_mat(pmx, "【M3】リボン(+α)"))
-			__append_itemmorph_sub(items, find_mat(pmx, "【M3】フリル(+α)"))
-			__append_itemmorph_sub(items, find_mat(pmx, "【M3】フリル2(+α)"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M2】上半身消し", False))
-			__append_itemmorph_add(items, find_mat(pmx, "【M2】ボディ胸中下着用--------"))
-		else:
-			__append_itemmorph_add(items, find_mat(pmx, "【M3】ブラ胸中(共通)--------"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M3】ワイヤー（共通）"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M3】下中心（共通）"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M3】留具（共通）"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M3】カップ縫(選択2)"))
-			#__append_itemmorph_sub(items, find_mat(pmx, "【M3】カップ(選択1"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M3】リボン(+α)"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M3】フリル(+α)"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M3】フリル2(+α)"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M2】上半身消し", False))
-			__append_itemmorph_sub(items, find_mat(pmx, "【M2】ボディ胸中下着用--------"))
-		pmx.morphs.append(pmxstruct.PmxMorph("【M3】", "Toggle [M3]", 4, 8, items))
-		core.MY_PRINT_FUNC(">  Added [M3] morph")
-	except Exception as ee:
-		print(ee)
-		core.MY_PRINT_FUNC("Could not add [M3] morph!")
-	
-	core.MY_PRINT_FUNC("-- Trying to add [C1] morph...")
-	try: ### Add morph to toggle all parts of C1
+		for idx in indices: __append_itemmorph_add(items, idx)
+		pmx.morphs.append(pmxstruct.PmxMorph(name, f"Toggle {name} (On)", 4, 8, items))
+		### Add "Toggle Off"
 		items = []
-		isVisible = pmx.materials[find_mat(pmx, "【C1】着色切替(選択2)")].alpha
-		if isVisible:
-			__append_itemmorph_mul(items, find_mat(pmx, "【C1】パンツ-------"))
-			__append_itemmorph_sub(items, find_mat(pmx, "【C1】通常(選択1)"))
-			__append_itemmorph_mul(items, find_mat(pmx, "【C1】着色切替(選択2)"))
-			__append_itemmorph_mul(items, find_mat(pmx, "【C1】着色切替2(選択2)"))
-			__append_itemmorph_mul(items, find_mat(pmx, "【C1】切替縫目(選択2)"))
-			__append_itemmorph_sub(items, find_mat(pmx, "【C1】フリル(+α)"))
-			__append_itemmorph_sub(items, find_mat(pmx, "【C1】リボン(+α)"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M2】"))
-		else:
-			__append_itemmorph_add(items, find_mat(pmx, "【C1】パンツ-------"))
-			#__append_itemmorph_add(items, find_mat(pmx, "【C1】通常(選択1)"))
-			__append_itemmorph_add(items, find_mat(pmx, "【C1】着色切替(選択2)"))
-			__append_itemmorph_add(items, find_mat(pmx, "【C1】着色切替2(選択2)"))
-			__append_itemmorph_add(items, find_mat(pmx, "【C1】切替縫目(選択2)"))
-			__append_itemmorph_add(items, find_mat(pmx, "【C1】フリル(+α)"))
-			__append_itemmorph_add(items, find_mat(pmx, "【C1】リボン(+α)"))
-			#__append_itemmorph_sub(items, find_mat(pmx, "【M2】")) ## Can stay on I guess ?
-		pmx.morphs.append(pmxstruct.PmxMorph("【C1】", "Toggle [C1]", 4, 8, items))
-	except Exception as ee:
-		print(ee)
-		core.MY_PRINT_FUNC("Could not add [C1] morph!")
+		for idx in indices: __append_itemmorph_sub(items, idx)
+		pmx.morphs.append(pmxstruct.PmxMorph(name + "2", f"Toggle {name} (Off)", 4, 8, items))
+	#################
+	addMorphs("【M1】"); addMorphs("【M2】"); addMorphs("【M3】")
+	addMorphs("【C1】"); addMorphs("【C2】"); addMorphs("【C3】")
+	##
+	last = ver3Dict[list(filter(lambda x: x.startswith("【"), ver3Dict.keys()))[-1]]
+	prefix = os.path.commonprefix([pmx.materials[last+1].name_jp, pmx.materials[last+3].name_jp])
+	addMorphs(prefix, [ver3Dict[key] for key in ver3List[last+1:]])
+	#################
 	name = ""
 	idx = 0
 	core.MY_PRINT_FUNC("-- Trying to add [hadaka] morph...")
@@ -643,7 +601,7 @@ It will generate two morphs to pull the seam apart. For that it will ask which d
 Example: To cut a vertical window (== rotated capital H): (aligned to Y-Axis; Rotate the instructions depending on the chosen "Up" Direction)
 [1] Lasso-select the vertex path and note the vertices with [Selection Guide]
 [2] Perform a cut with 25 (or 24 on the back) -- This is the 'bridge' of the "H"
--- -- This means starting this mode, then using options '2' and ('5' or '4')
+--  -- This means starting this mode, then using options '2' and ('5' or '4')
 [3] Select either head or tail of the line (including the newly added vertex) and add their direct neighbour on the left and right
 [4] Perform a cut with 05 (04 on the back) -- 'Old' Morph opens upwards
 [5] Repeat [3] for the other tail / head
@@ -811,7 +769,7 @@ def from_material_get_faces(pmx, mat_idx, returnIdx=False):
 	return pmx.faces[start:stop]
 
 def from_faces_get_vertices(pmx, faces, returnIdx=True, moreinfo=False):
-	if (moreinfo or DEBUG):
+	if (moreinfo or DEVDEBUG):
 		print("First Face has: {} \n Last Face has: {}".format(str(faces[0]),str(faces[1])))
 	vert_idx = list(set(core.flatten(faces)))
 	vert_idx.sort()

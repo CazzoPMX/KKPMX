@@ -30,7 +30,7 @@ The initial bounding box is defined by the base material which the target is che
 There are three options to define the coordinates of a bounding box. All vertices outside it will be ignored.
 -- Choose best-guess defaults to remove chest protrusions on a KK-Model
 -- Input manual coordinates (for either a scan or box cut)
--- Full scan
+-- Full scan (== full box of target against full box of base)
 The smaller it is, the less calculations are performed and it will complete faster.
 
 Output: PMX file '[modelname]_cutScan.pmx'
@@ -109,7 +109,7 @@ def run_kk_defaults(pmx, input_filename_pmx):
 	
 	## Do shoulders as well? --> Needs Shirt (also fix Emblem bc bleed through)
 	## Ask if providing own bounds or using default box (extended or only around nips)
-	bounds = { "minY": 10.20, "maxZ": 0 }
+	bounds = { "minY": 10.20, "minZ": 0, "maxZ": 0 }
 	def addIfFound(name,key,idx):
 		bone_idx = kklib.find_bone(pmx, name)
 		if bone_idx: bounds[key] = pmx.bones[bone_idx].pos[idx]
@@ -138,6 +138,9 @@ def run_kk_defaults(pmx, input_filename_pmx):
 		#-- -- 右AH1 (rough maxZ=back[0.4539899])
 		#-- -- cf_s_bust03_R(barely behind them[-0.8914542])
 		#-- -- 胸親 (Parent bone for physics[-0.6669899])
+		addIfFound("cf_s_bnip02_R", "minZ", 2)
+		bounds["minZ"] = bounds["minZ"] - 1
+		
 		addIfFound("cf_s_bust03_R", "maxZ", 2)
 		averageOut("胸親", "maxZ", 2)
 		averageOut("cf_s_bust03_R", "maxZ", 2)
@@ -171,7 +174,12 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, aff
 	moreinfo = moreinfo | DEBUG
 	##################################
 	import numpy as np
+	import kkpmx_utils as util
 	
+	
+	##  Get sub mat lists
+	if new_mat is None:
+		new_mat = ask_for_material(pmx, ": Material that causes the bleed-through", default="cf_m_body", returnIdx=False)
 	##  Get main mat
 	if base_mat is None:
 		base_mat = ask_for_material(pmx, ": Material that received the bleed-through", default="cf_m_top_inner06", returnIdx=False)
@@ -182,6 +190,8 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, aff
 	old_verts = from_faces_get_vertices(pmx, old_faces, False, moreinfo=moreinfo)
 	old_idx_verts  = from_faces_get_vertices(pmx, old_faces, True, moreinfo=False)
 	bounds = get_bounding_box(pmx, base_mat, old_verts, moreinfo=moreinfo)
+	# Array in case I change it to allow multiple
+	exceed = [ util.ask_direction("Any Direction to exceed/ignore bounds", allow_empty=True) ]
 	
 	def formatBox(box): print(f"[ {box[0]:19.15f}, {box[1]:19.15f}, {box[2]:19.15f}]")
 	print("-- Bounding Box (X / Y / Z) of " + base_mat.name_jp)
@@ -190,22 +200,37 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, aff
 	if new_bounds is not None:
 		def extendBounds(name, i1, i2, minmax):
 			if new_bounds.__contains__(name):
-				try: ## box should not exceed original material bounds
+				iX = i2 * 2 + i1
+				#print(f"{iX} -- {name}")
+				#if (iX in exceed):
+				#	#print(f"*{minmax.__name__}({float(new_bounds[name])}, {bounds[i1][i2]})")
+				#	minmax = min if i1 == 0 else max
+				#	exceed.remove(iX)
+				try: ## box should not get smaller  original material bounds
+					#print(f"{minmax.__name__}({float(new_bounds[name])}, {bounds[i1][i2]})")
 					bounds[i1][i2] = minmax(float(new_bounds[name]), bounds[i1][i2])
 				except: pass
-		print("-- Bounding Box (override)")
 		extendBounds("minX",0,0,max)
 		extendBounds("minY",0,1,max)
-		extendBounds("minZ",0,2,max)
+		extendBounds("minZ",0,2,min)
 		extendBounds("maxX",1,0,min)
 		extendBounds("maxY",1,1,min)
-		extendBounds("maxZ",1,2,min)
+		extendBounds("maxZ",1,2,max)
+		if (len(exceed) == 0) or (None in exceed):
+			print("-- Bounding Box (override)")
+			formatBox(bounds[0])
+			formatBox(bounds[1])
+			exceed = [None]
+	if None not in exceed:
+		eee = exceed[0]
+		sign = eee % 2
+		val = int((eee - sign) / 2)
+		bounds[sign][val] = 50 * (-1 if sign == 0 else 1)
+		print("-- Bounding Box (override)")
 		formatBox(bounds[0])
 		formatBox(bounds[1])
-	
+
 	##  Get sub mat lists
-	if new_mat is None:
-		new_mat = ask_for_material(pmx, ": Material to cut vertices off from", default="cf_m_body", returnIdx=False)
 	if type(new_mat) == type(0):
 		mat_idx2 = new_mat
 		new_mat = pmx.materials[mat_idx2]

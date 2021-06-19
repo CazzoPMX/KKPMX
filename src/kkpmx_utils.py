@@ -142,6 +142,18 @@ def ask_yes_no(message, default=None):
 	if value in [None,""]: return default == "y"
 	return value == "y"
 
+def ask_direction(message, allow_empty=False):
+	def is_valid(x):
+		if allow_empty and x in [None,""]: return True
+		if not x.isdigit(): return False
+		return int(x) in [0,1,2,3,4,5]
+	#print("0/1=X+ X-, 2/3=Y+ Y-. 4/5=Z+ Z- (left/right, up/down, back/front)")
+	print("0/1=X- X+, 2/3=Y- Y+. 4/5=Z- Z+ (right/left, down/up, front/back)")
+	msg = "0/1/2/3/4/5 or nothing" if allow_empty else "0/1/2/3/4/5"
+	val = core.MY_GENERAL_INPUT_FUNC(is_valid, message + f"? [{msg}]: ")
+	if allow_empty and val in [None, ""]: return None
+	return int(val)
+
 def now(epoch=False): ## :: str(dt) == dt.isoformat(' ')
 	"""
 	Returns the current time as ISO Timestamp
