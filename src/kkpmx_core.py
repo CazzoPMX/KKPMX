@@ -273,7 +273,7 @@ There are some additional steps that cannot be done by a script; They will be me
 	section("[2] Sort Textures (will make a backup of all files)")
 	## run [core] sort textures (which edits in place) --- [2nd] to also sort the property files
 	import file_sort_textures
-	if not write_model: core.write_pmx(input_filename_pmx, pmx, moreinfo=moreinfo)
+	if not write_model: pmxlib.write_pmx(input_filename_pmx, pmx, moreinfo=moreinfo)
 	print(">> Recommended: 2 (No) \\ 2 (only top-level) \\ 1 (Yes) ")
 	print("")
 	# Tell options: 2(No) \\ 2(only top-level) \\ 1(Yes) <<<<<<<<<<<<<<<<<<<<<<<<<

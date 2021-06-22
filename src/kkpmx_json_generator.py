@@ -195,7 +195,7 @@ def GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree):
 	##	write "cf_m_face_00"
 	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_face_00", opt_Group: "face",
 		opt_texAvail: [t__Detail, t__Line, t__Main, t__NorMap, t__NorMapDet, t__overtex1], ## t__overtex2, t__overtex3
-		opt_texUse: [t__Line, t__Main],
+		opt_texUse: [t__Detail, t__Line, t__Main],
 		})
 	##	write WS
 	arr.append(Comment(NL=True))

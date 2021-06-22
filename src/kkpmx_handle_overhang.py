@@ -206,7 +206,7 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, aff
 				#	#print(f"*{minmax.__name__}({float(new_bounds[name])}, {bounds[i1][i2]})")
 				#	minmax = min if i1 == 0 else max
 				#	exceed.remove(iX)
-				try: ## box should not get smaller  original material bounds
+				try: ## box should not get smaller than original material bounds
 					#print(f"{minmax.__name__}({float(new_bounds[name])}, {bounds[i1][i2]})")
 					bounds[i1][i2] = minmax(float(new_bounds[name]), bounds[i1][i2])
 				except: pass
