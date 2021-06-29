@@ -133,7 +133,7 @@ def run_kk_defaults(pmx, input_filename_pmx):
 		#else:
 		posY = pmx.bones[kklib.find_bone(pmx, "胸親")].pos[1]
 		bounds["minY"] = posY - 0.25
-		bounds["maxY"] = posY + 0.25
+		bounds["maxY"] = posY + 0.50 ## 14.07162
 		#- [Z-Axis](back<front): 右胸操作(-0.66) cf_j_bust02_R_01(-0.697)
 		#-- -- 右AH1 (rough maxZ=back[0.4539899])
 		#-- -- cf_s_bust03_R(barely behind them[-0.8914542])
@@ -148,20 +148,27 @@ def run_kk_defaults(pmx, input_filename_pmx):
 	elif has_inside:
 		bounds = get_bounding_box(pmx, inside)
 	
+	options = {
+		"affectPMX": True,
+		"exceed": [4],
+		"ask": False,
+		"initial_hidden": True,
+	}
+	
 	log_line = []
 	if has_inside:
-		results = __run(pmx, outside, inside, bounds)
+		results = __run(pmx, outside, inside, bounds, options=options)
 		log_line.append(f"Isolated vertices of {inside.name_jp} peaking through {outside.name_jp}")
 		log_line.append(results)
 		log_line.append("--------")
 		print("-------------------")
-	results = __run(pmx, outside, body, bounds)
+	results = __run(pmx, outside, body, bounds, options=options)
 	log_line.append(f"Isolated vertices of {body.name_jp} peaking through {outside.name_jp}")
 	log_line.append(results)
 	kklib.end(pmx, input_filename_pmx, "_cutScan", core.flatten(log_line))
 run_kk_defaults.__doc__ = infotext
 ############
-def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, affectPMX=True):
+def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, options={}):
 	"""
 	:param pmx      [Pmx]
 	:param base_mat [PmxMaterial] Protruded  Material (to calculate cut-worthyness)
@@ -172,6 +179,7 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, aff
 	#from kkpmx_core import __append_itemmorph_add, __append_itemmorph_mul, __append_itemmorph_sub
 	import kkpmx_core as kklib
 	moreinfo = moreinfo | DEBUG
+	affectPMX = options.get("affectPMX", True)
 	##################################
 	import numpy as np
 	import kkpmx_utils as util
@@ -191,7 +199,9 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, aff
 	old_idx_verts  = from_faces_get_vertices(pmx, old_faces, True, moreinfo=False)
 	bounds = get_bounding_box(pmx, base_mat, old_verts, moreinfo=moreinfo)
 	# Array in case I change it to allow multiple
-	exceed = [ util.ask_direction("Any Direction to exceed/ignore bounds", allow_empty=True) ]
+	if "exceed" not in options:
+		exceed = [ util.ask_direction("Any Direction to exceed/ignore bounds", allow_empty=True) ]
+	else: exceed = options.get("exceed", [])
 	
 	def formatBox(box): print(f"[ {box[0]:19.15f}, {box[1]:19.15f}, {box[2]:19.15f}]")
 	print("-- Bounding Box (X / Y / Z) of " + base_mat.name_jp)
@@ -366,11 +376,12 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, aff
 	
 	__results.append("-- Found {} of {} vertices peaking through the surface ".format(len(that_verts_list), len(new_verts)))
 
-	return move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, affectPMX)
+	return move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options)
 
-def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, affectPMX, ask=False):
+def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options={}):
 	import kkpmx_core as kklib
 	import kkpmx_utils as util
+	affectPMX = options.get("affectPMX", True)
 	mat_idx2 = kklib.find_mat(pmx, new_mat.name_jp)
 	that_faces_list = kklib.from_vertices_get_faces(pmx, vert_arr=that_verts_list, mat_idx=mat_idx2, returnIdx=False, debug=False, trace=True)
 	#util.write_json(that_faces_list, "moved_faces", False)
@@ -391,7 +402,7 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, affectP
 	
 	add_mat = None
 	value = -1
-	if ask:
+	if options.get("ask", False):
 		value = int(core.MY_GENERAL_INPUT_FUNC(util.is_number, "Id of the Material to append to (-1 for new)"))
 		value = -1 if (value < 0 or value >= len(pmx.materials)) else value
 	if value == -1:
@@ -414,7 +425,9 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, affectP
 		print("----[Stage] Create morphs to fade it in/out")
 		items = []
 		add_idx = len(pmx.materials)
-		OPTION_2 = core.MY_GENERAL_INPUT_FUNC(lambda x: x in ['y','n'], "Make material initial hidden(y) or visible(n)") == 'y'
+		OPTION_2 = options.get("initial_hidden", None)
+		if OPTION_2 == None:
+			OPTION_2 = core.MY_GENERAL_INPUT_FUNC(lambda x: x in ['y','n'], "Make material initial hidden(y) or visible(n)") == 'y'
 		if (OPTION_2): ## initially hidden
 			add_mat.alpha = 0
 			kklib.__append_itemmorph_add(items, add_idx)
@@ -498,7 +511,12 @@ def cut_out_box_from_material(pmx, new_bounds):
 	that_verts_list = list(filter(filterer, idx_verts))
 	#----
 	print("----[Stage] Collect affected faces")
-	return move_verts_to_new_material(pmx, base_mat, that_verts_list, __results, True, ask=True)
+	
+	options = {
+		"affectPMX": True,
+		"ask": True,
+	}
+	return move_verts_to_new_material(pmx, base_mat, that_verts_list, __results, options)
 
 
 ##################################

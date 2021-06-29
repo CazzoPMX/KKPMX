@@ -9,6 +9,7 @@ from datetime import datetime ### used in [end]
 
 import kkpmx_property_parser as PropParser ## parseMatComments
 import kkpmx_utils as util
+import kkpmx_rigging as kkrig
 from kkpmx_handle_overhang import run as runOverhang
 from kkpmx_json_generator import GenerateJsonFile
 try:
@@ -118,24 +119,29 @@ def cleanup_texture(pmx, input_filename_pmx, write_model=True): ### [01]
 This is one of two main methods to make KK-Models look better.
 It does the following things:
 
-- disable "Bonelyfans", "Standard"
+- disable "Bonelyfans", "Standard" (+ emblem if no texture)
 - Simplify material names (removes "(Instance)" etc)
 - if tex_idx != -1: Set diffRGB to [1,1,1] ++ add previous to comment
 - else:             Set specRGB to [diffRGB] ++ add previous to comment
 - Set toon_idx = "toon02.bmp"
 - Rename certain bones to match standard MMD better
-- Remove items with idx == -1 from dispframes
+- Remove items with idx == -1 from dispframes [<< crashes MMD]
+- Fix invalid VertexMorph [<< crashes MMD]
 
 In some cases, this is already enough to make a model look good for simple animations.
 
 Output: PMX File '[filename]_cleaned.pmx'
 """
+	###############
 	###### ---- materials
-	def disable_mat(name_mat):
+	def disable_mat(name_mat, no_tex_only=False):
 		mat_idx = name_mat
 		if type(name_mat) == str:
 			mat_idx = find_mat(pmx, name_mat, False)
 			if mat_idx == None: return
+		if no_tex_only:
+			if pmx.materials[mat_idx].tex_idx > -1:
+				return
 		pmx.materials[mat_idx].alpha = 0
 		pmx.materials[mat_idx].edgesize = 0
 		pmx.materials[mat_idx].flaglist[4] = False
@@ -144,6 +150,7 @@ Output: PMX File '[filename]_cleaned.pmx'
 	disable_mat("Bonelyfans*1")
 	disable_mat("Standard (Instance) (Instance)") ## Exists with kedama (?)
 	#disable_mat("acs_m_kedama (Instance) (Instance)")
+	disable_mat("cf_m_emblem", no_tex_only=True)
 	
 	kk_re = re.compile(r" ?\(Instance\)_?(\([-0-9]*\))?")
 	for mat in pmx.materials:
@@ -152,22 +159,26 @@ Output: PMX File '[filename]_cleaned.pmx'
 		
 		### KK Materials with own texture rarely use the diffuse color
 		### So replace it with [1,1,1] to make it fully visible
+		skip = ["[0.0, 0.0, 0.0]", "[1.0, 1.0, 1.0]"]
 		if (mat.tex_idx != -1):
-			if mat.diffRGB != [1,1,1]:
-				mat.comment = mat.comment + "\n[Old Diffuse]: " + str(mat.diffRGB)
+			if str(mat.diffRGB) not in ["[0.5, 0.5, 0.5]", "[1.0, 1.0, 1.0]"]:
+				mat.comment = mat.comment + "\r\n[Old Diffuse]: " + str(mat.diffRGB)
 				mat.diffRGB = [1,1,1]
 		elif mat.diffRGB != [1,1,1]:
 			## Otherwise replicate it into specular to avoid white reflection
-			if mat.specRGB != [1,1,1] and mat.specRGB != [0,0,0]:
-				mat.comment = mat.comment + "\n[Old Specular]: " + str(mat.specRGB)
+			skip_r = skip + [str(mat.diffRGB)]
+			if str(mat.specRGB) not in skip_r:
+				mat.comment = mat.comment + "\r\n[Old Specular]: " + str(mat.specRGB)
 			mat.specRGB = mat.diffRGB
 		else:
-			if mat.specRGB != [1,1,1]:
-				mat.comment = mat.comment + "\n[Old Specular]: " + str(mat.specRGB)
+			if str(mat.specRGB) not in skip:
+				mat.comment = mat.comment + "\r\n[Old Specular]: " + str(mat.specRGB)
 			mat.specRGB = [0,0,0]
 		
-		mat.toon_mode = 1
-		mat.toon_idx  = 1 ## toon02.bmp
+		### Only if no custom toon registered
+		if mat.toon_mode == 0 and mat.toon_idx < 0:
+			mat.toon_mode = 1
+			mat.toon_idx  = 1 ## toon02.bmp
 	#-------
 	## Make sure that all materials have unique names
 	names = []
@@ -187,20 +198,65 @@ Output: PMX File '[filename]_cleaned.pmx'
 	# [shadowcast], [<<face stuff>>], [<<hair>>], [body, "mm"], [shorts, bra, socks], [shoes,...],
 	## [skirt: bot_misya], [shirt: top_inner], [jacket], [ribbon, necktie], [any acs_m_]
 	
+	###############
 	###### ---- bones
 	def rename_bone(org, newJP, newEN):
 		tmp = find_bone(pmx, org, False)
 		if tmp is not None:
 			pmx.bones[tmp].name_jp = newJP
 			pmx.bones[tmp].name_en = newEN
+	def bind_bone(arr):
+		while len(arr) > 1:
+			parent = find_bone(pmx, arr[0], False)
+			child = find_bone(pmx, arr[1], False)
+			if parent is not None and child is not None:
+				pmx.bones[parent].tail_usebonelink = True
+				pmx.bones[parent].tail = child
+			arr.pop(0)
 	## rename Eyes: [両目x] to [両目], [左目x] to [左目], [右目x] to [右目]
 	rename_bone("両目x", "両目", "both eyes")
 	rename_bone("左目x", "左目", "eye L")
 	rename_bone("右目x", "右目", "eye R")
 	
+	bind_bone(["左足", "左ひざ", "左足首", "左つま先"])
+	bind_bone(["右足", "右ひざ", "右足首", "右つま先"])
+	
+	## Fix Feet
+	def tmp(A, B, C):
+		ankle = find_bone(pmx, A, False)
+		if ankle is not None:
+			posY = pmx.bones[ankle].pos[1]
+			foot = find_bone(pmx, B, False)
+			pmx.bones[foot].pos[1] = posY
+			ik = find_bone(pmx, C, False)
+			pmx.bones[ik].pos[1] = posY
+			pmx.bones[ik].tail = [0, 0, 1.3]
+	tmp("cf_d_leg03_L", "左足首", "左足ＩＫ")
+	tmp("cf_d_leg03_R", "右足首", "右足ＩＫ")
+	
+	
 	## add [グルーブ][groove] at [Y +0.2] between [center] and [BodyTop] :: Add [MVN], [no VIS] head optional
 	## add [腰][waist] at ??? between [upper]/[lower] and [cf_j_hips]
 	
+	###############
+	###### ---- rigging
+	if find_bone(pmx, "cf_j_waist02", False):
+		posX = pmx.bones[find_bone(pmx, "cf_j_waist02")].pos[0]
+		posY = pmx.bones[find_bone(pmx, "cf_d_thigh01_L")].pos[1]
+		posZ = pmx.bones[find_bone(pmx, "cf_s_siri_L")].pos[2]
+		rigid = find_rigid(pmx, "下半身")
+		pmx.rigidbodies[rigid].pos = [posX, posY, posZ]
+		pmx.rigidbodies[rigid].size[0] = 0.8
+		print(pmx.rigidbodies[rigid].nocollide_mask)
+		pmx.rigidbodies[rigid].nocollide_mask = 65534 # == [1] is 2^16-1
+		pmx.rigidbodies[rigid].phys_move_damp = 0.99
+		pmx.rigidbodies[rigid].phys_rot_damp = 0.99
+		pmx.rigidbodies[rigid].phys_repel = 0
+		pmx.rigidbodies[rigid].phys_friction = 0.5
+	
+	kkrig.transform_skirt(pmx)
+	
+	###############
 	###### ---- dispframes
 	## add [BodyTop], [両目], [eye_R, eye_L], [breast parent] [cf_j_hips] to new:[TrackAnchors]
 	frames = [
@@ -215,6 +271,12 @@ Output: PMX File '[filename]_cleaned.pmx'
 	### Clean up invalid dispframes
 	for disp in pmx.frames:
 		disp.items = list(filter(lambda x: x[1] not in [-1,None], disp.items))
+	
+	### Clean up invalid morphs
+	vert_len = len(pmx.verts)
+	for morph in pmx.morphs:
+		if morph.morphtype != 1: continue
+		morph.items = [m for (idx,m) in enumerate(morph.items) if m.vert_idx < vert_len]
 	
 	return end(pmx if write_model else None, input_filename_pmx, "_cleaned", "Performed minimal cleanup for working MMD")
 
@@ -342,7 +404,7 @@ def __append_itemmorph_add(items, idx): # Adds 1 to show a hidden material
 	items.append(pmxstruct.PmxMorphItemMaterial(idx, 1, # isadd = True
 		arrZero, arrZero, arrZero, 1.0, 0.0, ## Material: Keep color, but unhide
 		arrZero, 1.0, 0.0, ## Toggle Outline
-		arrZeroA, arrZeroA, arrZeroA ## Keep Texture
+		arrZero4, arrZero4, arrZero4 ## Keep Texture
 	))
 def __append_itemmorph_sub(items, idx): # Subtracts 1 to hide a hidden material again
 	if idx == None: return
@@ -456,6 +518,13 @@ Output: PMX file '[modelname]_morphs.pmx'
 	itemsAcc = []
 	itemsSlots = { "always": [], "mostly": [], "med": [], "full": [], "slotMatch": False }
 	flag = util.ask_yes_no("Emit morphs for body-like materials", "n")
+	frame = []
+	def addMatMorph(name, arr, disp=None):
+		if type(name) is str: names = [ name, name ]
+		else: names = name
+		pmx.morphs.append(pmxstruct.PmxMorph(names[0], names[1], 4, 8, arr))
+		#if disp is not None: disp.append(len(pmx.morphs) - 1)
+	
 	for idx, mat in enumerate(pmx.materials):
 		### Filter out what we do not want
 		if re.search(rgxSkip, mat.name_jp): continue
@@ -476,7 +545,7 @@ Output: PMX file '[modelname]_morphs.pmx'
 		
 		name_jp = re.sub(r'( \(Instance\))+', '', mat.name_jp)
 		name_en = re.sub(r'^cf_m_+|^acs_m_+|( \(Instance\))+', '', name_en)
-		pmx.morphs.append(pmxstruct.PmxMorph(name_jp, name_en, 4, 8, items))
+		addMatMorph([name_jp, name_en], items, frame)
 		### Check if comments contain Slot names (added by Plugin Parser)
 		if re.search(r'\[:Slot:\]', mat.comment):
 			itemsSlots["slotMatch"] = True
@@ -498,18 +567,20 @@ Output: PMX file '[modelname]_morphs.pmx'
 	__append_bonemorph(pmx, find_bone(pmx,"センター",False), [0,-5,0], [0,0,0], "Move Body downwards")
 	
 	#### Add special morphs
-	def addMatMorph(name, arr): pmx.morphs.append(pmxstruct.PmxMorph(name, name, 4, 8, arr))
 	if itemsSlots.get("slotMatch", False):
 		addMatMorph("Show:Head Acc",   itemsSlots["always"])
 		addMatMorph("Show:Hand/Foot",  itemsSlots["mostly"])
 		addMatMorph("Show:Neck/Groin", itemsSlots["med"]   )
 		addMatMorph("Show:Body Acc",   itemsSlots["full"]  )
-	addMatMorph("Hide Acc", itemsAcc)
-	addMatMorph("Hide Non-Acc", itemsCloth)
+	addMatMorph("Hide Acc", itemsAcc, frame)
+	addMatMorph("Hide Non-Acc", itemsCloth, frame)
 	itemsBoth = list(filter(lambda x: x != None, core.flatten([ itemsCloth, itemsAcc ])))
 	addMatMorph("BD-Suit", itemsBoth)
+	
 	log_line = "Added Material Morphs"
 	if not flag: log_line += " (without body-like morphs)"
+	#pmx.frames[1].items = [[1,i] for i in core.flatten(frame)] + pmx.frames[1].items
+	
 	return end(pmx if write_model else None, input_filename_pmx, "_morphs", log_line)
 
 def do_ver3_check(pmx):
@@ -1009,6 +1080,7 @@ def find_bone(pmx,name,e=True):  return morph_scale.get_idx_in_pmxsublist(name, 
 def find_mat(pmx,name,e=True):   return morph_scale.get_idx_in_pmxsublist(name, pmx.materials,e)
 def find_disp(pmx,name,e=True):  return morph_scale.get_idx_in_pmxsublist(name, pmx.frames,e)
 def find_morph(pmx,name,e=True): return morph_scale.get_idx_in_pmxsublist(name, pmx.morphs,e)
+def find_rigid(pmx,name,e=True): return morph_scale.get_idx_in_pmxsublist(name, pmx.rigidbodies,e)
 
 def translate_name(name_jp, name_en):
 	if not(name_en is None or name_en == ""):   return name_en

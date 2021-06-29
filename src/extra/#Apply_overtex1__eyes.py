@@ -39,6 +39,12 @@ if hlTwo:
 if hlOne: image = imglib.blend_segmented(blend_modes.addition, image, highlight, hlAlpha)
 if hlTwo: image = imglib.blend_segmented(blend_modes.addition, image, highlight2, hlAlpha2)
 
+### TEMP: Until figuring out how to read out offsets properly, move them down by 20 px or so
+tmp = np.zeros(image.shape, dtype='uint8')
+tmp[:, :20, :, :] = image[:, -20:, :, :]
+tmp[:, 20:, :, :] = image[:, :-20, :, :]
+image = tmp
+
 ### Write out final image
 outName = pathMain[:-4] + "_pyHL.png"
 cv2.imwrite(outName, image)

@@ -177,6 +177,16 @@ def is_number(text):
 		return False
 
 ######
+## Finders
+######
+
+def find_bone(pmx,name,e=True):  return morph_scale.get_idx_in_pmxsublist(name, pmx.bones,e)
+def find_mat(pmx,name,e=True):   return morph_scale.get_idx_in_pmxsublist(name, pmx.materials,e)
+def find_disp(pmx,name,e=True):  return morph_scale.get_idx_in_pmxsublist(name, pmx.frames,e)
+def find_morph(pmx,name,e=True): return morph_scale.get_idx_in_pmxsublist(name, pmx.morphs,e)
+def find_rigid(pmx,name,e=True): return morph_scale.get_idx_in_pmxsublist(name, pmx.rigidbodies,e)
+
+######
 ## TypePrinter
 ######
 
