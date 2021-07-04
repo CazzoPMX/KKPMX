@@ -115,7 +115,7 @@ Additional notes:
 -- After generation, the *.json file can be edited to change some aspects (some colors, visibility, textures) without KK. Re-run this to apply changes.
 -- Due to pre-generation, sometimes textures are used that do not exist (which will print a warning). Remove the item from the faulty material's template to clear the warning.
 """
-DEBUG = False
+DEBUG = util.DEBUG or False
 
 ## Todos: Root Path \\ Figure out how to apply fixes for ColorMask (Additive Merge)
 
@@ -503,6 +503,9 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 			comment = meta[MT_SLOT]
 			if comment in ["BodyTop","p_cf_head_bone"]: comment = meta[MT_PARENT]
 			comment = "[:Slot:] " + comment
+			par = meta[MT_PARENT]
+			if re.match("ca_slot\d+", par):
+				comment += "\r\n[:AccId:] " + re.match("ca_slot(\d+)", par)[1]
 			if not mat.comment or len(mat.comment) == 0:
 				mat.comment = comment
 			else: mat.comment += "\r\n" + comment

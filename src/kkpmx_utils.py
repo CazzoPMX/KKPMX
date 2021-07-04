@@ -11,8 +11,11 @@ import copy
 import nuthouse01_core as core
 #import nuthouse01_pmx_parser as pmxlib
 #import nuthouse01_pmx_struct as pmxstruct
-#import morph_scale
+import morph_scale
 ### 
+
+## Global Debug Flag
+DEBUG=False
 
 def main_starter(callback):
 	"""
@@ -136,6 +139,11 @@ def sort_dict(_dict, deep=True, _type=None):
 	return tmp
 
 def ask_yes_no(message, default=None):
+	"""
+	if default is None: return input == 'y'
+	if default is  'y': if input is empty: return True
+	any other default : if input is empty: return False
+	"""
 	if default is None: return core.MY_GENERAL_INPUT_FUNC(lambda x: x in ['y','n'], message + " [y/n]?") == 'y'
 	txt = "[y]/n" if default == "y" else "y/[n]"
 	value = core.MY_GENERAL_INPUT_FUNC(lambda x: x in ['y','n',None,""], message + f" ({txt})?")
@@ -170,7 +178,8 @@ def copy_file(src, dst): # https://stackoverflow.com/questions/123198
 	#copyfile(src, dst)
 	copy2(src, dst)
 	
-def is_number(text):
+def is_number(text, allow_bool=False):
+	if type(text) is bool: return allow_bool
 	try:
 		return float(text) is not None
 	except:
@@ -180,11 +189,157 @@ def is_number(text):
 ## Finders
 ######
 
+find_info = """ [pmx] instance -- Entity Name -- Flag to print error if not found (default True) """
+
 def find_bone(pmx,name,e=True):  return morph_scale.get_idx_in_pmxsublist(name, pmx.bones,e)
 def find_mat(pmx,name,e=True):   return morph_scale.get_idx_in_pmxsublist(name, pmx.materials,e)
 def find_disp(pmx,name,e=True):  return morph_scale.get_idx_in_pmxsublist(name, pmx.frames,e)
 def find_morph(pmx,name,e=True): return morph_scale.get_idx_in_pmxsublist(name, pmx.morphs,e)
 def find_rigid(pmx,name,e=True): return morph_scale.get_idx_in_pmxsublist(name, pmx.rigidbodies,e)
+find_bone.__doc__ = find_mat.__doc__ = find_disp.__doc__ = find_morph.__doc__ = find_rigid.__doc__ = find_info
+
+######
+## Math Types for Rigging
+######
+
+class Vector3():
+	def __init__(self, X: float, Y: float, Z: float):
+		self.X = X
+		self.Y = Y
+		self.Z = Z
+	@staticmethod
+	def UnitZ(): return Vector3(0.0, 0.0, 1.0)
+	@staticmethod
+	def Zero(): return Vector3(0.0, 0.0, 0.0)
+	@staticmethod
+	def FromList(arr): return Vector3(arr[0], arr[1], arr[2])
+	def ToList(self): return [self.X, self.Y, self.Z]
+	@staticmethod
+	def FromDegree(arr):
+		import math
+		X = arr[0] * (math.pi/180)
+		Y = arr[1] * (math.pi/180)
+		Z = arr[2] * (math.pi/180)
+		return Vector3(X, Y, Z)
+	def ToDegree(self):
+		import math
+		self.X = self.X * (180/math.pi)
+		self.Y = self.Y * (180/math.pi)
+		self.Z = self.Z * (180/math.pi)
+		return self
+	
+	def Length(self):
+		import math
+		return math.sqrt(self.X*self.X + self.Y*self.Y + self.Z*self.Z)
+	def Normalize(self):
+		num: float = self.Length()
+		#print("[>] Norm Len " +str(num))
+		if (num != 0.0):
+			num2: float = float(1.0 / num)
+			self.X = float(self.X * num2);
+			self.Y = float(self.Y * num2);
+			self.Z = float(self.Z * num2);
+		return self
+	@staticmethod
+	def Cross(left, right):
+		result: Vector3 = Vector3.Zero()
+		#print(f"Left: {left}, Right: {right}")
+		z : float  = right.Z
+		y : float  = left.Y
+		z2: float  = left.Z
+		y2: float  = right.Y
+		result.X   = (y * z) - (y2 * z2)
+		x : float  = right.X
+		x2: float  = left.X
+		result.Y   = (x * z2) - (x2 * z)
+		result.Z   = (x2 * y2) - (x * y)
+		return result
+	
+	def __add__(value, scale:float):
+		#print(f"__add__ with {value} \\ {scale}")
+		result = Vector3.Zero()
+		result.X = float(left.X + scale);
+		result.Y = float(left.Y + scale);
+		result.Z = float(left.Z + scale);
+		return result;
+	__radd__ = __add__
+	
+	def __add__(left, right):
+		#print(f"__add__ with {left} \\ {right}")
+		result = Vector3.Zero()
+		result.X = float(left.X + right.X);
+		result.Y = float(left.Y + right.Y);
+		result.Z = float(left.Z + right.Z);
+		return result;
+
+	def __sub__(left, right):
+		result = Vector3.Zero()
+		result.X = float(left.X - right.X);
+		result.Y = float(left.Y - right.Y);
+		result.Z = float(left.Z - right.Z);
+		return result;
+		
+	def __mul__(value, scale: float):
+		#print(f"__mul__ with {value} \\ {scale}")
+		result = Vector3.Zero()
+		result.X = float(value.X * scale);
+		result.Y = float(value.Y * scale);
+		result.Z = float(value.Z * scale);
+		return result;
+	__rmul__ = __mul__
+		
+	def __mul__(left, right): ## Modulate
+		result = Vector3.Zero()
+		result.X = float(left.X * right.X);
+		result.Y = float(left.Y * right.Y);
+		result.Z = float(left.Z * right.Z);
+		return result;
+	
+	def __neg__(value): ## Negate
+		result: Vector3 = Vector3.Zero()
+		result.X = 0.0 - value.X
+		result.Y = 0.0 - value.Y
+		result.Z = 0.0 - value.Z
+		return result
+	def __str__(self):
+		text = ""
+		text += f"[{self.X:12.8}, {self.Y:12.8}, {self.Z:12.8}]"
+		return text
+
+class Matrix():
+	def __init__(self):
+		self.M11 = 0.0
+		self.M12 = 0.0
+		self.M13 = 0.0
+		self.M14 = 0.0
+		self.M21 = 0.0
+		self.M22 = 0.0
+		self.M23 = 0.0
+		self.M24 = 0.0
+		self.M31 = 0.0
+		self.M32 = 0.0
+		self.M33 = 0.0
+		self.M34 = 0.0
+		self.M41 = 0.0
+		self.M42 = 0.0
+		self.M43 = 0.0
+		self.M44 = 0.0
+
+	@staticmethod
+	def Identity():
+		result = Matrix();
+		result.M11 = 1.0;
+		result.M22 = 1.0;
+		result.M33 = 1.0;
+		result.M44 = 1.0;
+		return result;
+	def __str__(self):
+		text = "["
+		text += f"[M11:{self.M11:14.10} M12:{self.M12:14.10} M13:{self.M13:14.10} M14:{self.M14:14.10}]\r\n"
+		text += f"[M21:{self.M21:14.10} M22:{self.M22:14.10} M23:{self.M23:14.10} M24:{self.M24:14.10}]\r\n"
+		text += f"[M31:{self.M31:14.10} M32:{self.M32:14.10} M33:{self.M33:14.10} M34:{self.M34:14.10}]\r\n"
+		text += f"[M41:{self.M41:14.10} M42:{self.M42:14.10} M43:{self.M43:14.10} M44:{self.M44:14.10}]"
+		return text + "]"
 
 ######
 ## TypePrinter
@@ -307,6 +462,17 @@ def __typePrinter_Dict(arg, shallow=False):
 	for (k,v) in arg.items(): __typePrinter(v, enum=k, shallow=shallow)
 
 def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False):
+	"""
+	:param arg     [any]          : The object to print
+	:param prefix  [str]  = ""    : The prefix to use for each printed line
+	:param name    [str]  = None  : if given, print a heading
+	:param test    [str]  = None  : if given, set prefix = ":: Test {test:10} :: "
+	:param enum    [str]  = None  : if given, set prefix = ":: {enum:15} :: "
+	:param shallow [bool] = False : if True, treat containers as empty
+	
+	Both [test] and [enum] also indent their items with ":: {:15} :: "
+	Most containers print their first item, if any.
+	"""
 	## https://docs.python.org/3/reference/datamodel.html#object.__len__
 	def defines(obj, func): return func in dir(obj)
 	if name is not None: print("::{}::".format(name))

@@ -2,6 +2,7 @@ import sys
 import cv2
 import json
 import blend_modes
+import numpy as np
 
 try:
 	import kkpmx_image_lib as imglib
@@ -41,8 +42,8 @@ if hlTwo: image = imglib.blend_segmented(blend_modes.addition, image, highlight2
 
 ### TEMP: Until figuring out how to read out offsets properly, move them down by 20 px or so
 tmp = np.zeros(image.shape, dtype='uint8')
-tmp[:, :20, :, :] = image[:, -20:, :, :]
-tmp[:, 20:, :, :] = image[:, :-20, :, :]
+tmp[:20, :, :] = image[-20:, :, :]
+tmp[20:, :, :] = image[:-20, :, :]
 image = tmp
 
 ### Write out final image

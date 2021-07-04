@@ -37,12 +37,16 @@ Output: PMX file '[modelname]_cutScan.pmx'
 -- As opposed to usual, will count up instead of appending if '_cutScan' is already part of the filename
 '''
 
-DEBUG=False
+DEBUG=False      # Local debug
+opt = { }        # Store argument info
+verbose = lambda: opt["moreinfo"]
 
-def run(pmx, input_filename_pmx):
+def run(pmx, input_filename_pmx, moreinfo=False):
 	from kkpmx_core import end
 	import kkpmx_utils as util
 	import json
+	opt["moreinfo"] = moreinfo or util.DEBUG or DEBUG
+	
 	message = """Choose:
 -- [0] Use best-guess defaults from KK :: this will ask for 2-3 idx/names and perform 1-2 runs
 -- [1] Input manual bounding box (and cut out completely into new material) :: 1 material, 0 runs
@@ -84,7 +88,8 @@ def run(pmx, input_filename_pmx):
 	if value == "1":
 		__results = cut_out_box_from_material(pmx, bounds)
 	else:
-		__results = __run(pmx, new_bounds=bounds, affectPMX=True)
+		options = { "affectPMX": True }
+		__results = __run(pmx, new_bounds=bounds, moreinfo=moreinfo, options=options)
 	if __results:
 		input_filename_pmx = re.sub("_cutScan\d*", "", input_filename_pmx)
 		end(pmx, input_filename_pmx, "_cutScan", log_line=__results)
@@ -94,18 +99,31 @@ def run_kk_defaults(pmx, input_filename_pmx):
 	import kkpmx_core as kklib
 	import kkpmx_utils as util
 	print("")
+	log_line = []
 	# Say that it is advisable to do the 
 	### Ask for Body Index
 	body = kklib.ask_for_material(pmx, extra="-- Body (The thing that causes the bleed)", default = "cf_m_body", returnIdx = False)
+
 	### Ask for Bra Index (or none)
-	print(">Note: To only process the body (== skip the Inside Material), use the same name/idx as for [body]")
-	inside = kklib.ask_for_material(pmx, extra="-- Bra / Inside", default = "cf_m_body", returnIdx = False)
+	print(">Note: On KK the underwear follows the body and cuts through the surface as well.")
+	print(">-- Use the same name/idx as for [body] (or leave empty) to skip the 2nd run (e.g. you plan to hide the inside anyway)")
+	inside = kklib.ask_for_material(pmx, extra="-- Bra / Inside", default = body.name_jp, returnIdx = False)
+	has_inside = inside.name_jp != body.name_jp
+	if verbose and not has_inside: print(f"[*] Skipping Inside Material")
+	
 	### Ask for Outer Index (or none)
 	print(">Note: If it bleeds through multiple textures, use the most inner of them")
-	outside = kklib.ask_for_material(pmx, extra="-- Outside (Shirt or Jacket)", default = "cf_m_top_inner01", returnIdx = False)
-	### if neither shirt nor bra, return
+	flag = True
+	while flag:
+		outside = kklib.ask_for_material(pmx, extra="-- Outside (Shirt or Jacket)", default = "cf_m_top_inner01", returnIdx = False)
+		### if neither shirt nor bra, return
+		flag = util.find_mat(pmx, outside.name_jp) == util.find_mat(pmx, body.name_jp)
+		if flag: print("This mode requires 1st and 3rd material to be different! You may want to use Mode[1] instead.")
 	#----------#
-	has_inside = inside.name_jp != body.name_jp
+	
+	msg = ["== Cut Mode [0] ==", f"using Base:{body.name_jp}" + (f", Inner:{inside.name_jp}" if has_inside else "") + f", Outside:{outside.name_jp}"]
+	log_line += msg
+	if verbose: print("[*] " + msg[1])
 	
 	## Do shoulders as well? --> Needs Shirt (also fix Emblem bc bleed through)
 	## Ask if providing own bounds or using default box (extended or only around nips)
@@ -118,11 +136,7 @@ def run_kk_defaults(pmx, input_filename_pmx):
 		if bone_idx:
 			tmp = pmx.bones[bone_idx].pos[idx]
 			bounds[key] = (bounds.get(key,0)+tmp)/2
-	# Maybe Bones:
-	#- [X-Axis](left<right)
-	#--- 
-	#- [Y-Axis](down<up) ~~ Y = 14.14589
-	##--- Warning: These bones usually do not exist anymore, so they are explicit preserved during combined generation
+	
 	if util.ask_yes_no("KK Defaults: Restrict to optimized box around chest ?"):
 		#if kklib.find_bone(pmx, "cf_j_spinesk_02", True):
 		#	addIfFound("cf_j_spinesk_02", "maxY", 1)
@@ -155,7 +169,6 @@ def run_kk_defaults(pmx, input_filename_pmx):
 		"initial_hidden": True,
 	}
 	
-	log_line = []
 	if has_inside:
 		results = __run(pmx, outside, inside, bounds, options=options)
 		log_line.append(f"Isolated vertices of {inside.name_jp} peaking through {outside.name_jp}")
@@ -173,12 +186,21 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, opt
 	:param pmx      [Pmx]
 	:param base_mat [PmxMaterial] Protruded  Material (to calculate cut-worthyness)
 	:param new_mat  [PmxMaterial] Protruding Material (to cut off from)
+	
+	Options = {
+		"affectPMX":   False for simulation mode; default is True
+		"exceed":      Array of int (1 to 6) -- directions that ignore the bounding box
+		"ask":         True to ask for material to store into, False to not ask
+		:     -- Also allows a material index directly, but will fall back to [ask=True] if invalid. -1 for new
+		"initial_hidden": When generating a new material, set True to hide it initially, else false.
+	}
+	The morph has to be added to the [Facial] frame manually for the time being.
 	"""
 	from kkpmx_core import ask_for_material, from_faces_get_vertices, from_material_get_faces, from_vertices_get_faces
 	from kkpmx_core import find_mat, translate_name#, find_morph, find_bone
 	#from kkpmx_core import __append_itemmorph_add, __append_itemmorph_mul, __append_itemmorph_sub
 	import kkpmx_core as kklib
-	moreinfo = moreinfo | DEBUG
+	opt["moreinfo"] = verbose or moreinfo or DEBUG
 	affectPMX = options.get("affectPMX", True)
 	##################################
 	import numpy as np
@@ -266,7 +288,7 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, opt
 	#verts = new_verts#list(filter(filterer, new_verts))
 
 	print(f">Searching for peaking vertices of '{new_mat.name_jp}' going through the surface of '{base_mat.name_jp}'")
-	if DEBUG: print(f">> Stats: moreinfo={moreinfo}, affectPMX={affectPMX}")
+	if verbose: print(f">> Stats: moreinfo={moreinfo}, affectPMX={affectPMX}")
 
 	print("\n----[Stage] Split the materials at the Z-Axis ")
 	##** Split at Z Axis (X+ vs X-) :: Fixes X-Axis so that only one axis[Z] can be anything
@@ -396,15 +418,28 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options
 	if affectPMX:
 		new_mat.faces_ct -= len(that_list_flat)
 		for f in reversed(that_list_flat): pmx.faces.pop(f)
-	
+
+	########
 	##  Add new material(s)
 	print("----[Stage] Create a new material and add the deleted faces to it ")
 	
 	add_mat = None
+	ask = options.get("ask", False)
+	def valid_value(x): return util.is_number(x) and not (int(x) < -1 or int(x) >= len(pmx.materials))
 	value = -1
-	if options.get("ask", False):
-		value = int(core.MY_GENERAL_INPUT_FUNC(util.is_number, "Id of the Material to append to (-1 for new)"))
-		value = -1 if (value < 0 or value >= len(pmx.materials)) else value
+	
+	if verbose: old_ask = copy.deepcopy(ask)
+	
+	if type(ask) != bool and not valid_value(ask):
+		print(f">> Provided material index {value} is invalid.")
+		ask = True
+	elif type(ask) != bool: value = int(ask)
+	
+	if verbose: print(f"Ask: {old_ask}, IsNumber: {util.is_number(old_ask)}, Value: {value}")
+	if verbose: print(f">> Valid: {valid_value(old_ask)} -> ask: {ask}")
+	
+	if ask == True:
+		value = int(core.MY_GENERAL_INPUT_FUNC(valid_value, "Id of the Material to append to (-1 for new)"))
 	if value == -1:
 		add_mat = copy.deepcopy(new_mat)
 		add_mat.faces_ct = 0
@@ -414,7 +449,9 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options
 	else:
 		add_mat = pmx.materials[value]
 		__results.append(f"--- Extended {add_mat.name_jp} instead of creating new material")
+		
 
+	########
 	##  Add faces from that_list with respect to the material at the end
 	if affectPMX:
 		for i in iter(that_faces_list): pmx.faces.append(that_faces_list[i])
@@ -426,13 +463,15 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options
 		items = []
 		add_idx = len(pmx.materials)
 		OPTION_2 = options.get("initial_hidden", None)
-		if OPTION_2 == None:
-			OPTION_2 = core.MY_GENERAL_INPUT_FUNC(lambda x: x in ['y','n'], "Make material initial hidden(y) or visible(n)") == 'y'
+		if OPTION_2 == None or type(OPTION_2) != bool:
+			OPTION_2 = util.ask_yes_no("Make material initial hidden(y) or visible(n)")
 		if (OPTION_2): ## initially hidden
+			__results.append("--- Material is initially hidden")
 			add_mat.alpha = 0
 			kklib.__append_itemmorph_add(items, add_idx)
 			add_mat.flaglist[4] = 0
 		else:
+			__results.append("--- Material is initially visible")
 			add_mat.alpha = 1
 			kklib.__append_itemmorph_mul(items, add_idx)
 			add_mat.flaglist[4] = 1
@@ -458,6 +497,7 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options
 	if affectPMX:
 		if value == -1:
 			pmx.morphs.append(pmxstruct.PmxMorph(add_mat.name_jp, add_mat.name_en, 4, 8, items))
+			#pmx.frames[1].items.append(len(pmx.morphs) - 1)
 			pmx.materials.append(add_mat)
 		print("--------\n Results:" + "\n".join(__results))
 		return __results
