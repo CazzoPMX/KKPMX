@@ -6,6 +6,7 @@ import json
 import os
 import re
 import copy
+from typing import List, Tuple
 
 ### Library
 import nuthouse01_core as core
@@ -30,6 +31,7 @@ def main_starter(callback):
 	core.MY_PRINT_FUNC("Please enter name of PMX input file:")
 	input_filename_pmx = core.MY_FILEPROMPT_FUNC(".pmx").strip('"')
 	pmx = pmxlib.read_pmx(input_filename_pmx, moreinfo=True)
+	if callback == None: return (pmx, input_filename_pmx)
 	core.MY_PRINT_FUNC("====---====")
 	callback(pmx, input_filename_pmx)
 	core.MY_PRINT_FUNC("====---====")
@@ -86,8 +88,8 @@ def load_json_file(path=None, extra=None):
 	else: print("-- Parsing " + path)
 	### Read file
 	try:
-		with open(path, 'r') as myfile: raw_data = myfile.read()
-	except Error as e:
+		with open(path, 'r', encoding='utf-8') as myfile: raw_data = myfile.read()
+	except Exception as e:
 		print(e)
 		return None
 	### Parse JSON
@@ -162,6 +164,11 @@ def ask_direction(message, allow_empty=False):
 	if allow_empty and val in [None, ""]: return None
 	return int(val)
 
+def ask_choices(message: str, choices: List[Tuple[str, object]]):
+	print("-- " + message + ":")
+	idx = core.MY_SIMPLECHOICE_FUNC(range(len(choices)), [(str(i)+": "+str(choices[i][0])) for i in range(len(choices))])
+	return choices[idx][1]
+
 def now(epoch=False): ## :: str(dt) == dt.isoformat(' ')
 	"""
 	Returns the current time as ISO Timestamp
@@ -177,7 +184,7 @@ def copy_file(src, dst): # https://stackoverflow.com/questions/123198
 	from shutil import copyfile, copy2
 	#copyfile(src, dst)
 	copy2(src, dst)
-	
+
 def is_number(text, allow_bool=False):
 	if type(text) is bool: return allow_bool
 	try:
@@ -207,6 +214,10 @@ class Vector3():
 		self.X = X
 		self.Y = Y
 		self.Z = Z
+	@staticmethod
+	def UnitX(): return Vector3(1.0, 0.0, 0.0)
+	@staticmethod
+	def UnitY(): return Vector3(0.0, 1.0, 0.0)
 	@staticmethod
 	def UnitZ(): return Vector3(0.0, 0.0, 1.0)
 	@staticmethod
@@ -293,6 +304,13 @@ class Vector3():
 		result.X = float(left.X * right.X);
 		result.Y = float(left.Y * right.Y);
 		result.Z = float(left.Z * right.Z);
+		return result;
+	
+	def __truediv__(left, right):
+		result = Vector3.Zero()
+		result.X = float(left.X / right.X);
+		result.Y = float(left.Y / right.Y);
+		result.Z = float(left.Z / right.Z);
 		return result;
 	
 	def __neg__(value): ## Negate

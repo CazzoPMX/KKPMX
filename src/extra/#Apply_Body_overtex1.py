@@ -13,7 +13,7 @@ except ImportError as eee:
 	DisplayWithAspectRatio_f = imglib.DisplayWithAspectRatio_f
 
 args = sys.argv[1:]
-print(("\n=== Running Body overtex1 Script with arguments:" + "\n-- %s" * len(args)) % tuple(args))
+print(("\n=== Running overtex1(Body) Script with arguments:" + "\n-- %s" * len(args)) % tuple(args))
 #-------------
 imgMain   = sys.argv[1] ## MainTex.png
 imgMask   = sys.argv[2] ## overtex.png

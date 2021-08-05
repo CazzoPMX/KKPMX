@@ -72,10 +72,10 @@ ct_socks       = "ct_socks"
 ct_shoes       = "ct_shoes"       # not real
 ct_shoes_inner = "ct_shoes_inner"
 ct_shoes_outer = "ct_shoes_outer"
-ct_hair_rear   = "ct_hairB"       # Base or Back
-ct_hair_sides  = "ct_hairS"       # Sides
-ct_hair_front  = "ct_hairF"       # Front
-ct_hair_extend = "ct_hairO_01"    # Extensions
+ct_hairB       = "ct_hairB"       # Base or Back
+ct_hairS       = "ct_hairS"       # Sides
+ct_hairF       = "ct_hairF"       # Front
+ct_hairO_01    = "ct_hairO_01"    # Extensions
 ct_item        = "ct_item"        # not real
 ct_body        = "p_cf_body_00"
 ct_head        = "ct_head"
@@ -152,9 +152,10 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 		out_optBase: "%PMX%/extra",##ask for base path ++ rename all "exported textures" in said folder
 	}
 	arr.append((out_opt, opt))
-	print("--- << some nice message >>")
 	json_ren = util.load_json_file()
-	if json_ren is None: return False
+	if json_ren is None:
+		print("--- No file has been generated")
+		return False
 	if raw_meta in json_ren:
 		if raw_name in json_ren[raw_meta]:
 			arr[2] = (out_name, json_ren[raw_meta][raw_name])
@@ -204,7 +205,7 @@ def GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree):
 	arr.append(Comment("== Head ==", end=True))
 	##	>	cf_m_mayuge_00 -- Comment(": Type 3 (vertical short)")
 	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_mayuge_00", opt_Comment: Comment(idx="Eyebrows") })
-	arr.append(("cf_m_mayuge_00*1", "cf_m_mayuge_00")) ## @todo: Add option to produce merged if no textures
+	#arr.append(("cf_m_mayuge_00*1", "cf_m_mayuge_00")) ## @todo: Add option to produce merged if no textures
 	
 	##	>	cf_m_eyeline_00_up
 	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_eyeline_00_up", opt_Comment: Comment(idx="Upper Eye-line") } )
@@ -236,30 +237,26 @@ def GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree):
 		#// t__Another, t__Color, t__Detail, t__Line, t__Main, t__NorMap
 		opt_Comment: Comment("Export manually", idx="Tongue")
 		})
-	arr.append(Comment(NL=True))
-	
-	return
-	
 	##	write COMMENT_HAIR
 	def search_handler(cat):
 		arr.append(Comment("", idx=cat_to_Title.get(cat,cat)))
-		opt = { opt_Name: cat, # opt_Group: "hair",
-				#opt_texAvail: [t__Alpha, t__Another, t__Detail, t__Line, t__Main, t__NorMap],
-				#opt_texUse: [t__Detail, t__Main],
+		opt = { opt_Name: cat, opt_Group: "hair",
+				opt_texAvail: [t__Alpha, t__Another, t__Detail, t__Line, t__Main, t__NorMap],
+				opt_texUse: [t__Detail, t__Main],
 			}
 		for _name in parent_tree.get(cat, []):
 			opt[opt_Name] = _name
-			write_entity(pmx, arr, tree, opt)
+			write_entity(pmx, arr, json_tree, opt)
 	arr.append(Comment("== Hair ==", end=True))
 	
-	arr.append(("meta__hair", {
-		"Color":       [ 176, 126,  81 ], #// 0.6904762, 0.4949586, 0.3205782
-		"Color2":      [ 160, 121, 117 ], #// 0.6285715, 0.4766880, 0.4624490
-		"Color3":      [ 201, 206, 192 ], #// 0.7887006, 0.8095238, 0.7565193
-		"LineColor":   [  74,  43,  34 ], #// 0.2904761, 0.2082239, 0.1348639
-		"ShadowColor": [ 0.8304498, 0.8662278, 0.9411765 ],
-		"template": True,
-	}, Comment("Use this with 'inherit: \"meta__hair\",' for shared hair colors")))
+	#arr.append(("meta__hair", {
+	#	"Color":       [ 176, 126,  81 ],
+	#	"Color2":      [ 160, 121, 117 ],
+	#	"Color3":      [ 201, 206, 192 ],
+	#	"LineColor":   [  74,  43,  34 ],
+	#	"ShadowColor": [ 0.8304498, 0.8662278, 0.9411765 ],
+	#	"template": True,
+	#}, Comment("Use this with 'inherit: \"meta__hair\",' for shared hair colors")))
 	##	>	MAIN :: ct_hair
 	search_handler(ct_hairB)
 	##	>	BANGS
@@ -347,7 +344,7 @@ def GenerateJsonFile__Accs(pmx, arr, tree, slots, parent_tree):
 		idx = slot.lstrip("ca_slot")
 		name = "-------------------"
 		arr.append(Comment(name, idx="Slot "+str(idx)))
-		print("\n== Printing " + slot)
+		print("== Printing " + slot)
 		### Looks like this: // [01]: ret_Name -- ret_RenderArr.length segments, ret_Parent
 		## repeat for each render found
 		opt = {
@@ -378,10 +375,10 @@ cat_to_Title = {
 	ct_shoes_outer: "Shoes (Outdoor)",
 	#--- alias
 	ct_body       : "Body",
-	ct_hair_rear  : "Hair (Rear)",
-	ct_hair_front : "Bangs",
-	ct_hair_sides : "Hair (Side)",
-	ct_hair_extend: "Extensions",
+	ct_hairB      : "Hair (Rear)",
+	ct_hairF      : "Bangs",
+	ct_hairS      : "Hair (Side)",
+	ct_hairO_01   : "Extensions",
 	ct_item       : "Accessory",
 	}
 
@@ -658,329 +655,6 @@ def treePrinter(pmx, tree, _start):
 		print("{}{}: {}".format(indent*lvl, start, bone.name_jp))
 		for i in tree[start]: __treePrinter(i,indent,lvl+1)
 	__treePrinter(_start)
-
-def sum_cloth_idx(cat):
-	cnt = 0
-	if cat ==         ct_clothesBot: return cnt
-	cnt += cloth_dict[ct_clothesBot]
-	if cat ==         ct_shorts: return cnt
-	cnt += cloth_dict[ct_shorts]
-	if cat ==         ct_socks: return cnt
-	cnt += cloth_dict[ct_socks]
-	if cat ==         ct_shoes: return cnt
-	cnt += cloth_dict[ct_shoes]
-	if cat ==         ct_clothesTop: return cnt
-	cnt += cloth_dict[ct_clothesTop]
-	if cat ==         ct_bra: return cnt
-	cnt += cloth_dict[ct_bra]
-	if cat ==         ct_gloves: return cnt
-	cnt += cloth_dict[ct_gloves]
-	if cat ==         ct_panst: return cnt
-	cnt += cloth_dict[ct_panst]
-	return cnt
-
-ret_Self      = "self"     #== bone_name [from] find_render
-ret_Parent    = "parent"   #== pmx.bones[parent].name_jp (if "ca_slot")
-ret_Render    = "render"   #== The PmxBone
-ret_Mat       = "mat"      #== The PmxMaterial
-ret_Name      = "name"     #== The Common Language Name
-ret_Cat       = "category" #== added by [find_render], used by guess_material
-# Idea: if multiple, then push into Arr & leave the current in ret_Render \ ret_Mat
-ret_RenderArr = "renderArr"
-ret_MatArr    = "materialArr"
-
-def find_render(pmx, tree, bone_name=None, cat=None, oldRet={}):
-	if bone_name is None and cat is not None:
-		bone_name = cat
-	idx = find_bone(pmx, bone_name, False)
-	if idx == -1: raise Exception("Figure out what to do")
-	retObj = { ret_Self: bone_name }
-	retObj.update(oldRet)
-	if cat is not None: retObj[ret_Cat] = cat
-	if bone_name.startswith("ca_slot"):
-		parent = pmx.bones[idx].parent_idx
-		retObj[ret_Parent] = pmx.bones[parent].name_jp ## a_n_*
-	out = { "res": None }
-	########## Clothes
-	if bone_name.startswith("ct_"): return find_render_Clothes(pmx, tree, idx, retObj)
-	########## Accs
-	### At this level: Need to set [ret_Render]
-	#if ret_RenderArr in retObj: res = True
-	#else
-	res = find_child(pmx, tree, idx, r"N_hair((front)|(side)|(back)|(ext)|)")
-	if res: ## == N_hair....
-		bone = descend__multi(pmx, tree, retObj, res) ## === [ cf_hair_* ]
-		retObj[ret_Render] = bone.name_jp
-		## e.g. <DW> Side Tail (R) A  :: cf_hair_31_b_00 >> cf_m_hair_b_31_00_i
-		match = re.match(r'cf_hair_(\d+)_([fsb]|ext)_(\d+)', bone.name_jp)
-		if match:
-			retObj[ret_Mat] = match.expand(r'cf_m_hair_\2_\1_00')
-			return guess_material(pmx, retObj)
-		## e.g. <DW> Wavy Long (L) B  :: cf_hair_f_31_01 >> cf_m_hair_f_31_00
-		match = re.match(r'cf_hair_([fsb]|(ext))_(\d+)_(\d+)', bone.name_jp)
-		if match:
-			retObj[ret_Mat] = match.expand(r'cf_m_hair_\1_\3')
-			if match.groups()[2] is None: retObj[ret_Mat] += '_00'
-			return guess_material(pmx, retObj)
-		raise Exception("[!] Unknown 'N_hair' pattern")
-	#########
-	def walkerReact(out, txt):
-		# tree[start] = [ N_chousei ]; N_chousei = [ N_move ]
-		treePrinter(pmx, tree, out["res"])
-		res = tree[out["res"]] ## N_move = [ <Render> ]
-		if len(res) != 1:
-			res = find_child(pmx, tree, out["res"], "o_")
-			if res is None: raise Exception("'{}': Multiple children".format(txt))
-		else: res = res[0] ## <Render>
-		retObj[ret_Render] = pmx.bones[res].name_jp
-		return guess_material(pmx, retObj)
-	if walker(pmx, tree, idx, ["N_chousei", "N_move"], out): return walkerReact(out, 'N_chousei')
-	if walker(pmx, tree, idx, ["N_chouisei", "N_move"], out): return walkerReact(out, 'N_chouisei')
-	if walker(pmx, tree, idx, ["n_c", "N_move"], out):       return walkerReact(out, 'n_c')
-	if walker(pmx, tree, idx, ["nc", "N_move"], out):        return walkerReact(out, 'nc')
-	if walker(pmx, tree, idx, ["N_move", "n_c"], out):       return walkerReact(out, 'N_move+n_c')
-	if walker(pmx, tree, idx, ["N_move"], out):              return walkerReact(out, 'N_move')
-	raise Exception("<NI>: Could not find any action for " + bone_name)
-
-def find_render_Clothes(pmx, tree, idx, retObj):
-	bone_name = retObj[ret_Self]
-	cat       = retObj[ret_Cat]
-	out       = { "res": None }
-	#####
-	def get_bone_name2(_out,i=0): return pmx.bones[tree[_out["res"]][i]].name_jp
-	def get_bone_name(_out,i=0):  return pmx.bones[_out].name_jp
-	if idx not in tree:
-		print("[!] Index '{}' is missing from the tree!".format(idx))
-		return None
-	if len(tree[idx]) == 0:
-		print(bone_name + " is empty.")
-		return None
-	resArr = walk_to_end(pmx, tree, idx)
-	render = resArr[-1]
-	if len(render) > 1: retObj[ret_RenderArr] = render
-	retObj[ret_Render] = get_bone_name(render[0])
-	## if cat ...
-	return guess_material(pmx, retObj, None, isCloth=True)
-
-def descend(pmx, tree, idx): ### Return all children of tree[idx] as PmxBone
-	arr = []
-	for a in tree[idx]: arr.append(pmx.bones[a])
-	return arr
-
-def descend__multi(pmx, tree, retObj, res):
-	print("[DM]>>",retObj)
-	if ret_RenderArr not in retObj:
-		res = descend(pmx, tree, res)
-		print(">> ",res)
-		if len(res) == 1: return res[0]
-		res.reverse()
-		retObj[ret_RenderArr] = res
-	return retObj[ret_RenderArr].pop()
-
-
-## pmx  tree  idx  str --> idx or None
-def find_child(pmx, tree, start, name):
-	"""
-	Among the children of [start], find one whose name starts with [name]
-	"""
-	for idx in tree[start]: ## ids that have [start] as parent
-		bone = pmx.bones[idx] ## match -> ignore * suffix
-		if re.match(name, bone.name_jp): return idx
-		if re.match(name, bone.name_en): return idx
-	return None
-
-def walker(pmx, tree, start, arr, out, err=None):
-	"""
-	pmx \\ tree \\ int \\ [...str: part of bone_name] \\ out: {"res": idx or None}
-	@return True if [out] can be used, False if no results
-	"""
-	idx = start
-	for elem in arr:
-		idx = find_child(pmx, tree, idx, elem)
-		if not idx: break
-	if idx:
-		out["res"] = idx
-		return True
-	if err: raise Exception("[Walker]: " + str(err))
-	return False
-
-def walk_to_end(pmx, tree, start):
-	idx = start
-	treePrinter(pmx, tree, idx)
-	resArr = []
-	while True: ## Saw cases where still children, but named equal
-		arr = tree[idx]
-		if len(arr) == 0:   break
-		resArr.append(arr)
-		idx = arr[0]
-	return resArr
-
-
-##############
-cat_dict = {
-	ct_top_parts_A: "cf_m_top_",
-	ct_clothesBot:  "cf_m_bot_",
-	ct_bra:         "cf_m_bra_",
-	ct_shorts:      "cf_m_shorts_",
-	ct_shoes_outer: "cf_m_shoes_",
-}
-
-common_render_to_mat = {}
-common_render_to_mat.update({#== Stockings ==#
-	"o_socks_ankle":          [ "cf_m_socks_ankle01", "Ankle Socks" ],
-	})
-common_render_to_mat.update({#== Socks ==#
-	"o_panst_spats01":          [ "cf_m_panst_spats01", "Spats" ],
-	})
-##----
-common_render_to_mat.update({#== Hair ==#
-	"o_acs_head_hair_pin_00": [ "acs_m_hairpine", "Hairpin" ],
-	"o_xpin":                 [ "acs_m_xpin", "Hairpin Cross" ],
-	"o_acs_head_kamidome_00": [ "acs_m_kamidome", "Hairclip" ],
-	"acs_pin_1":              [ "acs_m_pin", "Safety Pin" ],
-	"o_valletta_star1":       [ "acs_m_valletta_star", "Star Accessory" ],
-	"o_valletta_star":        [ "acs_m_valletta_star", "Star Hairclip" ],
-	"o_valletta_heart1":      [ "acs_m_valletta_heart", "Heart Accessory" ],
-	"o_valletta_heart":       [ "acs_m_valletta_heart", "Heart Hairclip" ],
-	### Random others
-	"acs_crescent_moon": [ "crescent_moon_m", "Crescent Moon" ],
-	})
-common_render_to_mat.update({#== Head ==#
-	"o_acs_head_ribbon_00":             [ "acs_m_ribbon", "Ribbon" ],
-	"o_acs_head_headband_00":           [ "acs_m_headband", "Hairband" ],
-	"o_acs_head_mendako_00":            [ "acs_m_mendako", "Octopus"],
-	})
-common_render_to_mat.update({#== Face ==#
-#	"O_nosetama":             [ "mf_m_primmaterial", "" ],
-	})
-common_render_to_mat.update({#== Neck ==#
-	"on_neck_chou":             [ "acs_m_neck_chou", "Bow Tie" ],
-	})
-common_render_to_mat.update({#== Torso ==#
-#	"O_nosetama":             [ "mf_m_primmaterial", "" ],
-	})
-common_render_to_mat.update({#== Waist ==#
-#	"O_nosetama":             [ "mf_m_primmaterial", "" ],
-	})
-common_render_to_mat.update({#== Legs ==#
-#	"O_nosetama":             [ "mf_m_primmaterial", "" ],
-	})
-common_render_to_mat.update({#== Arms ==#
-	"o_syusyu":             [ "acs_m_syusyu_1", "Scrunchie A" ],
-	})
-common_render_to_mat.update({#== Hand ==#
-#	"O_nosetama":             [ "mf_m_primmaterial", "" ],
-	})
-common_render_to_mat.update({#== Groin ==#
-#	"O_nosetama":             [ "mf_m_primmaterial", "" ],
-	})
-common_render_to_mat.update({#== <ymd>Primitive shapes ==#
-	"O_nosetama":         [ "mf_m_primmaterial", None ],
-	"item_O_Sphere":      [ "mf_m_primmaterial", "Sphere" ],
-	"acs_O_cube":         [ "mf_m_primmaterial", "Cube" ],
-	"acs_O_pyramid":      [ "mf_m_primmaterial", "Pyramid" ],
-	"acs_O_cone":         [ "mf_m_primmaterial", "Cone" ],
-	"acs_O_cylinder":     [ "mf_m_primmaterial", "Cylinder" ],
-	"acs_O_octahedron":   [ "mf_m_primmaterial", "Crystal" ],
-	"acs_O_torus":        [ "mf_m_primmaterial", "Ring" ],
-	"acs_O_star":         [ "mf_m_primmaterial", "Star 1" ],
-	"acs_O_heart":        [ "mf_m_primmaterial", "Heart 1" ],
-	"acs_O_claw":         [ "mf_m_primmaterial", "Nails" ],
-	"acs_O_tube01":       [ "mf_m_primmaterial", "Cylinder 1" ],
-	"acs_O_tube03":       [ "mf_m_primmaterial", "Cylinder 2" ],
-	"acs_O_pipe01":       [ "mf_m_primmaterial", "Pipe 1" ],
-	"acs_O_pipe03":       [ "mf_m_primmaterial", "Pipe 2" ],
-	"acs_O_trapezoid":    [ "mf_m_primmaterial", "Trapezoid 1" ],
-	})
-
-def guess_material(pmx, retObj, part=None, isCloth=False):
-	"""
-	Based on existing properties
-	"""
-	render = retObj[ret_Render]
-	easy = common_render_to_mat.get(render)
-	msg  =   "Guessing mat for {} (Part: {})".format(render, part)
-	if ret_Mat in retObj: msg += "\n- guess:         " + retObj[ret_Mat]
-	elif easy           : msg += "\n-  dict:         " + easy[0]
-	print(msg)
-	### If we already have a solid guess, try to use it
-	if ret_Mat in retObj:
-		res = get_from_mat_list(pmx, retObj[ret_Mat])
-		if res is not None:  retObj[ret_Mat]  = res
-		if easy is not None: retObj[ret_Name] = easy[1]
-		return retObj
-	### Try out [part]
-	if part is not None: ## 
-		mat = cat_dict.get(retObj[ret_Cat], "")
-		res = get_from_mat_list(pmx, mat + part)
-		if not res and mat: res = get_from_mat_list(pmx, mat)
-		if res is not None:
-			retObj[ret_Mat] = res
-			easy = common_render_to_mat.get(res)
-		if easy is not None: retObj[ret_Name] = easy[1]
-		return retObj
-	### Try to search in the render dict for a match
-	if easy is not None:
-		retObj[ret_Mat] = get_from_mat_list(pmx, easy[0])
-		retObj[ret_Name] = easy[1]
-		return retObj
-	### Try without prefixes
-	# :: o_acs_(head_)?(\w+)_00 -> acs_m_\1, or 'on_','o_' -> acs_m_\1
-	if isCloth:
-		cat = retObj[ret_Cat]
-		match = re.sub(r'^(on?_)|_[abc]$','', render)
-		res = get_from_mat_list(pmx, match)
-		if res is None: res = get_from_mat_list(pmx, "cf_m_"+match,anywhere=True)
-		if res is None:
-			if cat == ct_top_parts_A: res = get_from_mat_list(pmx, "cf_m_top_")
-			if cat == ct_shorts: res = get_from_mat_list(pmx, "pant")
-		if res is None: res = get_from_mat_list(pmx, match, anywhere=True)
-	else:
-		match = re.sub(r'^(acs_)|^(on_)|^(o_(acs_)?)|_0\d','', render)
-		match = re.sub(r'^(head|ear)_','', match)
-		res = get_from_mat_list(pmx, match)
-		#prefix = "cf_m_" if isCloth else "acs_m_"
-		if res is None: res = get_from_mat_list(pmx, "acs_m_"+match)
-		if res is None: res = get_from_mat_list(pmx, "cf_m_"+match)
-		if res is None: res = get_from_mat_list(pmx, "cf_m_acs_"+match)
-	if res is not None:
-		retObj[ret_Mat] = res
-		return retObj
-	### We are out of luck for now
-	print("[!] No match for render '{}'".format(render))
-	return retObj
-######
-
-### pmx  str --> str or None
-def get_from_mat_list(pmx, name, anywhere=False):
-	"""
-	Find the first unused in pmx.materials that startswith [name]
-	"""
-	#[1] arr = Find all that startswith(name), error if empty # or goto [4]
-	if anywhere: arr = list(filter(lambda x: re.search(x,name), mat_dict.keys()))
-	else:        arr = list(filter(lambda x: x.startswith(name), mat_dict.keys()))
-	#[2] if len == 1, return mat.name_jp (without "Instance")
-	if len(arr) == 1:
-		elem = arr[0]
-		mat_dict[elem] = True
-		return elem
-	#[3] for each in arr
-	for elem in arr:
-	#[.2] check if in <<tabu list>>
-		#print("{} is {}".format(elem, mat_dict[elem]))
-		if mat_dict[elem]:
-	#[.3] if yes, continue
-			continue
-	#[.4] add to tabu list ##\\ or \\ remove from 'unused materials' ## requires global map
-	#>		dict.pop(key,None): Could use as tabu with (is None: continue)
-		mat_dict[elem] = True
-	#[.5] maybe add global_msg("warn about maybe not correct") or as 2nd return
-	#[.6] return name
-		return elem
-	#[4] add to global_msg("No match for render '{}'".format(name))
-	print("- Tried material '{}'".format(name))
-	#[5] return None # or raise Exception(above msg )
-	return None
 
 ##################
 ### Texture Tags

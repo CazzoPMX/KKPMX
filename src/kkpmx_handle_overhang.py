@@ -137,7 +137,9 @@ def run_kk_defaults(pmx, input_filename_pmx):
 			tmp = pmx.bones[bone_idx].pos[idx]
 			bounds[key] = (bounds.get(key,0)+tmp)/2
 	
-	if util.ask_yes_no("KK Defaults: Restrict to optimized box around chest ?"):
+	choices = [("Detailed", 0), ("Rough Box", 1), ("No", 2)]
+	choice = util.ask_choices("KK Defaults: Restrict to optimized box around chest ?", choices)
+	if choice == 0:
 		#if kklib.find_bone(pmx, "cf_j_spinesk_02", True):
 		#	addIfFound("cf_j_spinesk_02", "maxY", 1)
 		#	addIfFound("cf_hit_bust00", "minY", 1)
@@ -159,6 +161,13 @@ def run_kk_defaults(pmx, input_filename_pmx):
 		averageOut("胸親", "maxZ", 2)
 		averageOut("cf_s_bust03_R", "maxZ", 2)
 		averageOut("cf_s_bust03_R", "maxZ", 2)
+	elif choice == 1:
+		addIfFound("cf_d_arm01_R", "minX", 0)
+		addIfFound("cf_d_arm01_L", "maxX", 0)
+		addIfFound("cf_s_spine02", "minY", 1)
+		addIfFound("cf_d_arm01_L", "maxY", 1)
+		bounds["maxZ"] = 3
+		bounds["minZ"] = -3
 	elif has_inside:
 		bounds = get_bounding_box(pmx, inside)
 	
@@ -169,14 +178,24 @@ def run_kk_defaults(pmx, input_filename_pmx):
 		"initial_hidden": True,
 	}
 	
-	if has_inside:
-		results = __run(pmx, outside, inside, bounds, options=options)
-		log_line.append(f"Isolated vertices of {inside.name_jp} peaking through {outside.name_jp}")
-		log_line.append(results)
-		log_line.append("--------")
-		print("-------------------")
-	results = __run(pmx, outside, body, bounds, options=options)
-	log_line.append(f"Isolated vertices of {body.name_jp} peaking through {outside.name_jp}")
+	if choice == 1:
+		if has_inside:
+			results = cut_out_box_from_material(pmx, bounds, util.find_mat(pmx, inside.name_jp))
+			#log_line.append(f"Isolated vertices of {inside.name_jp} peaking through {outside.name_jp}")
+			log_line.append(results)
+			#log_line.append("--------")
+			print("-------------------")
+		results = cut_out_box_from_material(pmx, bounds, util.find_mat(pmx, body.name_jp))
+		#log_line.append(f"Isolated vertices of {body.name_jp} peaking through {outside.name_jp}")
+	else:
+		if has_inside:
+			results = __run(pmx, outside, inside, bounds, options=options)
+			log_line.append(f"Isolated vertices of {inside.name_jp} peaking through {outside.name_jp}")
+			log_line.append(results)
+			log_line.append("--------")
+			print("-------------------")
+		results = __run(pmx, outside, body, bounds, options=options)
+		log_line.append(f"Isolated vertices of {body.name_jp} peaking through {outside.name_jp}")
 	log_line.append(results)
 	kklib.end(pmx, input_filename_pmx, "_cutScan", core.flatten(log_line))
 run_kk_defaults.__doc__ = infotext
@@ -506,10 +525,11 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options
 		print("\n".join(__results))
 		return False
 ################
-def cut_out_box_from_material(pmx, new_bounds):
+def cut_out_box_from_material(pmx, new_bounds, mat_idx=None):
 	moreinfo = False
 	from kkpmx_core import ask_for_material, from_material_get_faces, from_faces_get_vertices
-	mat_idx = ask_for_material(pmx, ": Material to cut vertices off from", default="cf_m_body", returnIdx=True)
+	if mat_idx is None:
+		mat_idx = ask_for_material(pmx, ": Material to cut vertices off from", default="cf_m_body", returnIdx=True)
 	base_mat = pmx.materials[mat_idx]
 	##  Their verts
 	faces = from_material_get_faces(pmx, mat_idx, False)

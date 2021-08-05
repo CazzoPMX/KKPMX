@@ -99,11 +99,13 @@ def main(moreinfo=True):
 	else: print_help(idx)
 	# prompt PMX name
 	core.MY_PRINT_FUNC(">> The script can be terminated at any point by pressing Ctrl+C")
-	core.MY_PRINT_FUNC("Please enter name of PMX input file:")
+	core.MY_PRINT_FUNC("Type the Name of the PMX input file (or drag'n'drop it into the console window)")
 	input_filename_pmx = core.MY_FILEPROMPT_FUNC('.pmx')
-	
+	print("")
 	pmx = pmxlib.read_pmx(input_filename_pmx, moreinfo=moreinfo)
+	print("==--==")
 	choices[idx][1](pmx, input_filename_pmx)
+	print("==--==")
 	core.MY_PRINT_FUNC("Done!")
 	return None
 
@@ -111,25 +113,28 @@ def main(moreinfo=True):
 ### Main Method ###
 ###################
 
-def cleanup_texture(pmx, input_filename_pmx, write_model=True): ### [01]
+def cleanup_texture(pmx, input_filename_pmx, write_model=True, opt = {}): ### [01]
 	"""
 This is one of two main methods to make KK-Models look better.
 It does the following things:
 
 - disable "Bonelyfans", "Standard" (+ emblem if no texture)
 - Simplify material names (removes "(Instance)" etc)
-- if tex_idx != -1: Set diffRGB to [1,1,1] ++ add previous to comment
-- else:             Set specRGB to [diffRGB] ++ add previous to comment
-- Set toon_idx = "toon02.bmp"
+- After promting user for permission:
+-  - if tex_idx != -1: Set diffRGB to [1,1,1] ++ add previous to comment
+-  - else:             Set specRGB to [diffRGB] ++ add previous to comment
+- If no toon: Set toon_idx = "toon02.bmp"
 - Rename certain bones to match standard MMD better
 - Only for KK-Models:
 -  - Adjust Ankle Bones to avoid twisted feet
--  - Adjust Skirt physics
--  - Add Hair physics
 - Remove items with idx == -1 from dispframes [<< crashes MMD]
 - Fix invalid vertex morphs [<< crashes MMD]
 
 In some cases, this is already enough to make a model look good for simple animations.
+Which is why this also standardizes color and toon,
+
+Options (for Automization):
+- "colors": bool -- Standardize colors. Asks user if None
 
 Output: PMX File '[filename]_cleaned.pmx'
 """
@@ -153,9 +158,18 @@ Output: PMX File '[filename]_cleaned.pmx'
 	#disable_mat("acs_m_kedama (Instance) (Instance)")
 
 	kk_re = re.compile(r" ?\(Instance\)_?(\([-0-9]*\))?")
+	flag = opt.get("colors", None)
+	if flag is None: flag = util.ask_yes_no("Standardize Colors")
 	for mat in pmx.materials:
 		mat.name_jp = kk_re.sub("", mat.name_jp)
 		mat.name_en = kk_re.sub("", mat.name_en)
+		
+		### Only if no custom toon registered
+		if mat.toon_mode == 0 and mat.toon_idx < 0:
+			mat.toon_mode = 1
+			mat.toon_idx  = 1 ## toon02.bmp
+		
+		if not flag: continue
 		
 		### KK Materials with own texture rarely use the diffuse color
 		### So replace it with [1,1,1] to make it fully visible
@@ -175,10 +189,6 @@ Output: PMX File '[filename]_cleaned.pmx'
 				mat.comment = mat.comment + "\r\n[Old Specular]: " + str(mat.specRGB)
 			mat.specRGB = [0,0,0]
 		
-		### Only if no custom toon registered
-		if mat.toon_mode == 0 and mat.toon_idx < 0:
-			mat.toon_mode = 1
-			mat.toon_idx  = 1 ## toon02.bmp
 	#-------
 	disable_mat("cf_m_emblem", no_tex_only=True)
 	#-------
@@ -206,8 +216,8 @@ Output: PMX File '[filename]_cleaned.pmx'
 	def rename_bone(org, newJP, newEN):
 		tmp = find_bone(pmx, org, False)
 		if tmp is not None:
-			pmx.bones[tmp].name_jp = newJP
-			pmx.bones[tmp].name_en = newEN
+			if newJP is not None: pmx.bones[tmp].name_jp = newJP
+			if newEN is not None: pmx.bones[tmp].name_en = newEN
 	def bind_bone(arr):
 		while len(arr) > 1:
 			parent = find_bone(pmx, arr[0], False)
@@ -236,8 +246,6 @@ Output: PMX File '[filename]_cleaned.pmx'
 			pmx.bones[ik].tail = [0, 0, 1.3]
 	tmp("cf_d_leg03_L", "左足首", "左足ＩＫ")
 	tmp("cf_d_leg03_R", "右足首", "右足ＩＫ")
-	
-	
 	## add [グルーブ][groove] at [Y +0.2] between [center] and [BodyTop] :: Add [MVN], [no VIS] head optional
 	## add [腰][waist] at ??? between [upper]/[lower] and [cf_j_hips]
 		
@@ -245,11 +253,23 @@ Output: PMX File '[filename]_cleaned.pmx'
 	###### ---- dispframes
 	## add [BodyTop], [両目], [eye_R, eye_L], [breast parent] [cf_j_hips] to new:[TrackAnchors]
 	frames = [
-		[0, find_bone(pmx,"両目", False)], [0, find_bone(pmx,"左目", False)],
-		[0, find_bone(pmx,"右目", False)], [0, find_bone(pmx, "breast parent", False)],
-		[0, find_bone(pmx, "cf_j_hips", False)], [0, find_bone(pmx,"BodyTop", False)],
+		[0, find_bone(pmx, "両目", False)],      #	19.14828 - Over the head
+		[0, find_bone(pmx, "左目", False)], [0, find_bone(pmx,"右目", False)],
+		[0, find_bone(pmx, "cf_J_Eye_tz", False)], #	- Between Eyes
+		#[0, find_bone(pmx, "cf_J_FaceUp_ty", False)], #	- Slightly below base of eyes
+		[0, find_bone(pmx, "首", False)],        #	15.45564 - Top of Arms
+		[0, find_bone(pmx, "胸親", False)],      #	14.10473 - Center of Chestbone
+		[0, find_bone(pmx, "上半身2", False)],    #	13.19746 - Bottom edge of Chestbone
+		[0, find_bone(pmx, "上半身", False)],     #	12.23842 - Slightly above navel
+		#[0, find_bone(pmx, "cf_j_hips", False)], #	12.18513 - 
+		[0, find_bone(pmx, "下半身", False)],     #	12.13186 - Slightly above navel
+		### navel -- 11.96193 < cf_d_sk_top (12.0253)
 	]
-	pmx.frames.append(pmxstruct.PmxFrame("TrackAnchors", "TrackAnchors", False, frames))
+	rename_bone("cf_J_Eye_tz", None, "Between Eyes")
+	#rename_bone("両目", None, "Top of Head")
+	
+	if find_disp(pmx, "TrackAnchors", False) in [None, -1]:
+		pmx.frames.append(pmxstruct.PmxFrame("TrackAnchors", "TrackAnchors", False, frames))
 	## add [groove] to [center]
 	## add [waist] to [lower body]
 	
@@ -306,7 +326,7 @@ There are some additional steps that cannot be done by a script; They will be me
 	#-------------#
 	section("[0] Bare minimum cleanup")
 	## run cleanup_texture --- [0] because it renames the materials as well
-	path = cleanup_texture(pmx, input_filename_pmx, write_model)
+	path = cleanup_texture(pmx, input_filename_pmx, write_model, {"colors": True})
 	if write_model: util.copy_file(path, input_filename_pmx)
 	#-------------#
 	section("[1] Plugin File")
@@ -898,7 +918,7 @@ def from_vertices_get_faces(pmx, vert_arr, mat_idx=-1, returnIdx=False, debug=No
 		if debug and DEVDEBUG: print("[{:4d}]: contains {}".format(idx, tmp))
 		#faces[idx] = pmx.verts[tmp[0]] --> Only saves the 'to be replaced' vertices
 		#** If cutting on a line, only two vertices will ever be affected, so always an free one.
-		#** For overlap calc, there is always at least one affected, so there could be 2,1, or 0 free ones.
+		#** For overlap calc, there is always at least one affected, so there could be 2, 1, or 0 free ones.
 		tmp = [i for i in face if i not in vert_arr]
 		if    trace: faces[idx] = face#tmp
 		elif  point: faces[idx] = [ pmx.verts[face[0]], pmx.verts[face[1]], pmx.verts[face[2]] ]
@@ -931,7 +951,7 @@ The optional flag controls which parent the new bones use:
 -- The parent itself will use ID:0 (root) as parent
 
 Bones are reused if they already exist:
--- If used, the parent itself will be called '[mat.name_jp]_root' // @verify
+-- If used, the parent itself will be called '[mat.name_jp]_root'
 -- With parent, new bones are called '[bone.name]_[mat.name_jp]'
 -- Otherwise,   new bones are called '[bone.name]_new'
 
@@ -1127,7 +1147,8 @@ def __do(pmx, input_filename_pmx): pass
 def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 	"""
 	Main Finalizer for Model changes.
-	Will never overwrite any existing files (instead adds _1, _2, ...)
+	Will never overwrite any existing files (instead adds 1, 2, ...)
+	If @suffix ends with a number, will add '_' inbetween.
 	
 	:param pmx                [PMX] : The context instance. Set none to only write a log_line.
 	:param input_filename_pmx [str] : The working directory + PMX File name
@@ -1137,8 +1158,12 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 	# write out
 	has_model = pmx is not None
 	print("----------------")
+	suffix = "" if suffix is None else str(suffix)
 	output_filename_pmx = input_filename_pmx[0:-4] + suffix + ".pmx"
-	output_filename_pmx = core.get_unused_file_name(output_filename_pmx)
+	if suffix and util.is_number(suffix[-1]) and os.path.exists(output_filename_pmx):
+		arr = [output_filename_pmx[0:-4] + "_.pmx"]
+		output_filename_pmx = core.get_unused_file_name(arr[0], arr)
+	else: output_filename_pmx = core.get_unused_file_name(output_filename_pmx)
 	if log_line:
 		paths = os.path.split(output_filename_pmx)
 		path = os.path.join(paths[0], "editlog.log")
@@ -1155,7 +1180,7 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 	return None
 
 if __name__ == '__main__':
-	print("Cazoo - 2021-07-03 - v.1.2.0")
+	print("Cazoo - 2021-08-05 - v.1.3.0")
 	if DEBUG or DEVDEBUG:
 		main()
 		core.pause_and_quit("Done with everything! Goodbye!")

@@ -27,7 +27,7 @@ if hlTwo:
 #-------------
 if hlOne == False and hlTwo == False: exit()
 #-------------
-print(("\n=== Running Body overtex1 Script with arguments:" + "\n-- %s" * len(args)) % tuple(args))
+print(("\n=== Running overtex1(Eyes) Script with arguments:" + "\n-- %s" * len(args)) % tuple(args))
 
 image     = cv2.imread(pathMain, cv2.IMREAD_UNCHANGED)
 if hlOne:

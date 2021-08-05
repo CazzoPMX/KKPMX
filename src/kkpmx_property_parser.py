@@ -319,7 +319,7 @@ def parse_color(pmx, mat, attr):
 	#	mat.ambRGB = attr[Color_Shadow][:3]
 
 def parse_body(pmx, mat, attr):
-	print(":: Running 'body' parser")
+	print(":: Running 'body / face' parser")
 	### (sic): body has no t__Alpha
 	# t__Detail, t__Line, t__liquid, t__Main, t__NorMap, t__NorMapDet, t__NorMask, t__overtex1+2+3
 	# Color_Tex1+2+3,  Color_Shadow, Color_Specular
@@ -556,6 +556,7 @@ def handle_body_overtex1(pmx, attr):
 	#size = attr["nipsize"]      # 0.6677417
 	#mask = attr["tex1mask"]     # 1 -- Original vs. color overlay
 	#-----------
+	if NotFound(attr, t__overtex1): return
 	
 	arg1 = quote(get_working_texture(attr))
 	arg2 = quote(attr[t__overtex1])
@@ -605,9 +606,8 @@ def handle_eye_highlight(pmx, attr): ## Actually uses all three colors, so color
 
 def handle_acc_color(pmx, attr):
 	if NO_FILES in attr: return
-	if not os.path.exists(attr[t__Color]):
-		print(f">--> [MissingFile(Color)]: {attr[t__Color]}")
-		return
+	if NotFound(attr, t__Color): return
+	
 	main = attr.get(t__Main, None)
 	if main and not os.path.exists(main): main = None
 	attr[t__Main] = main
@@ -623,9 +623,8 @@ def handle_acc_color(pmx, attr):
 
 def handle_acc_detail(pmx, attr): ## Has @todo_add \\ @open: All the props affecting t__Detail
 	if NO_FILES in attr: return
-	if not os.path.exists(attr[t__Detail]):
-		print(f">--> [MissingFile(Detail)]: {attr[t__Detail]}")
-		return
+	if NotFound(attr, t__Detail): return
+	
 	### Determine main texture & blend mode
 	attr.setdefault(t__Main, None)
 	mode = "overlay"
@@ -675,6 +674,9 @@ def call_img_scripts(args, target):
 		except Exception as eee: print(eee)
 
 def ask_to_rename_extra(base):
+	if not os.path.exists(base):
+		print(f"{base} does not exist")
+		return
 	files = os.listdir(base)
 	if not any(filter(lambda x: x.startswith("_Export"), files)): return
 	if not util.ask_yes_no(f"Rename textures in [{base}]"): return
@@ -711,10 +713,10 @@ tex_mode_main = "main"
 tex_mode_sphr = "sphere"
 def set_new_texture(pmx, mat, attr, tex_names: list, tex_mode=tex_mode_main):
 	"""
-	:param  mat [PmxMaterial]
-	:param  attr [Dict]
-	:param  tex_names [Dict]
-	:
+	:param  mat [PmxMaterial]  
+	:param  attr [Dict]        
+	:param  tex_names [Dict]   
+	:param  tex_mode [enum]    "toon", "main", or "sphere"
 	"""
 	isToonMode = tex_mode == tex_mode_toon
 	isSphereMode = tex_mode == tex_mode_sphr
@@ -748,6 +750,12 @@ def get_working_texture(attr):
 		if attr[t__Main] is not None:
 			return attr[t__Main]
 	raise Exception("Could not find working main texture")
+
+def NotFound(attr, name): ## Returns true if not found
+	if not os.path.exists(attr[name]):
+		print(f">--> [MissingFile({name})]: {attr[name]}")
+		return True
+	return False
 
 ##############
 ## Mappings ##

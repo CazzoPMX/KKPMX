@@ -123,18 +123,21 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  
 >  - disable "Bonelyfans", "Standard" (+ emblem if no texture)
 >  - Simplify material names (removes "(Instance)" etc)
->  - if tex_idx != -1: Set diffRGB to `[1,1,1]` ++ add previous to comment
->  - else:             Set specRGB to `[diffRGB]` ++ add previous to comment
->  - Set toon_idx = "toon02.bmp"
+>  - After promting user for permission:
+>  -  - if tex_idx != -1: Set diffRGB to `[1,1,1]` ++ add previous to comment
+>  -  - else:             Set specRGB to `[diffRGB]` ++ add previous to comment
+>  - If no toon: Set toon_idx = "toon02.bmp"
 >  - Rename certain bones to match standard MMD better
 >  - Only for KK-Models:
 >  -  - Adjust Ankle Bones to avoid twisted feet
->  -  - Adjust Skirt physics
->  -  - Add Hair physics
 >  - Remove items with idx == -1 from dispframes `[<< crashes MMD]`
 >  - Fix invalid vertex morphs `[<< crashes MMD]`
 >  
 >  In some cases, this is already enough to make a model look good for simple animations.
+>  Which is why this also standardizes color and toon,
+>  
+>  Options (for Automization):
+>  - "colors": bool -- Standardize colors. Asks user if None
 >  
 >  Output: PMX File '`[filename]`_cleaned.pmx'
 
@@ -283,7 +286,7 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  - The parent itself will use ID:0 (root) as parent
 >  
 >  Bones are reused if they already exist:
->  - If used, the parent itself will be called '`[mat.name_jp]`_root' // @verify
+>  - If used, the parent itself will be called '`[mat.name_jp]`_root'
 >  - With parent, new bones are called '`[bone.name]`_`[mat.name_jp]`'
 >  - Otherwise,   new bones are called '`[bone.name]`_new'
 >  
@@ -328,9 +331,12 @@ Most modes will always create a new file and append a suffix (see [Output]).
 ### (12) Run Rigging Helpers
 
 >  Rigging Helpers for KK.
->  - Adjust Body Physics (so far only adjusts the Rear RigidBody)
->  - Transform Skirt Grid from Cubicle to Rectangles
+>  - Adjust Body Physics (best guess attempt for butt, adds Torso, Shoulders, and Neck to aid hair collision)
+>  - Transform Skirt Grid from Cubicle to Rectangles (and other things to attempt more fluid movements)
+>  - Untangle merged Materials (or tries )
+>  -  - Since KKExport loves to merge vertex meshes if they are bound to bones sharing the same name, this corrects the bone weights. Exception: The bones at the end of the list have just messed up parents instead of merged vertices.
+>  -  - Works by mapping materials with '`[:AccId:]` XX' to a bone chain starting with 'ca_slotXX', with XX being a number (and equal in both).
 >  - Rig Hair Joints
->  -  - Since KKExport loves to merge vertex meshes if they are bound to bones sharing the same name, this also corrects the bone weights
->  -  - The "normal" rigging can also be reproduced by selecting a linked bone range, and opening `[Edit]`>`[Bone]`>`[Create Rigid/Linked Joint]`
 >  -  - Sometimes needs minor optimizations, but also allows a bit of customization (by changing the Rigid Type of the chain segments)
+>  -  - The "normal" rigging can also be reproduced by selecting a linked bone range, and opening `[Edit]`>`[Bone]`>`[Create Rigid/Linked Joint]`
+>  -  - Disclaimer: Might not work in 100% of cases since there is no enforced bone naming convention for plugins (e.g. using 'root' as start)
