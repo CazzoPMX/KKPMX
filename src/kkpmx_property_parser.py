@@ -199,6 +199,7 @@ def __parse_json_file(pmx, data: dict, root: str):
 		pmx.header.name_en = name
 	
 	ask_to_rename_extra(base)
+	fix_material_names(pmx, data)
 	
 	for mat_name in data.keys():
 		if mat_name in [NAME, BASE, OPTIONS]: continue
@@ -691,6 +692,26 @@ def ask_to_rename_extra(base):
 			continue
 		os.renames(basename, newname)
 
+def fix_material_names(pmx, data):
+	matJsn = []
+	for mat_name in data.keys():
+		if mat_name in [NAME, BASE, OPTIONS]: continue
+		if re.search("(@ca_slot\d+|#-\d+)$", mat_name): continue
+		matJsn.append(mat_name)
+	for mat in pmx.materials:
+		name = re.sub("(@ca_slot\d+|#-\d+|\*\d+)?$", "", mat.name_jp)
+		arr = [x for x in matJsn if x.startswith(name)]
+		if len(arr) == 0: print(f"[*] {name} has no match in matJsn"); continue
+		elem = arr[0]
+		mat.name_jp = elem
+		mat.name_en = elem
+		del matJsn[matJsn.index(elem)]
+	if len(matJsn) != 0: print("[**] matJsn is not empty: "); print(matJsn)
+	
+##############
+	pass
+
+
 #def quote(value): return '"' + re.sub("\\", "\\\\", str(value)) + '"'
 def quote(value): ## return '"' + str(value).strip('"').strip("'") + '"'
 	tmp =  '"' + str(value).strip('"').strip("'") + '"'
@@ -820,12 +841,16 @@ shader_dict = {
 	#	"main_skin": "body", ## cm_m_dankon, cm_m_dan_f
 	# t__Another, t__Color, t__Detail, t__Line, t__Main, t__NorMap
 	"main_item": "item",
+	"main_item_studio": "item",   ## ++ PatternMask 1,2,3 \\ several uncommon attr
+	"main_item_emission": "item", ##  ++ z__AnimationMask \\ z__EmissionPower
 	# t__Alpha, t__Another, t__Detail, t__Line, t__liquid, t__Main, t__NorMap, 
 	"main_opaque": "cloth",
+	"main_opaque2": "cloth", #-- z__AlphaMaskuv
 	# t__Alpha, t__Another, t__Color, t__Detail, t__HairGloss, t__Main, t__NorMap
 	"main_hair": "hair",
 	"main_hair_front": "hair",
 	"main_alpha": "alpha",
+	#### 
 	}
 
 

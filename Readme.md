@@ -5,7 +5,7 @@
 This package is a tool chain to perform necessary edits to exported Koikatsu (KK) Models to be more useful for MMD.
 
 
-I made it to allow others exploring the possibility of using KK as alternative to searching the Internet for models. Half of the time, the model exists and may even be decently made. But you wouldn't be here if you were satisfied with that. This project might be what you want if any of the following applies to you:
+I made it to allow others exploring the possibility of using KK as alternative to searching the Internet for models (mainly Pixiv or booru). Half of the time, the model exists and may even be decently made. But you wouldn't be here if you were satisfied with that. This project might be what you want if any of the following applies to you:
 
  - You simply cannot find the model you desire or don't trust shady links.
  - The model exists, but may otherwise be incomplete for your purposes (Physics, costume, Doll Anatomy, ...)
@@ -333,8 +333,8 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  Rigging Helpers for KK.
 >  - Adjust Body Physics (best guess attempt for butt, adds Torso, Shoulders, and Neck to aid hair collision)
 >  - Transform Skirt Grid from Cubicle to Rectangles (and other things to attempt more fluid movements)
->  - Untangle merged Materials (or tries )
->  -  - Since KKExport loves to merge vertex meshes if they are bound to bones sharing the same name, this corrects the bone weights. Exception: The bones at the end of the list have just messed up parents instead of merged vertices.
+>  - Untangle merged Materials
+>  -  - Since KKExport loves to merge vertex meshes if they are bound to bones sharing the same name, this also corrects the bone weights
 >  -  - Works by mapping materials with '`[:AccId:]` XX' to a bone chain starting with 'ca_slotXX', with XX being a number (and equal in both).
 >  - Rig Hair Joints
 >  -  - Sometimes needs minor optimizations, but also allows a bit of customization (by changing the Rigid Type of the chain segments)

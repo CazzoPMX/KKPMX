@@ -152,6 +152,7 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 		out_optBase: "%PMX%/extra",##ask for base path ++ rename all "exported textures" in said folder
 	}
 	arr.append((out_opt, opt))
+	#print("--- << some nice message >>")
 	json_ren = util.load_json_file()
 	if json_ren is None:
 		print("--- No file has been generated")
@@ -237,6 +238,10 @@ def GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree):
 		#// t__Another, t__Color, t__Detail, t__Line, t__Main, t__NorMap
 		opt_Comment: Comment("Export manually", idx="Tongue")
 		})
+	#arr.append(Comment(NL=True))
+	#
+	#return
+	
 	##	write COMMENT_HAIR
 	def search_handler(cat):
 		arr.append(Comment("", idx=cat_to_Title.get(cat,cat)))
@@ -250,10 +255,10 @@ def GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree):
 	arr.append(Comment("== Hair ==", end=True))
 	
 	#arr.append(("meta__hair", {
-	#	"Color":       [ 176, 126,  81 ],
-	#	"Color2":      [ 160, 121, 117 ],
-	#	"Color3":      [ 201, 206, 192 ],
-	#	"LineColor":   [  74,  43,  34 ],
+	#	"Color":       [ 176, 126,  81 ], #// 0.6904762, 0.4949586, 0.3205782
+	#	"Color2":      [ 160, 121, 117 ], #// 0.6285715, 0.4766880, 0.4624490
+	#	"Color3":      [ 201, 206, 192 ], #// 0.7887006, 0.8095238, 0.7565193
+	#	"LineColor":   [  74,  43,  34 ], #// 0.2904761, 0.2082239, 0.1348639
 	#	"ShadowColor": [ 0.8304498, 0.8662278, 0.9411765 ],
 	#	"template": True,
 	#}, Comment("Use this with 'inherit: \"meta__hair\",' for shared hair colors")))
@@ -615,7 +620,14 @@ def generate_render_tree(pmx, tree, json_ren):
 #
 def generate_material_tree(pmx, tree, render_tree: dict, json_mats: dict):
 	"""
-	:param render_tree dict
+	:param [tree]: unused
+	:param [render_tree] dict -- { bone_idx: render }
+	:param [json_mats]   dict -- { mat name: material }
+	
+	@return [json_mats] which now contains these fields
+	-- All fields used by [generated.Material]
+	-- Field 'render' which contains a copy of the corresponding item in [render_tree]
+	-- Said [render_tree] item having [generated.Render.Name] in 'target'
 	"""
 	#util.write_json(json_mats, "_gen\#2M00_json_mats", True)
 	
