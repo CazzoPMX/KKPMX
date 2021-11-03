@@ -95,6 +95,7 @@ def resize(imgSource, imgTarget):
     return imgSource
 
 def normalize_color(color): ## from: body_overtex1
+	if type(color).__name__ == 'ndarray': color = color.tolist()
 	if any([x > 1 for x in color]):
 		if len(color) == 3: color.append(255)
 		return color
@@ -102,10 +103,12 @@ def normalize_color(color): ## from: body_overtex1
 	return [ int(color[0]*255), int(color[1]*255), int(color[2]*255), int(color[3]*255) ]
 
 def extendChannel(img, _alpha=None):
-	if _alpha is None: _alpha = np.ones(img.shape[:2], dtype="uint8") * 255
+	""" Expand a single RGB-Channel into a full RGB canvas with optional Alpha."""
+	if _alpha is None: _alpha = np.ones(img.shape[:2], dtype=img.dtype) * 255
 	return cv2.merge([img, img, img, _alpha])
 
 def extendAlpha(img):
+	""" Add an empty canvas for a 2D Alpha channel. """
 	tmp = np.ones(img.shape[:2], dtype="uint8") * 255
 	return cv2.merge([tmp, tmp, tmp, img])
 
@@ -125,10 +128,13 @@ def resizeWithAspectRatio(_img, width=None, height=None):
 	return resize(_img, dim)
 
 def get_blend_mode(blend_mode):
+	""" See https://pythonhosted.org/blend_modes/ """
+	if blend_mode in dir(blend_modes): return getattr(blend_modes, blend_mode)
 	blendDict = {#		mode = "darken" ## Try: "mul" "diff" "nor"
 		"normal": blend_modes.normal,
 		"overlay": blend_modes.overlay,
 		"add": blend_modes.addition,
+		"lighten": blend_modes.lighten_only,
 		"darken": blend_modes.darken_only,
 		"mul": blend_modes.multiply,
 		"diff": blend_modes.difference,
@@ -137,6 +143,15 @@ def get_blend_mode(blend_mode):
 	return blendDict[blend_mode]
 
 def blend_segmented(blend_mode, main, mask, alpha):
+	"""
+	@param :blend_mode: str or Func
+	@param :main:       -- Background image
+	@param :mask:       -- Foreground image
+	@param :alpha:      -- Opacity
+	
+	Applies the given blend_mode to @main and @mask, using @alpha as opacity.
+	To save resources, images are processed in chunks of 1024x1024 
+	"""
 	if type(blend_mode) == str: blend_mode = get_blend_mode(blend_mode)
 	_main = converter(main, addAlpha=True)
 	_mask = converter(mask, addAlpha=True)
@@ -156,6 +171,13 @@ def blend_segmented(blend_mode, main, mask, alpha):
 		for x in width:
 			image[y,x,:] = blend_mode(_main[y,x,:], _mask[y,x,:], alpha)
 	return image
+
+def ensureAlpha(img, imgAlpha=None):
+	if len(img.shape) == 2: return extendChannel(img, imgAlpha)
+	if img.shape[2] == 4: return img
+	if not imgAlpha:
+		imgAlpha = np.ones(img.shape[:2], dtype='uint8') * 255
+	return cv2.merge([img[:,:,0], img[:,:,1], img[:,:,2], imgAlpha])
 
 ######
 ## Main
@@ -301,7 +323,7 @@ def applyColor_org(opt, _mask, _colArr, tag): ## Original from [ColorMask]
 	## Apply mask again
 	return np.bitwise_and(bitmask, _mask)
 
-def getColorMask(opt, _mask, _colArr, tag): ## from [overtex]
+def getColorMask(opt, _mask, _colArr, tag="", useKKOrder=True): ## from [overtex]
 	"""
 	_mask :: One Color channel of [imgMask] as BW, extended into 3-Channel
 	:: Only cv2.show & cv2.addWeighted need it as 3-Channel + Convenient for 'Additive'
@@ -310,7 +332,9 @@ def getColorMask(opt, _mask, _colArr, tag): ## from [overtex]
 	Given a mask [0], create a colImg based on an RGBA color [1] that is affected by [0].alpha
 	"""
 	if opt["show"]: print(_colArr)
-	if len(_colArr) == 3: _colArr.push(1)
+	_colArr = normalize_color(_colArr)
+	if len(_mask.shape) == 2: _mask = extendAlpha(_mask)
+	elif _mask.shape[2] == 1: _mask = extendAlpha(_mask)
 	
 	## Create an image of this color
 	colImg0 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[0]
@@ -318,24 +342,109 @@ def getColorMask(opt, _mask, _colArr, tag): ## from [overtex]
 	colImg2 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[2]
 	colImg3 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[3]
 	
-	colImg = cv2.merge([colImg2, colImg1, colImg0, colImg3]) ## Apparently the KK-RGB is as BGR, so do that
-	#DisplayWithAspectRatio(opt, 'Color'+tag,     colImg.astype("uint8"), 256)## A canvas of this Color
+	## Apparently the KK-RGB is as BGR, so do that
+	if useKKOrder: colImg = cv2.merge([colImg2, colImg1, colImg0, colImg3])
+	else:          colImg = cv2.merge([colImg0, colImg1, colImg2, colImg3])
+	DisplayWithAspectRatio(opt, 'Color'+tag,     colImg.astype("uint8"), 256)## A canvas of this Color
 
 	mask_color = np.bitwise_and(extendAlpha(_mask[:,:,3]), colImg)
 
 	DisplayWithAspectRatio(opt, 'ColorMaskAlpha'+tag, mask_color, 256)## A canvas of this Color
 	return mask_color
 
+def getColorImg(opt, _mask, _colArr, tag="", useKKOrder=False): ## from [overtex]
+	"""
+	_mask :: The Alpha Channel of an image
+	:: Only cv2.show & cv2.addWeighted need it as 3-Channel + Convenient for 'Additive'
+	_colArr :: An [ R, G, B ] Array; Alpha is discarded
+	
+	Given a mask [0], create a colImg based on an RGBA color [1] that is affected by [0].alpha
+	"""
+	if opt["show"]: print(_colArr)
+	_colArr = normalize_color(_colArr)
+	if len(_mask.shape) > 2: _mask = _mask[:,:,-1]
+	
+	## Create an image of this color
+	colImg0 = np.ones(_mask.shape, dtype="uint8") * _colArr[0]
+	colImg1 = np.ones(_mask.shape, dtype="uint8") * _colArr[1]
+	colImg2 = np.ones(_mask.shape, dtype="uint8") * _colArr[2]
+	colImg3 = _mask
+	
+	## Apparently the KK-RGB is as BGR, so do that
+	if useKKOrder: colImg = cv2.merge([colImg2, colImg1, colImg0, colImg3])
+	else:          colImg = cv2.merge([colImg0, colImg1, colImg2, colImg3])
+	DisplayWithAspectRatio(opt, 'ColorImg'+tag,     colImg.astype("uint8"), 256)
+
+	return colImg
+
+def getColorWithAlpha(opt, _mask, _colArr, tag="", useKKOrder=False): ## from [overtex]
+	"""
+	_mask :: One Color channel of [imgMask] as BW, extended into 3-Channel
+	:: Only cv2.show & cv2.addWeighted need it as 3-Channel + Convenient for 'Additive'
+	_colArr :: An [ R, G, B ] Array; Alpha is discarded
+	
+	Given a mask [0], create a colImg based on an RGBA color [1] that is affected by [0].alpha
+	"""
+	if opt["show"]: print(_colArr)
+	_colArr = normalize_color(_colArr)
+	if len(_mask.shape) == 2: _mask = extendAlpha(_mask)
+	elif _mask.shape[2] == 1: _mask = extendAlpha(_mask)
+	
+	## Create an image of this color
+	colImg0 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[0]
+	colImg1 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[1]
+	colImg2 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[2]
+	colImg3 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[3]
+	
+	## Apparently the KK-RGB is as BGR, so do that
+	if useKKOrder: colImg = cv2.merge([colImg2, colImg1, colImg0, colImg3])
+	else:          colImg = cv2.merge([colImg0, colImg1, colImg2, colImg3])
+	DisplayWithAspectRatio(opt, 'Color'+tag,     colImg.astype("uint8"), 256)
+
+	return colImg
+
+def colorizeBitmask(opt, _mask, _colArr, tag=""):
+	"""
+	If the image is already a bitmask, using [overlay] of Mask onto the color achieves the same effect.
+	"""
+	color = getColorMask(opt, _mask, _colArr, tag)
+	return blend_segmented(blend_modes.overlay, color, _mask, 1)
+
+## Copy [_overlay] in the [_mask]ed area of [_base]
+def combineWithBitmask(opt, _base, _overlay, _mask):
+	if (_base.shape[2] == 4): _mask = ensureAlpha(_mask)
+	return cv2.copyTo(_overlay, _mask.astype("uint8"), _base)
+
 ######
 ## Small
 ######
 
-def convert_to_BW(image):
+def convert_to_BW(image, full=True):
 	convCh = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+	if not full: return convCh
 	return cv2.merge([convCh, convCh, convCh, image[:,:,3]])
+
+#""" Add image to itself as Alpha """
+def apply_alpha_BW(opt, img): return converterScaled(opt, img, convert_to_BW(img, False), True).astype("uint8")
 
 def invert_f(image):
 	return cv2.merge([1 - imgBase_f[:,:,0], 1 - imgBase_f[:,:,1], 1 - imgBase_f[:,:,2], imgBase_f[:,:,3]])
+
+def getBitmask(image, show=False, tag="", binary=False):
+	## Make a white image to create a mask for "above 0"
+	bitmask = np.ones(image.shape[:2], dtype="uint8") * 255
+	#if binary:
+	#	bitmask[:,:] = (image[:,:,0] != 0)
+	#	bitmask = cv2.merge([bitmask*255, bitmask*255, bitmask*255])
+	#else:
+	bitmask[:,:] = (image[:,:] != 0)
+	if show: cv2.imshow('bitmask'+tag, bitmask) ## Where to add color
+	## Apply mask with np.bitwise_and(bitmask, _mask)
+	if binary: return (bitmask).astype("uint8")
+	return (bitmask * 256).astype("uint8")
+
+def negate(image):   return (image + 256) * (-1) + 512
+def negate_f(image): return (image + 1) * (-1) + 2
 
 ######
 ## Tester
@@ -383,13 +492,16 @@ Lighten Only  ([03] bm.lighten_only)	== np.max(IMG_RGB, TAR_RGB)
 Grain Extract ([12] bm.grain_extract, GIMP) == np.clip(IMG_RGB - TAR_RGB + 0.5, 0, 1)
 Grain Merge   ([13] bm.grain_merge, GIMP)   == np.clip(IMG_RGB + TAR_RGB + 0.5, 0, 1)
 """
-def testOutModes(opt, _imgA, _imgB, size, msg="", advanced=False, _alpha=None):
+def testOutModes(opt, _imgA, _imgB, size=256, msg="", advanced=False, _alpha=None):
 	if not opt["show"]: return
 	print("ColorTest: " + msg)
 	alpha = opt["alpha"] if _alpha is None else _alpha
 	scale = opt["scale"]
 	imgA = _imgA.astype(float)
 	imgB = _imgB.astype(float)
+	if (imgA.shape[0] > 512) or (imgB.shape[0] > 512):
+		imgA = resizeWithAspectRatio(imgA, width=512)
+		imgB = resizeWithAspectRatio(imgB, width=512)
 	
 	img_seg = blend_modes.normal(imgA, imgB, alpha) * scale
 	DisplayWithAspectRatio(opt, '[Nor]', img_seg, size) ### Alpha only

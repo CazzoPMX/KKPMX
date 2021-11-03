@@ -89,6 +89,7 @@ raw_mat  = "mats"
 out_name    = "name"
 out_opt     = "options"
 out_optBase = "base"
+out_optHair = "process_hair"
 out_temp    = "template"
 out_inherit = "inherit"
 ##--## Options used for render_tree
@@ -150,6 +151,8 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 		##to use script(cleanup script): default True ## << makes materials unique
 		##to use script(add morphs):     default True
 		out_optBase: "%PMX%/extra",##ask for base path ++ rename all "exported textures" in said folder
+		"expl_Hair": "## Set this to false to skip generating Hair Textures",
+		out_optHair: True,
 	}
 	arr.append((out_opt, opt))
 	#print("--- << some nice message >>")
@@ -190,7 +193,7 @@ def GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree):
 	opt = {
 			opt_Name: "cf_m_body", 	opt_Group: "body",
 			opt_texAvail: [t__Detail, t__Line, t__Main, t__NorMap, t__NorMapDet, t__overtex1], ## t__overtex2
-			opt_texUse: [t__Detail, t__Main, t__overtex1],
+			opt_texUse: [t__Detail, t__Line, t__Main, t__overtex1],
 		}
 	write_entity(pmx, arr, json_tree, opt) ## add option for [custom group], [Comment]
 	
@@ -246,8 +249,8 @@ def GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree):
 	def search_handler(cat):
 		arr.append(Comment("", idx=cat_to_Title.get(cat,cat)))
 		opt = { opt_Name: cat, opt_Group: "hair",
-				opt_texAvail: [t__Alpha, t__Another, t__Detail, t__Line, t__Main, t__NorMap],
-				opt_texUse: [t__Detail, t__Main],
+				opt_texAvail: [t__Alpha, t__Another, t__Color, t__Detail, t__HairGloss, t__Main, t__NorMap],
+				opt_texUse: [t__Color, t__Detail],
 			}
 		for _name in parent_tree.get(cat, []):
 			opt[opt_Name] = _name

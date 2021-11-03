@@ -21,6 +21,8 @@ DEBUG=False
 def main_starter(callback):
 	"""
 	Quickstarter for running from console
+	if 'callback' is null, returns a tuple of (pmx, input_filename_pmx)
+	Otherwise supplies these as arguments for callback
 	
 	## Template
 	def run(pmx, input_filename_pmx): pass
@@ -36,11 +38,6 @@ def main_starter(callback):
 	callback(pmx, input_filename_pmx)
 	core.MY_PRINT_FUNC("====---====")
 	core.MY_PRINT_FUNC("Done!")
-
-#def get_parent_bone(pmx, name):
-#	pidx = pmx.bones[find_bone(pmx, name)]
-#	if pidx: return pmx.bones[pidx.parent_idx]
-#	return None
 
 ######
 ## JSON
@@ -68,7 +65,6 @@ def load_json_file(path=None, extra=None):
 				return None
 			print(e)
 			# Find the offending character index:
-			#idx_to_replace = int(e.message.split(' ')[-1].replace(')',''))
 			idx_to_replace = int(str(e).split(' ')[-1].replace(')', ''))
 			
 			# Remove the offending character:
@@ -164,7 +160,13 @@ def ask_direction(message, allow_empty=False):
 	if allow_empty and val in [None, ""]: return None
 	return int(val)
 
-def ask_choices(message: str, choices: List[Tuple[str, object]]):
+def ask_choices(message: str, choices: List[Tuple[str, object]], check=None):
+	"""
+	message: str    -- Displayed at the start
+	choices: List of (str, object) -- The choices to list as "idx: KEY", with choices[idx] = VALUE
+	check:   object -- Optional provide a value to use immediately without asking.
+	"""
+	if check in [x[1] for x in choices]: return check
 	print("-- " + message + ":")
 	idx = core.MY_SIMPLECHOICE_FUNC(range(len(choices)), [(str(i)+": "+str(choices[i][0])) for i in range(len(choices))])
 	return choices[idx][1]
@@ -198,12 +200,19 @@ def is_number(text, allow_bool=False):
 
 find_info = """ [pmx] instance -- Entity Name -- Flag to print error if not found (default True) """
 
-def find_bone(pmx,name,e=True):  return morph_scale.get_idx_in_pmxsublist(name, pmx.bones,e)
-def find_mat(pmx,name,e=True):   return morph_scale.get_idx_in_pmxsublist(name, pmx.materials,e)
-def find_disp(pmx,name,e=True):  return morph_scale.get_idx_in_pmxsublist(name, pmx.frames,e)
-def find_morph(pmx,name,e=True): return morph_scale.get_idx_in_pmxsublist(name, pmx.morphs,e)
-def find_rigid(pmx,name,e=True): return morph_scale.get_idx_in_pmxsublist(name, pmx.rigidbodies,e)
+def find_bone (pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.bones,e,idx)
+def find_mat  (pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.materials,e,idx)
+def find_disp (pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.frames,e,idx)
+def find_morph(pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.morphs,e,idx)
+def find_rigid(pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.rigidbodies,e,idx)
 find_bone.__doc__ = find_mat.__doc__ = find_disp.__doc__ = find_morph.__doc__ = find_rigid.__doc__ = find_info
+
+def __find_in_pmxsublist(name, arr, e, idx):
+	if not is_number(idx) or idx < 0: idx = 0
+	if idx >= len(arr): return -1
+	if idx > 0: arr = arr[idx : -1]
+	result = morph_scale.get_idx_in_pmxsublist(name, arr, e)
+	return -1 if result in [-1, None] else result
 
 ######
 ## Math Types for Rigging

@@ -31,6 +31,18 @@ Just to be clear, I extend the above terms to cover this project as well. If you
  - [PMXExport](https://github.com/TheOddball/KoikatsuPmxExporter/tree/master)
  - [MaterialEditor](https://www.patreon.com/posts/27881027)
 
+## Misc
+
+
+Some less obvious things when working with Console applications
+
+ - File paths need to be enclosed into "" if they contain ' ' (Spaces).
+ - You can drag and drop files into window to avoid typing the paths.
+ - If the command offers a default value, it can be choosen by pressing enter without entering anything.
+ - You can press the 'Up' arrow key to retrieve the most recent instruction(s)
+    - To repeat the commands for multiple input requests: Go 'up' till the first -- Enter to execute it -- Now the 'next' previous command can be accessed by pressing 'down', and so on.
+ - You can enter commands and press 'enter' while no input is asked for. That way you can provide commands in advance.
+
 ## Recommended chain of actions
 
  1. PMXExport has a weird quirk that messes up the Editor when started the first time after starting Koikatsu.<br/>
@@ -46,26 +58,22 @@ Any Eye and/or Mouth Position works, as long as the Eyes stay open and the mouth
        - See the next subsection for how to use the model immediately.
  5. Click on the 'Info' Tab (Heart) and then on [Generate JSON Data].
     - Will add a file called `{CharName}.json` into the same folder.
- 6. This step is (almost) entirely optional, but improves the quality of the textures a lot and requires the [MaterialEditor].<br/>
+ 6. [Old] This step is (almost) entirely optional, but improves the quality of the textures a lot and requires the [MaterialEditor].<br/>
 The goal is to go through every asset (Body, Clothes, Accessory) and export the auxiliary textures (in most cases, ColorMask & DetailMask)<br/>
 See the [Help]-Section of [Scan Plugin File] for more details of which are currently supported.
-    >As [PmxExport] only exports the Main-Texture, you may want to export at least these, if nothing else:
-    > - body: overtex1 -- Nips
-    > - hitomi: overtex1, overtex2 -- Eye highlights
-    - [PmxExport] exports the Main-Texture of all assets, so you can skip them.
-    - Note: Some assets lack a Main-Texture (like the default Fox-Tail). If it exists, the ColorMask will instead be used as base texture.
- 7. Create a folder called '`extra`' inside the PMX folder.
+    >Older versions of [PmxExport] only export the Main-Textures.  
+    >I added an updated version which also exports all 'extra' textures into a folder called 'extra'
+    >So there is no need to manually export the textures anymore.
     - See the [Help]-Section of [Scan Plugin File] for how to use a different name / path.
- 8. Move all exported textures into that folder.
-    - Main-Textures in this folder take priority over those in the root folder.
- 9. Open KKPMX, select option [(5) All-in-one converter] and follow the steps.
+    - Note: Some assets lack a Main-Texture (like the default Fox-Tail). If it exists, the ColorMask will instead be used as base texture.
+ 7. Start KKPMX.exe, select option [(5) All-in-one converter] and follow the steps.
     - [Notes for Step(2)]: Recommended choices are: 2 (No) \ 2 (only top-level) \ 1 (Yes)
 
 The model should be (almost) ready, but some last adjustments have to be done manually.
 
- 10. Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
- 11. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
- 12. When making heavy use of morph sliders, adjust the order of the materials to prevent them getting invisible.
+ 8. Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
+ 9. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
+ 10. When making heavy use of morph sliders, adjust the order of the materials to prevent them getting invisible.
 
 ## tl;dr: Minimum steps to make the exported model work immediately
 
@@ -172,7 +180,14 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  - If an individual morph hides a material, it can be made visible again with the "Show X" morph.
 >  - If a material has been hidden by any "Hide all X" morph, it can be made visible again with its "Show X" morph.
 >  
->  Output: PMX file '`[modelname]`_morphs.pmx'
+>  Mode Interactions:
+>  - Uses `[JSONGenerator]` Data if available -- "`[:Slot:]`"
+>  - Overrides morphs if they already exist
+>  
+>  Options (for Automization):
+>  - body: bool -- False to skip 'Body part' morphs. Prompts if `[None]`
+>  
+>  Output: PMX file '`[modelname]`_morphs.pmx' -- only if 'write_model' is True
 
 ### (3) Scan Plugin File
 
@@ -194,16 +209,20 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >    - MainTex (already exported by `[PMXExport]`, so can be ignored)
 >    - DetailMask
 >    - ColorMask
+>    - LineMask
 >    - overtex1 (on body and eye)
 >    - overtex2 (on eye)
 >  - Not (yet) supported are:
 >    - on body: overtex2
 >    - on face: overtex1, overtex2, overtex3
->    - LineMask, NormalMap, NormalMask
+>    - NormalMap, NormalMask
 >  
 >  Additional notes:
 >  - After generation, the *.json file can be edited to change some aspects (some colors, visibility, textures) without KK. Re-run this to apply changes.
 >  - Due to pre-generation, sometimes textures are used that do not exist (which will print a warning). Remove the item from the faulty material's template to clear the warning.
+>  
+>  Options (for Automization):
+>  - apply: bool -- True to not wait for results and write directly to model. Prompts if `[None]`
 
 ### (4) Isolate protruding surfaces
 
@@ -335,8 +354,14 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  - Transform Skirt Grid from Cubicle to Rectangles (and other things to attempt more fluid movements)
 >  - Untangle merged Materials
 >  -  - Since KKExport loves to merge vertex meshes if they are bound to bones sharing the same name, this also corrects the bone weights
->  -  - Works by mapping materials with '`[:AccId:]` XX' to a bone chain starting with 'ca_slotXX', with XX being a number (and equal in both).
+>  -  - Works by mapping materials with '`[:AccId:]` XX' in their comment to a bone chain starting with 'ca_slotXX', with XX being a number (and equal in both).
 >  - Rig Hair Joints
 >  -  - Sometimes needs minor optimizations, but also allows a bit of customization (by changing the Rigid Type of the chain segments)
 >  -  - The "normal" rigging can also be reproduced by selecting a linked bone range, and opening `[Edit]`>`[Bone]`>`[Create Rigid/Linked Joint]`
 >  -  - Disclaimer: Might not work in 100% of cases since there is no enforced bone naming convention for plugins (e.g. using 'root' as start)
+>  
+>  `[Options]` '_opt':
+>  - "mode":
+>  -  - 0 -- main run-down
+>  -  - 1 -- ônly rig Hair
+>  -  - 2 -- rig a list of bones together

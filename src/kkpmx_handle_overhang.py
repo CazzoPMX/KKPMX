@@ -129,10 +129,10 @@ def run_kk_defaults(pmx, input_filename_pmx):
 	## Ask if providing own bounds or using default box (extended or only around nips)
 	bounds = { "minY": 10.20, "minZ": 0, "maxZ": 0 }
 	def addIfFound(name,key,idx):
-		bone_idx = kklib.find_bone(pmx, name)
+		bone_idx = util.find_bone(pmx, name)
 		if bone_idx: bounds[key] = pmx.bones[bone_idx].pos[idx]
 	def averageOut(name, key, idx):
-		bone_idx = kklib.find_bone(pmx, name)
+		bone_idx = util.find_bone(pmx, name)
 		if bone_idx:
 			tmp = pmx.bones[bone_idx].pos[idx]
 			bounds[key] = (bounds.get(key,0)+tmp)/2
@@ -140,14 +140,14 @@ def run_kk_defaults(pmx, input_filename_pmx):
 	choices = [("Detailed", 0), ("Rough Box", 1), ("No", 2)]
 	choice = util.ask_choices("KK Defaults: Restrict to optimized box around chest ?", choices)
 	if choice == 0:
-		#if kklib.find_bone(pmx, "cf_j_spinesk_02", True):
+		#if util.find_bone(pmx, "cf_j_spinesk_02", True):
 		#	addIfFound("cf_j_spinesk_02", "maxY", 1)
 		#	addIfFound("cf_hit_bust00", "minY", 1)
 		##--- cf_hit_spine02_L -- rough upper limit of standard size
 		##--- cf_j_spinesk_02(14.36657) -- slightly higher
 		##--- cf_hit_bust00(13.84542) -- comfortable lower limit of standard size
 		#else:
-		posY = pmx.bones[kklib.find_bone(pmx, "胸親")].pos[1]
+		posY = pmx.bones[util.find_bone(pmx, "胸親")].pos[1]
 		bounds["minY"] = posY - 0.25
 		bounds["maxY"] = posY + 0.50 ## 14.07162
 		#- [Z-Axis](back<front): 右胸操作(-0.66) cf_j_bust02_R_01(-0.697)
@@ -215,8 +215,8 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, opt
 	}
 	The morph has to be added to the [Facial] frame manually for the time being.
 	"""
-	from kkpmx_core import ask_for_material, from_faces_get_vertices, from_material_get_faces, from_vertices_get_faces
-	from kkpmx_core import find_mat, translate_name#, find_morph, find_bone
+	from kkpmx_core import ask_for_material, from_faces_get_vertices, from_material_get_faces, from_vertices_get_faces, translate_name
+	from kkpmx_utils import find_mat#, find_morph, find_bone
 	#from kkpmx_core import __append_itemmorph_add, __append_itemmorph_mul, __append_itemmorph_sub
 	import kkpmx_core as kklib
 	opt["moreinfo"] = verbose or moreinfo or DEBUG
@@ -423,7 +423,7 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options
 	import kkpmx_core as kklib
 	import kkpmx_utils as util
 	affectPMX = options.get("affectPMX", True)
-	mat_idx2 = kklib.find_mat(pmx, new_mat.name_jp)
+	mat_idx2 = util.find_mat(pmx, new_mat.name_jp)
 	that_faces_list = kklib.from_vertices_get_faces(pmx, vert_arr=that_verts_list, mat_idx=mat_idx2, returnIdx=False, debug=False, trace=True)
 	#util.write_json(that_faces_list, "moved_faces", False)
 	################
@@ -483,7 +483,7 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options
 		add_idx = len(pmx.materials)
 		OPTION_2 = options.get("initial_hidden", None)
 		if OPTION_2 == None or type(OPTION_2) != bool:
-			OPTION_2 = util.ask_yes_no("Make material initial hidden(y) or visible(n)")
+			OPTION_2 = util.ask_yes_no("Make material initial hidden(y) or visible(n)", "y")
 		if (OPTION_2): ## initially hidden
 			__results.append("--- Material is initially hidden")
 			add_mat.alpha = 0

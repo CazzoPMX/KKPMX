@@ -16,33 +16,60 @@ from kkpmx_utils import find_bone, find_mat, find_disp, find_morph, find_rigid
 from kkpmx_utils import Vector3, Matrix
 
 # Local debug
-DEBUG= util.DEBUG or False
-opt = { }                   # Store argument info
-verbose = lambda: opt["moreinfo"]
+DEBUG = util.DEBUG or False
+global_state = { }                   # Store argument info
+OPT__HAIR = "hair"
 
-def run(pmx, input_filename_pmx, moreinfo=False, write_model=True, modes=None):
+def run(pmx, input_filename_pmx, moreinfo=False, write_model=True, _opt={}):
 	"""
 Rigging Helpers for KK.
 - Adjust Body Physics (best guess attempt for butt, adds Torso, Shoulders, and Neck to aid hair collision)
 - Transform Skirt Grid from Cubicle to Rectangles (and other things to attempt more fluid movements)
 - Untangle merged Materials
 -  - Since KKExport loves to merge vertex meshes if they are bound to bones sharing the same name, this also corrects the bone weights
--  - Works by mapping materials with '[:AccId:] XX' to a bone chain starting with 'ca_slotXX', with XX being a number (and equal in both).
+-  - Works by mapping materials with '[:AccId:] XX' in their comment to a bone chain starting with 'ca_slotXX', with XX being a number (and equal in both).
 - Rig Hair Joints
 -  - Sometimes needs minor optimizations, but also allows a bit of customization (by changing the Rigid Type of the chain segments)
 -  - The "normal" rigging can also be reproduced by selecting a linked bone range, and opening [Edit]>[Bone]>[Create Rigid/Linked Joint]
 -  - Disclaimer: Might not work in 100% of cases since there is no enforced bone naming convention for plugins (e.g. using 'root' as start)
+
+[Options] '_opt':
+- "mode":
+-  - 0 -- main run-down
+-  - 1 -- ônly rig Hair
+-  - 2 -- rig a list of bones together
 """
 	### Add some kind of list chooser & ask for int[steps] to execute
 	import kkpmx_core as kkcore
-	opt["moreinfo"] = moreinfo or DEBUG
-	#if modes is None: util.ask_choices()
-	adjust_body_physics(pmx)
-	transform_skirt(pmx)
-	split_merged_materials(pmx, None)
-	rig_hair_joints(pmx)
-	return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", "Modified Rigging")
-
+	global_state["moreinfo"] = moreinfo or DEBUG
+	modes = _opt.get("mode", -1)
+	choices = [("Regular Fixes", 0), ("Only rig_hair_joints",1), ("Rig Bone Array", 2)]
+	modes = util.ask_choices("Choose Mode", choices, modes)
+	if modes == 1:
+		rig_hair_joints(pmx)
+		return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", "Modified Rigging (Hair only)")
+	if modes == 0:
+		adjust_body_physics(pmx)
+		transform_skirt(pmx)
+		split_merged_materials(pmx, None)
+		rig_hair_joints(pmx)
+		rig_other_stuff(pmx)
+		return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", "Modified Rigging")
+	#######
+	print("This will connect a consecutive list of bones and rig them together.")
+	print("To skip an accidental input, just type the same number for both steps.")
+	def is_valid(value): return util.is_number(value) and int(value) > -1 and int(value) < len(pmx.bones)
+	arr_log = ["Modified Rigging (Bone chains)"]
+	while(True):
+		start = core.MY_GENERAL_INPUT_FUNC(is_valid, "First Bone" + f"?: ")
+		end   = core.MY_GENERAL_INPUT_FUNC(is_valid, "Last Bone"  + f"?: ")
+		if start != end:
+			arr = list(range(int(start), int(end)+1))
+			arr_log.append("> " + json.dumps(arr))
+			patch_bone_array(pmx, None, arr, pmx.bones[arr[0]].name_jp, 16)
+		if util.ask_yes_no("-- Add another one","y") == False: break
+	return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", arr_log)
+	
 ###############
 ### Riggers ###
 ###############
@@ -70,6 +97,8 @@ def adjust_body_physics(pmx):
 	## Hair collision
 	if find_rigid(pmx, "RB_upperbody", False) in [-1,None]:
 		
+		def absarr(arr): return [abs(a) for a in arr]
+		
 		common = {
 			"nocollide_mask": mask, "shape": 1, #"group": 1,
 			"phys_move_damp": 0.9999, "phys_rot_damp": 0.9999
@@ -96,7 +125,7 @@ def adjust_body_physics(pmx):
 		
 		pos = [0, ((maxY+minY)/2), 0]
 		#print(f"[TR]size = [({maxX}-{minX}), ({maxY}-{minY}), ({maxZ}-{minZ})]")
-		size = [(maxX-minX)/2, (maxY-minY)/2, (maxZ-minZ)/2]
+		size = absarr([(maxX-minX)/2, (maxY-minY)/2, (maxZ-minZ)/2])
 		
 		add_rigid(pmx, name_jp="RB_upperbody", pos=pos, size=size, bone_idx=find_bone(pmx, "上半身2"), **common)
 		boxY = maxY
@@ -112,7 +141,7 @@ def adjust_body_physics(pmx):
 		
 		pos = [((maxX+minX)/2), bn_shou_L.pos[1], bn_shou_L.pos[2]]
 		#print(f"[SL]size = [({maxX}-{minX}), ({maxY}-{minY}), ({maxZ}-{minZ})]")
-		size = [(maxX-minX)/2, (maxY-minY)/1.5, (maxZ-minZ)/1.5]
+		size = absarr([(maxX-minX)/2, (maxY-minY)/1.5, (maxZ-minZ)/1.5])
 		
 		add_rigid(pmx, name_jp="RB_shoulder_L", pos=pos, size=size, bone_idx=find_bone(pmx, "左肩"), **common)
 		neck_minX = minX
@@ -129,7 +158,7 @@ def adjust_body_physics(pmx):
 		
 		pos = [((maxX+minX)/2), bn_shou_R.pos[1], bn_shou_R.pos[2]]
 		#print(f"[SR]size = [({maxX}-{minX}), ({maxY}-{minY}), ({maxZ}-{minZ})]")
-		size = [(maxX-minX)/2, (maxY-minY)/1.5, (maxZ-minZ)/1.5]
+		size = absarr([(maxX-minX)/2, (maxY-minY)/1.5, (maxZ-minZ)/1.5])
 		
 		add_rigid(pmx, name_jp="RB_shoulder_R", pos=pos, size=size, bone_idx=find_bone(pmx, "右肩"), **common)
 		neck_maxX = minX
@@ -146,10 +175,9 @@ def adjust_body_physics(pmx):
 		
 		pos = [((maxX+minX)/2), (maxY+minY)/2, (maxZ+minZ)/2]
 		#print(f"[NK]size = [({maxX}-{minX}), ({maxY}-{minY}), ({maxZ}-{minZ})]")
-		size = [(maxX-minX)/2, (maxY-minY)/2, (maxZ-minZ)/1.5]
+		size = absarr([(maxX-minX)/2, (maxY-minY)/2, (maxZ-minZ)/1.5])
 		
 		add_rigid(pmx, name_jp="RB_neck", pos=pos, size=size, bone_idx=find_bone(pmx, "首"), **common)
-		
 
 def transform_skirt(pmx):
 	## Skirt is segmented into 7 stripes with 5 segments each
@@ -215,11 +243,11 @@ def transform_skirt(pmx):
 
 def rig_hair_joints(pmx): #--- Find merged / split hair chains --> apply Rigging to them
 	### Add a Head Rigid for the Hair to anchor onto -- return if none
-	head = find_bone(pmx, "a_n_headflont")
-	if head is None: return
+	head = find_bone(pmx, "a_n_headflont", True)
+	if head == -1: return
 	head_bone = pmx.bones[head]
 	## Also return if we already added the whole head stuff
-	if find_rigid(pmx, "a_n_headfront", False) is not None: return
+	if find_rigid(pmx, "a_n_headfront", False) != -1: return
 	head_body = add_rigid(pmx, name_jp="a_n_headfront", pos=head_bone.pos, bone_idx=head, size=[1,1,1], 
 			phys_move_damp=1.0, phys_rot_damp=1.0)
 			
@@ -227,30 +255,189 @@ def rig_hair_joints(pmx): #--- Find merged / split hair chains --> apply Rigging
 	try: limit = pmx.bones[find_bone(pmx, "胸親", False)].pos[1]
 	except: limit = 0.0
 
-	first_chain = None
-	chain_matched = False
 	### The major hair addons use "root" as first anchor for vertices
-	bones = [i for (i,b) in enumerate(pmx.bones) if b.name_jp.startswith("root")]
+	__root_Name = "N_move" ## "root" is gone ....
+	bones = [i for (i,b) in enumerate(pmx.bones) if b.name_jp.startswith(__root_Name)]
+	#### Other things
+	# 02: All_Root.001 ++ SCENE_ROOT.001 + ... x3 + AS01_J_kami(RB,B,LB)_01..05, 05_end
+	
+	grp = 3
+	
+	_patch_bone_array = lambda x,n: patch_bone_array(pmx, head_body, x, n, grp)
+	if len(bones) == 0: print("No hair chain found to rig.")
+	else: global_state[OPT__HAIR] = True
 	for bone in bones:
 		## Ignore the groups not anchored to the head
 		if pmx.bones[bone].pos[1] < limit: continue
+		
 		## Get name from containing slot
 		b = bone
 		while (b and not pmx.bones[b].name_jp.startswith("ca_slot")): b = pmx.bones[b].parent_idx
 		name = pmx.bones[b].name_jp
-		
 		## Collect bone chain
 		arr = get_children_map(pmx, bone, returnIdx=False, add_first=False)
-		if "root" not in arr: print(f"{bone} has weird bones({list(arr.keys())}), skipping"); continue
-		arr = arr['root']
+		#--- Rewrote to work with arbitary root bone
+		root_arr = [x for x in arr.keys() if x.startswith(__root_Name)]
+		if not any(root_arr): print(f"{bone} has weird bones({list(arr.keys())}), skipping"); continue
+		
+		root_arr0 = arr[root_arr[0]] ## root_arr[list(root_arr.keys())[0]]
+		
+		##################
+		#-- Regular Joint Handling
+		## Check if any bone name of the [slot tree] starts with "joint"
+		root_arr1 = [x for x in root_arr0 if pmx.bones[x].name_jp.startswith("joint")]
+		#print(root_arr1)
+		if any(root_arr1):
+			## Get parent of first bone
+			first_parent = pmx.bones[root_arr1[0]].parent_idx
+			## Descend "joints" for "yure_hair_h_Ro..."
+			if (pmx.bones[root_arr1[0]].name_jp == "joints"):
+				#first_parent = root_arr1[0]
+				continue # nvm, all trash
+			## Get a full Tree map of these bones
+			all_child = get_children_map(pmx, root_arr0, returnIdx=False, add_first=True)
+			## Reduce to the chains whose first bone has the above as parent
+			child_arr = [all_child[pmx.bones[x].name_jp] for x in root_arr0 if pmx.bones[x].parent_idx == first_parent]
+			for i,arr in enumerate(child_arr): _patch_bone_array(arr, name+'_'+str(i))
+			continue
+		##################
+		#-- AS01 Handling
+		## Check if any bone name of the [slot tree] starts with "AS01_N_kami"
+		root_arr2 = [x for x in root_arr0 if pmx.bones[x].name_jp.startswith("AS01_N_kami")]
+		if any(root_arr2):
+			## Reduce to its children
+			root_arr = get_children_map(pmx, root_arr2[0], returnIdx=False, add_first=False)
+			## Descend once more (from "AS01_N_kami" onto first "AS01_J_kami")
+			arr = root_arr[list(root_arr.keys())[0]]
+			## Get a full Tree map of these bones
+			all_child = get_children_map(pmx, arr, returnIdx=False, add_first=True)
+			## Reduce to the chains whose first bone has "AS01_J_kami" as parent
+			child_arr = [all_child[pmx.bones[x].name_jp] for x in arr if pmx.bones[x].parent_idx == arr[0]]
+			for i,arr in enumerate(child_arr): _patch_bone_array(arr, name+'_'+str(i))
+			continue
+		##################
+		#-- p_cf_hair && cf_N_J_ Handling
+		## Check if any bone name of the [slot tree] starts with "AS01_N_kami"
+		root_arr3 = [x for x in root_arr0 if pmx.bones[x].name_jp.startswith("cf_N_J_")]
+		if any(root_arr3):
+			continue ## Already pre-rigged ? --> Or simply add [Group 16] to pre-rigged ones
+			## Reduce to its children
+			root_arr = get_children_map(pmx, root_arr3[0], returnIdx=False, add_first=False)
+			## Descend once more (from "cf_N_J_" onto first "cf_J_..._top")
+			arr = root_arr[list(root_arr.keys())[0]]
+			## Get a full Tree map of these bones
+			all_child = get_children_map(pmx, arr, returnIdx=False, add_first=True)
+			## Reduce to the chains whose first bone has "AS01_J_kami" as parent
+			child_arr = [all_child[pmx.bones[x].name_jp] for x in arr if pmx.bones[x].parent_idx == arr[0]]
+			for i,arr in enumerate(child_arr): _patch_bone_array(arr, name+'_'+str(i))
+			continue
+		#######################
+		arr = root_arr0
+		
+		#if pmx.bones[arr[0]].name_jp.startswith("root"): del arr[0]
+		if pmx.bones[arr[0]].name_jp.startswith("All_Root"): continue
 		if len(arr) < 2: continue
+		if pmx.bones[arr[-1]].name_jp.startswith("o_"): del arr[-1]
+		
+		#first = arr[__root_Name][0];arr = [first] + arr[pmx.bones[first].name_jp]
+		
 		##
+		_patch_bone_array(arr, name)
+
+def rig_other_stuff(pmx):
+	## Get reference point for discard
+	try: limit = pmx.bones[find_bone(pmx, "胸親", False)].pos[1]
+	except: limit = 0.0
+
+	### The major hair addons use "root" as first anchor for vertices
+	__root_Name = "N_move" ## "root" is gone ....
+	bones = [i for (i,b) in enumerate(pmx.bones) if b.name_jp.startswith(__root_Name)]
+	#### Other things
+	_patch_bone_array = lambda x,n: patch_bone_array(pmx, None, x, n, 16)
+	
+	for bone in bones:
+		## Ignore the hair groups
+		if pmx.bones[bone].pos[1] > limit: continue
+		
+		## Get name from containing slot
+		b = bone
+		while (b and not pmx.bones[b].name_jp.startswith("ca_slot")): b = pmx.bones[b].parent_idx
+		name = pmx.bones[b].name_jp
+		## Collect bone chain
+		arr = get_children_map(pmx, bone, returnIdx=False, add_first=False)
+		#--- Rewrote to work with arbitary root bone
+		root_arr = [x for x in arr.keys() if x.startswith(__root_Name)]
+		if not any(root_arr): print(f"{bone} has weird bones({list(arr.keys())}), skipping"); continue
+		
+		root_arr0 = arr[root_arr[0]] ## root_arr[list(root_arr.keys())[0]]
+		
+		##################
+		#-- Regular Joint Handling
+		## Check if any bone name of the [slot tree] starts with "joint"
+		root_arr1 = [x for x in root_arr0 if pmx.bones[x].name_jp.startswith("joint")]
+		#print(root_arr1)
+		if any(root_arr1):
+			## Get parent of first bone
+			first_parent = pmx.bones[root_arr1[0]].parent_idx
+			## Descend "joints" for "yure_hair_h_Ro..."
+			if (pmx.bones[root_arr1[0]].name_jp == "joints"):
+				#first_parent = root_arr1[0]
+				continue # nvm, all trash
+			## Get a full Tree map of these bones
+			all_child = get_children_map(pmx, root_arr0, returnIdx=False, add_first=True)
+			## Reduce to the chains whose first bone has the above as parent
+			child_arr = [all_child[pmx.bones[x].name_jp] for x in root_arr0 if pmx.bones[x].parent_idx == first_parent]
+			for i,arr in enumerate(child_arr): _patch_bone_array(arr, name+'_'+str(i))
+			continue
+		#######################
+		arr = root_arr0
+		
+		#if pmx.bones[arr[0]].name_jp.startswith("root"): del arr[0]
+		if pmx.bones[arr[0]].name_jp.startswith("All_Root"): continue
+		if len(arr) < 2: continue
+		if pmx.bones[arr[-1]].name_jp.startswith("o_"): del arr[-1]
+		
+		#first = arr[__root_Name][0];arr = [first] + arr[pmx.bones[first].name_jp]
+		
+		##
+		_patch_bone_array(arr, name)
+
+
+########
+## ca_slot (a_n_headside)
+## -- N_move >> root
+## -- -- joint1-1...1-6
+## -- -- joint2-1...2-6
+## -- N_hairback126 >> cf_...., ....
+######
+## ca_slot >> nc
+## -- N_move
+## -- -- joint1...6
+## -- -- o_...
+######
+## :: YY = Ftop, F_01..02, 02_en \\ 
+## ca_slot
+## -- N_move >> All_Root.001 >> SCENE_ROOT.001 >> AS01_null_kamiB.001
+## -- -- AS01_N_kami(X1).001 >> AS01_J_kami(X1) >> AS01_J_kami(YY)
+## -- -- AS01_null_kami(X1).001 >> AS01_null_kamiK >> (renders)
+## -- N_hairback06 >> cf_hair_b_02_(01..13)
+######
+## ca_slot >> N_move >> Armature.003 >> f_08R
+## -- N_hairfront08 >> (renders:AS01_O_kami_...)
+## -- All_Root >> SCENE_ROOT >> AS01_null_kamiF >> AS01_N_kamiFtop >> AS01_J_kami(YY)
+######
+
+##--- Hook a chain of RigidBodies to a static Body and anchor it to [head_body]
+def patch_bone_array(pmx, head_body, arr, name, grp):
+	if True: ## To keep the History aligned
 		bind_bones(pmx, arr, True)
-		grp = 16 # the nocollide_mask given as argument to [add_rigid] has to be changed when using lower numbers
+		#grp = 16 # the nocollide_mask given as argument to [add_rigid] has to be changed when using lower numbers
+		
+		mask = 65535 - (1 << grp - 1)
 		
 		## Create a root
 		root = add_rigid(pmx, name_jp=name+"_r", bone_idx=arr[0], shape=0, size=[0.2, 0, 0], pos = pmx.bones[arr[0]].pos,
-			group=grp-1, nocollide_mask=2**grp-1, phys_move_damp=1, phys_rot_damp=1)
+			group=grp-1, nocollide_mask=mask, phys_move_damp=1, phys_rot_damp=1)
 		
 		## Create Physics chain
 		num_bodies = len(pmx.rigidbodies)
@@ -260,13 +447,16 @@ def rig_hair_joints(pmx): #--- Find merged / split hair chains --> apply Rigging
 		new_joints = len(pmx.joints) - num_joints
 		
 		## Connect with head rigid
-		joint = pmx.joints[num_joints]
-		joint.rb1_idx = head_body #root
-		joint.rb2_idx = num_bodies
-		joint.movemin = [ 0.0, 0.0, 0.0]
-		joint.movemax = [ 0.0, 0.0, 0.0]
-		joint.rotmin  = [ 0.0, 0.0, 0.0]
-		joint.rotmax  = [ 0.0, 0.0, 0.0]
+		if head_body is None or head_body < 0:
+			del pmx.joints[num_joints]
+		else:
+			joint = pmx.joints[num_joints]
+			joint.rb1_idx = head_body #root
+			joint.rb2_idx = num_bodies
+			joint.movemin = [ 0.0, 0.0, 0.0]
+			joint.movemax = [ 0.0, 0.0, 0.0]
+			joint.rotmin  = [ 0.0, 0.0, 0.0]
+			joint.rotmax  = [ 0.0, 0.0, 0.0]
 		
 		
 		########### If using shorter chains
@@ -300,7 +490,7 @@ def split_merged_materials(pmx, input_filename_pmx): #-- Find and split merged M
 	By removing the tag from certain materials, they stay glued to the original (e.g. move together)
 	Important: This must be run before [nuthouse01 cleanup], as that removes all unused bones (== all whose children have no vertices connected)
 	"""
-	verbose = opt.get("moreinfo", False)
+	verbose = global_state.get("moreinfo", False)
 	#### Get parental map of all bones
 	par_map = get_parent_map(pmx, range(len(pmx.bones)))
 	slots = [i for (i,b) in enumerate(pmx.bones) if b.name_jp.startswith("ca_slot")]
@@ -321,52 +511,74 @@ def split_merged_materials(pmx, input_filename_pmx): #-- Find and split merged M
 		if name in name_map: name_map[name].append(slot)
 		else: name_map[name] = [slot]
 	
-	####
-	## Special treatment for certain corner cases
-	corner_cases = ["N_move,acs_armband 1"]
-	#-- Candidates: Same also applies
-	for corner in corner_cases:
-		arr = [x for x in name_map if x.startswith(corner)]
-		if len(arr) > 0:
-			bar = []
-			for x in arr:
-				bar += name_map[x]
-				del name_map[x]
-			name_map[corner] = bar
-	print("----")
-	fixed_corner = [] ## Add the [ca_slot] from below loop
-	## -- then skip all in [last loop] that are in this list
+	if verbose: print("----")
 	
 	###-- Test with more than two cases of one such thing
 	if verbose:
 		print("-- Found these Material clusters -- () = total length of name chain")
 		[print(f"{name[:50]:50}({len(name):3}): {name_map[name]}") for name in name_map]
-	#>	acs_armband :: One bone is appended to the end of [pmx.bones]. All such bones use the first as parent
-	if corner_cases[0] in name_map:
-		if verbose: print("-- Fixing [acs_armband 1] --")
-		case = name_map[corner_cases[0]]
-		for corner in case[1:]:
-			par = slot_map[corner][-1]
-			slot_map[corner] += [slot_map[case[0]][4]]
-			del slot_map[case[0]][4]
-			# Repair parent_idx
-			pmx.bones[slot_map[corner][-1]].parent_idx = par
-			print(f"{corner}:{slot_map[corner]}")
-			fixed_corner.append(corner)
-		#print(f"{case[0]}:{slot_map[case[0]]}")
-		del name_map[corner_cases[0]] ## They are already correctly weighted
+
+	######
+	#### Clean up those materials that bind to EOL bones.
+	fixed = []
+	tabu = {}
+	names = [b.name_jp for b in pmx.bones]
+	#Find [end of cloth bones]
+	#>[A]	try out "KK_Colliders_cf_j_root" // 100%, but only before cleanup
+	#>[B]	try out "cf_s_waist01" (stays after cleanup) -- look for any subsequent "an_*" bones
+	#>	Either the "max+1" bone directly references max, and is also the last bone.
+	#>	Or it references something far before
+	last = find_bone(pmx, "KK_Colliders_cf_j_root", False)
+	if last in [-1,None]:#>> This branch is still untested
+		## This means the model is already cleaned up. This one exists in both.
+		last = find_bone(pmx, "cf_s_waist01", False)
+		if last not in [-1,None]:
+			tmp = [x for x in slots if x > last]
+			# if there are any slots (an_*), get the last of it
+			if len(tmp) > 0:
+				tmp = get_children_map(pmx, tmp, True)[-1]
+			##>> Avoid taking one of those bones we try to fix
+				if tmp[-1]+1 == len(pmx.bones): last = tmp[-2]
+				else: last = tmp[-1]
+		else: last = len(pmx.bones) - 2
+	last += 1
+	## If we have that bone, only allow bones whose parent is smaller than that
+	#>	Although could be causing issues for duplicate accs on [waist]...
+	#foreach bone: ## id, name, parent
+	for (i,bone) in enumerate(pmx.bones[last:]):
+		idx = last + i
+		name = bone.name_jp
+		parent = bone.parent_idx
+		if parent >= last or parent == 2: continue
+	#	## if not in tabu: register + continue
+		if name not in tabu:
+			tabu[name] = [parent]
+			#print(f"Set {name} with pid:{parent}, continue")
+			continue
+	#	## else get id & name of parent
+		root = tabu[name][0]; pid = tabu[name][-1]
+		#print(f"Found duplicate {name}, testing {root} != {parent}")
+		if root != parent: continue
+		pname = pmx.bones[pid].name_jp
+	#	## find first bone beyond pid named pname
+		try: _next = names.index(pname, pid+1)
+		except: continue
+	#	## Set correct bone
+		bone.parent_idx = _next
+		tabu[name].append(_next)
+		#fixed.append([key for key in slot_map.keys() if idx in slot_map[key]][0])
 	##--
 	if verbose: print("----")
-	
+	######
+	#### Fix all other materials (those which are weighted to the same bones)
 	seen = set()
 	bone_map = { b.name_jp: i for (i,b) in enumerate(pmx.bones) if not (b.name_jp in seen or seen.add(b.name_jp)) }
 	#[3] for each slotted material
 	for slot in slot_map:
-		if slot in fixed_corner: continue ## Avoids unneccessary warnings
+		if slot in fixed: continue ## Avoids unneccessary warnings
 		idx_map = {}
-	#-[1] for each bone
+	#-[1] for each bone, get its name
 		for bone in slot_map[slot]:
-	#> [1] get bone name
 			name = pmx.bones[bone].name_jp
 	#> [2] if list[name] != bone_idx: add to bone_map as { list[name] : bone_idx }
 			if bone_map[name] != bone: idx_map[bone_map[name]] = bone
@@ -466,8 +678,9 @@ def reweight_bones(pmx, src, dst, slot, is_hair=True):
 				raise NotImplementedError("weighttype '{}' not supported! ".format(vert.weighttype))
 	return True
 
-##-- Emulate rigging similar to how it [PMXView] does
+######-- Emulate rigging similar to how it [PMXView] does
 
+##--- Adds a linked Chain of RigidBodies and their Joints
 def AddBodyChainWithJoints(pmx, boneIndex: List[int], mode: int, r: float, uvFlag: bool, name, group):
 	body_num: int = len(pmx.rigidbodies)
 	AddBaseBody(pmx, boneIndex, mode, r, uvFlag, name, group)
@@ -508,11 +721,15 @@ def AddBodyChainWithJoints(pmx, boneIndex: List[int], mode: int, r: float, uvFla
 		pmxJoint2.rb2_idx = dictionary[key]
 		pmxJoint2.rot = pmx.rigidbodies[dictionary[key]].rot
 
+##-- Adds the RigidBodies
 def AddBaseBody(pmx, boneIndices: List[int], mode: int, r: float, uvFlag: bool, name, group):
 	if group in range(1,17):
 		if   group == 16: mask = 2**15 - 1
-		elif group == 1: mask = 1
-		else: mask = sum([2**(i-1) for i in range(16, group, -1)], 2**(group - 1) - 1)
+		else:
+			#mask = 0 << group - 1 ## All bigger than 'group'
+			#mask = 1 << group - 1 ## All except 'group'
+			mask = 65535 - (1 << group - 1) ## group
+		
 		group = group - 1 ## Because actually [0 - 15]
 	else:
 		group = 0
@@ -637,7 +854,15 @@ def bind_bones(pmx, _arr, last_link=False):
 			pmx.bones[parent].tail_usebonelink = True
 			pmx.bones[parent].tail = child
 		arr.pop(0)
-	if last_link: pmx.bones[arr[-1]].tail = [0, 0, -0.1]
+	if last_link:
+		pmx.bones[arr[-1]].tail_usebonelink = False
+		pmx.bones[arr[-1]].tail = [0, 0, -0.1]
+
+def change_phy_mode(pmx, _arr, mode):
+	if (find_rigid(pmx, _arr[0]) is None): return
+	for name in _arr:
+		body_idx = find_rigid(pmx, name, False)
+		if body_idx is not None: pmx.rigidbodies[body_idx].phys_mode = mode
 
 def get_bone_or_default(pmx, name_jp, idx, default):
 	tmp = find_bone(pmx, name_jp, False)
@@ -646,6 +871,11 @@ def get_bone_or_default(pmx, name_jp, idx, default):
 	return default
 
 #----
+
+def print_map(_mapObj):
+	print("--->")
+	for x in _mapObj.keys(): print(f"{x}: {_mapObj[x]}")
+	print("<---")
 
 def get_parent_map(pmx, bones):
 	"""
@@ -660,6 +890,18 @@ def get_parent_map(pmx, bones):
 	del boneMap[-1]
 	if 0 not in bones: del boneMap[0]
 	return boneMap
+
+def get_delta_map(pmx1, pmx2, boneMap, relative=True):
+	vecDict = {}
+	for bone in boneMap.keys():
+		vector2 = Vector3.FromList(pmx2.bones[bone].pos)
+		target  = Vector3.FromList(pmx1.bones[bone].pos)
+		## Reduce delta in relation to the already added delta from parent bones, accumulative
+		delta = (target - vector2)
+		if relative:
+			for idx in boneMap[bone]: delta -= vecDict.get(idx, Vector3.Zero)
+		vecDict[bone] = delta
+	return vecDict
 
 def get_children_map(pmx, bones, returnIdx=False, add_first=True):
 	"""

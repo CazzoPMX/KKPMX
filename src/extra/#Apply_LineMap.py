@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-import sys
+import sys,json
 
 try:
 	from kkpmx_image_lib import DisplayWithAspectRatio, DisplayWithAspectRatio_f
@@ -18,26 +18,21 @@ todos="""
 
 #-------------
 imgMain = sys.argv[1] ## MainTex.png
-imgMask = sys.argv[2] ## DetailMask.png
-details = False
-mainSize = True
-mode = "overlay"
-is_body = False
-if len(sys.argv) > 3: details = sys.argv[3] == 'True'
-if len(sys.argv) > 4: mainSize = bool(sys.argv[4])
-if len(sys.argv) > 5: mode = sys.argv[5]
-if len(sys.argv) > 6: is_body = sys.argv[6] == 'True'
+imgMask = sys.argv[2] ## LineMask.png
 #-------------
-#data = {}
-#if (argLen > 3): data = json.loads(sys.argv[3])
-#mode            = data.get("mode", "Overlay")
-#details         = data.get("moreinfo", False)
-#mainSize        = data.get("hair", True)
-#is_body         = data.get("is_body", False)
+data    = {}
+if (len(sys.argv) > 3): data = json.loads(sys.argv[3])
+verbose  = data.get("showinfo", False)
+mainSize = data.get("mainSize", True)
+mode     = data.get("mode", "overlay")
+#-------------
+# value  = (Checkbox) of "body".tex__Line.Green
+linetexon    = data.get("linetexon", 1)
 #-------------
 args = sys.argv[1:]
-if details: print(("\n=== Running DetailMask Script with arguments:" + "\n-- %s" * len(args)) % tuple(args))
-else: print("\n=== Running DetailMask Script")
+if verbose: print(("\n=== Running LineMask Script with arguments:" + "\n-- %s" * len(args)) % tuple(args))
+else: print("\n === Running LineMask Script ")
+
 
 ### Apply Transparency of 30% ( = 64 of 255)
 alpha   = 64 / 255    ## For mask
@@ -48,7 +43,7 @@ opt = imglib.makeOptions(locals())
 ### Read in pics
 raw_image = cv2.imread(imgMain, cv2.IMREAD_UNCHANGED)
 mask = cv2.imread(imgMask)
-#if show: cv2.imshow('Org', raw_image)
+DisplayWithAspectRatio(opt, 'Org', raw_image, 256)
 
 ## Pull out the alpha for later
 if raw_image.shape[2] >= 4: # @todo_add:: extract_alpha(raw_image) --> (image, imgAlpha, has_alpha)
@@ -68,9 +63,13 @@ def extractChannel(src, chIdx):
         source = maskCh.shape
         width  = int(source[1] * (target[1] / source[1]))
         height = int(source[0] * (target[0] / source[0]))
+        #print("{} * ({} / {} = {}) == {}".format(source[1], target[1], source[1], target[1] / source[1], width))
+        #print("{} * ({} / {} = {}) == {}".format(source[0], target[0], source[0], target[0] / source[0], height))
         maskCh = cv2.resize(maskCh, (width, height), interpolation=cv2.INTER_NEAREST)
     ### Widen into 3-Channel image again
-    maskChX = cv2.merge([maskCh, maskCh, maskCh])
+    maskChX = imglib.extendChannel(maskCh, maskCh)
+    DisplayWithAspectRatio(opt, 'Channel '+str(chIdx)+ ': ', maskChX, 256)
+
     return maskChX
 #-----
 cv2.destroyAllWindows()
@@ -83,6 +82,8 @@ if (mask.shape[:2] != image.shape[:2]) and (not mainSize): # @todo_add:: resize_
 	source = image.shape
 	width  = int(source[1] * (target[1] / source[1]))
 	height = int(source[0] * (target[0] / source[0]))
+	#print("{} * ({} / {} = {}) == {}".format(source[1], target[1], source[1], target[1] / source[1], width))
+	#print("{} * ({} / {} = {}) == {}".format(source[0], target[0], source[0], target[0] / source[0], height))
 	image = cv2.resize(image, (width, height), interpolation=cv2.INTER_NEAREST)
 
 ### Make colors stronger before being toned down again
@@ -91,48 +92,43 @@ if (mask.shape[:2] != image.shape[:2]) and (not mainSize): # @todo_add:: resize_
 #image = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 #if show: cv2.imshow('Stronger', image)
 
+colArr = image[0,0,:]
+#colImg = imglib.getColorMask(opt, maskB[:,:,3], colArr, useKKOrder=False)
+#colImg[:,:,3] = maskB[:,:,3]
+#DisplayWithAspectRatio(opt, 'ColImg+Alpha', colImg, 256)
+colImg = imglib.getColorImg(opt, maskB, colArr)
+
+#imglib.testOutModes_wrap(image, colImg)
+image = imglib.blend_segmented("multiply", image, colImg, alpha)#.astype("uint8")
+
+
 #####
 # [Adds Grey]: Not, Mul, GExtract, Darken \\ (Light): HardLight, GMerge
 # [Decent]: Ovl > Lighten, SoftLight, Screen, Div
-DisplayWithAspectRatio(opt, 'maskB', maskB, 512)
 #imglib.testOutModes_wrap(image, maskB)
-#cv2.imwrite(imgMain[:-4] + "_pyDet_maskB.png", maskB)
+#
+#image = imglib.blend_segmented("overlay", image, maskB, alpha)#.astype("uint8")
 
-#### Color Tests
-if False:
-	colImg = imglib.getColorImg(opt, maskB, image[0,0,:])
-	maskBCol = imglib.blend_segmented("overlay", colImg, maskB, alpha).astype("uint8")
-	#DisplayWithAspectRatio(opt, 'colImg', maskBCol, 512)
-	#imglib.testOutModes_wrap(image, maskBCol)
-	cv2.imwrite(imgMain[:-4] + "_pyDet_maskBCol.png", maskBCol)
+#imglib.testOutModes_wrap(image, maskG)
+#image = imglib.blend_segmented("overlay", image, maskG, linetexon).astype("uint8")
 
 
-if is_body:
-	#### Remove an ANNOYING alpha:0 heart shaped crest on chest
-	## Coords: x:256,y:220 --> 128,124 
-	imgFix = np.ones((128,128,3), dtype='uint8') * 240
-	maskB[220:220+128, 256:256+128, :] = imgFix
-	DisplayWithAspectRatio(opt, 'Fixed maskB', maskB, 512)
+##if (flag): ## Add Top -> Bottom \\ Unknown why it should have been controlable
+#mixMask = cv2.addWeighted(maskG, 0.5, maskB, 0.5, 0)
+#DisplayWithAspectRatio(opt, 'MixMask', mixMask, 256)
+#imglib.testOutModes_wrap(image, mixMask)
 
-imageB = imglib.blend_segmented(mode, image, maskB, alpha).astype("uint8")
-DisplayWithAspectRatio(opt, 'With maskB', imageB, 512)
+#image = imglib.blend_segmented(mode, image, mixMask, alpha).astype("uint8")
+#image = cv2.addWeighted(image, beta, mixMask, alpha, 0)
+#DisplayWithAspectRatio(opt, 'With MixMask', image, 256)
 
-#imageG = imglib.blend_segmented(mode, image, maskG, alpha).astype("uint8")
-#DisplayWithAspectRatio(opt, 'With maskG', imageG, 512)
-
-#image = imglib.blend_segmented(mode, imageG, maskB, alpha).astype("uint8")
-#DisplayWithAspectRatio(opt, 'With maskG+maskB', image, 512)
-#cv2.imwrite(imgMain[:-4] + "_pyDet_G+B.png", image)
-
-image = imglib.blend_segmented(mode, imageB, maskG, alpha).astype("uint8")
-DisplayWithAspectRatio(opt, 'With maskB+maskG', image, 512)
 ### Remerge Alpha
-image = cv2.merge([image[:,:,0], image[:,:,1], image[:,:,2], imgAlpha])
+#image = cv2.merge([image[:,:,0], image[:,:,1], image[:,:,2], imgAlpha])
 
-DisplayWithAspectRatio(opt, 'Final', image, 512)
+DisplayWithAspectRatio(opt, 'Final', image.astype("uint8"), 256)
 if show: k = cv2.waitKey(0) & 0xFF
 
 ### Write out final image
-outName = imgMain[:-4] + "_pyDet.png"
+outName = imgMain[:-4] + "_pyLin.png"
 cv2.imwrite(outName, image)
 print("Wrote output image at\n" + outName)
