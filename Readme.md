@@ -13,6 +13,10 @@ I made it to allow others exploring the possibility of using KK as alternative t
     - *... or any target-of-affection, be it waifu or husbando.
  - You already use KK and complain about any restrictions that CharaStudio has when compared with MMD.
  - You already use the Export Mod yourself but realize that a good model takes a lot of effort to just get the basics done.
+![Comparisons](img/Comparisons.png)
+
+Comparing 'Bare minimum', '5min of manual edits', 'running the script'
+
 
 ## Legal (from nuthouse01)
 
