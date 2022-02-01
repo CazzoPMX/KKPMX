@@ -58,15 +58,15 @@ Any Eye and/or Mouth Position works, as long as the Eyes stay open and the mouth
        - See the next subsection for how to use the model immediately.
  5. Click on the 'Info' Tab (Heart) and then on [Generate JSON Data].
     - Will add a file called `{CharName}.json` into the same folder.
- 6. [Old] This step is (almost) entirely optional, but improves the quality of the textures a lot and requires the [MaterialEditor].<br/>
+ 6. ~~[Old] This step is (almost) entirely optional, but improves the quality of the textures a lot and requires the [MaterialEditor].<br/>
 The goal is to go through every asset (Body, Clothes, Accessory) and export the auxiliary textures (in most cases, ColorMask & DetailMask)<br/>
-See the [Help]-Section of [Scan Plugin File] for more details of which are currently supported.
+See the [Help]-Section of [Scan Plugin File] for more details of which are currently supported.~~
     >Older versions of [PmxExport] only export the Main-Textures.  
     >I added an updated version which also exports all 'extra' textures into a folder called 'extra'
     >So there is no need to manually export the textures anymore.
     - See the [Help]-Section of [Scan Plugin File] for how to use a different name / path.
     - Note: Some assets lack a Main-Texture (like the default Fox-Tail). If it exists, the ColorMask will instead be used as base texture.
- 7. Start KKPMX.exe, select option [(5) All-in-one converter] and follow the steps.
+ 7. Start KKPMX_core.exe, select option [(5) All-in-one converter] and follow the steps.
     - [Notes for Step(2)]: Recommended choices are: 2 (No) \ 2 (only top-level) \ 1 (Yes)
 
 The model should be (almost) ready, but some last adjustments have to be done manually.
@@ -115,17 +115,18 @@ To compile the project yourself, you need to install the following dependencies:
 ## What I do when working on a model (aka What to do if you don't know what to do)
 
  - After exporting, usually looking at the raw model to see how it looks (just out of curiosity)
- - In some cases, reorder clothes into proper order
  - Run the 'All-in-one' mode
+    - Using the generated *.json when being asked for such.
  - Using a fitting processing option of [mode 4].
  - Opening 'model_cutScan.pmx' for additional edits.
-    - It would be 'model_better.pmx' when skipping [mode 4] .
+    - It would be 'model_better.pmx' when skipping [mode 4].
  - Going through Rigids, setting noisy ones to 'all green'.
  - Also detangling some chains if necessary
     - This involves either removing Rigids + Joints -or- rewire bones & rigids to split chains
     - Since I'm the dev, sometimes adding them, if possible, as pattern into the script. Only core KK assets or big enough mods are added, though.
  - Adjusting morph items that should always stay hidden / always stay visible
- - Reorder the clothes if I haven't done it yet.
+ - Reorder clothes into proper order (if I haven't already done it at the start)
+    - Proper order means 'inside' is sorted before 'outside' (e.g. Socks before Shoes, Bra before Shirt before Jacket, etc.
  - Cleanup the [Display] Group from morphs I don't need for this model.
  - Going through materials to untick 'Edge (Outline)' in severe cases (those with lots of 'black textures')
  - Apply opacity of 0.5 to glassy items
