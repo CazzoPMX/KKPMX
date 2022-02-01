@@ -5,7 +5,7 @@ import sys
 import cv2
 import numpy as np
 import blend_modes
-
+import gc
 
 def makeOptions(_opt):
 	return {
@@ -76,22 +76,26 @@ def converterScaled(opt, img, imgAlpha=None, addAlpha=False): ## read: [imgAlpha
 	if addAlpha and imgAlpha is None:
 		imgAlpha = np.ones(img.shape[:2], dtype='uint8') * 255
 	if imgAlpha is not None:
-		return (cv2.merge([img[:,:,0], img[:,:,1], img[:,:,2], imgAlpha]) / opt["scale"]).astype(float)
+		imgBase = np.ones([img.shape[0], img.shape[1], 4], dtype='float') * 255
+		imgBase[:,:,:3] = img.astype(float)
+		imgBase[:,:,3] = imgAlpha
+		#return (cv2.merge([img[:,:,0], img[:,:,1], img[:,:,2], imgAlpha]) / opt["scale"]).astype(float)
+		return imgBase
 	return (img / opt["scale"]).astype(float)
 def converter(img, imgAlpha=None, addAlpha=False): return converterScaled({ "scale": 1}, img, imgAlpha, addAlpha)
 
-def resize(imgSource, imgTarget):
+def resize(imgSource, imgTarget, inter=cv2.INTER_AREA):
     if type(imgTarget) in [list,tuple]: shape = imgTarget
     else:                               shape = imgTarget.shape
 
     if (imgSource.shape[:2] != shape[:2]):
         target = shape
         source = imgSource.shape
-        width  = int(source[1] * (target[1] / source[1]))
-        height = int(source[0] * (target[0] / source[0]))
+        width  = int(round(source[1] * (target[1] / source[1])))
+        height = int(round(source[0] * (target[0] / source[0])))
         #print("{} * ({} / {} = {}) == {}".format(source[1], target[1], source[1], target[1] / source[1], width))
         #print("{} * ({} / {} = {}) == {}".format(source[0], target[0], source[0], target[0] / source[0], height))
-        return cv2.resize(imgSource, (width, height), interpolation=cv2.INTER_NEAREST)
+        return cv2.resize(imgSource, (width, height), interpolation=inter)
     return imgSource
 
 def normalize_color(color): ## from: body_overtex1
@@ -138,6 +142,7 @@ def get_blend_mode(blend_mode):
 		"darken": blend_modes.darken_only,
 		"mul": blend_modes.multiply,
 		"diff": blend_modes.difference,
+		"GExtract": blend_modes.grain_extract,
 	}
 	if blend_mode not in blendDict: raise Exception("Unknown blend_mode " + blend_mode)
 	return blendDict[blend_mode]
@@ -153,6 +158,7 @@ def blend_segmented(blend_mode, main, mask, alpha):
 	To save resources, images are processed in chunks of 1024x1024 
 	"""
 	if type(blend_mode) == str: blend_mode = get_blend_mode(blend_mode)
+	gc.collect()
 	_main = converter(main, addAlpha=True)
 	_mask = converter(mask, addAlpha=True)
 	def buildRange(axis, size):
@@ -415,11 +421,54 @@ def combineWithBitmask(opt, _base, _overlay, _mask):
 	if (_base.shape[2] == 4): _mask = ensureAlpha(_mask)
 	return cv2.copyTo(_overlay, _mask.astype("uint8"), _base)
 
+def merge_channelsOpt(opt, _img, arr, name='Merged'):
+	img = merge_channels(_img, arr)
+	DisplayWithAspectRatio(opt, name, img, 256)
+	return img
+def merge_channels(_img, arr): ## in[(:,:,3+), List(3)], out[(:,:)]
+	## https://stackoverflow.com/questions/23224976/convert-image-to-grayscale-with-custom-luminosity-formula
+	#arr = [1,0,0] # Gives blue channel all the weight
+	#arr = [0.114, 0.587, 0.299] # for standard gray conversion,
+	m = np.array(arr).reshape((1,3))
+	return cv2.transform(img[:,:,:3], m)
+
+def filter_blue(_img, arr):
+	#https://stackoverflow.com/questions/22588146/tracking-white-color-using-python-opencv
+	hsv = cv2.cvtColor(_img, cv2.COLOR_BGR2HSV)
+	## [Value=Black -> Color \\ Sat=Gray -> Color]
+	# define range of blue color in HSV
+	lower_blue = np.array([110,100,100])
+	upper_blue = np.array([130,255,255])
+	
+	# for white color
+	lower_white = np.array([0,0,168])
+	upper_white = np.array([172,111,255])
+	
+	# Threshold the HSV image to get only blue colors
+	mask = cv2.inRange(hsv, lower_blue, upper_blue)
+	# Bitwise-AND mask and original image
+	return cv2.bitwise_and(_img, _img, mask=mask)
+
+## Sets all black-ish pixels to 0,0,0 for binary masking
+def smooth_black(_img):
+	#https://stackoverflow.com/questions/22588146/tracking-white-color-using-python-opencv
+	hsv = cv2.cvtColor(_img, cv2.COLOR_BGR2HSV)
+	## [Value=Black -> Color \\ Sat=Gray -> Color]
+	# define color range in HSV
+	lower_range = np.array([0,0,48])
+	upper_range = np.array([180,255,255])
+	
+	# Threshold the HSV image
+	mask = cv2.inRange(hsv, lower_range, upper_range)
+	# Bitwise-AND mask and original image
+	return cv2.bitwise_and(_img, _img, mask=mask)
+
+
 ######
 ## Small
 ######
 
-def convert_to_BW(image, full=True):
+def convert_to_BW(image, full=True): ## OpenCV default is BGR
 	convCh = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 	if not full: return convCh
 	return cv2.merge([convCh, convCh, convCh, image[:,:,3]])
@@ -427,8 +476,11 @@ def convert_to_BW(image, full=True):
 #""" Add image to itself as Alpha """
 def apply_alpha_BW(opt, img): return converterScaled(opt, img, convert_to_BW(img, False), True).astype("uint8")
 
+def invert(image):
+	return cv2.merge([255 - image[:,:,0], 255 - image[:,:,1], 255 - image[:,:,2], image[:,:,3]])
+
 def invert_f(image):
-	return cv2.merge([1 - imgBase_f[:,:,0], 1 - imgBase_f[:,:,1], 1 - imgBase_f[:,:,2], imgBase_f[:,:,3]])
+	return cv2.merge([1 - image[:,:,0], 1 - image[:,:,1], 1 - image[:,:,2], image[:,:,3]])
 
 def getBitmask(image, show=False, tag="", binary=False):
 	## Make a white image to create a mask for "above 0"
@@ -446,15 +498,62 @@ def getBitmask(image, show=False, tag="", binary=False):
 def negate(image):   return (image + 256) * (-1) + 512
 def negate_f(image): return (image + 1) * (-1) + 2
 
+def BGR_to_HSV(arr): return cv2.cvtColor(np.uint8([[arr[:3]]]), cv2.COLOR_BGR2HSV)[0,0,:]
+def arrCol(arr, _col): return cv2.cvtColor(np.uint8([[arr[:3]]]), _col)[0,0,:]
+def RGB_to_real_HSV(arr):
+	cv2_HSV = arrCol(arr, cv2.COLOR_RGB2HSV)
+	cv2_HSV[0] *= 2        ## 180 -> 360
+	cv2_HSV[1] *= (1/2.55) ## 255 -> 100
+	cv2_HSV[2] *= (1/2.55) ## 255 -> 100
+	return cv2_HSV
+
+def printFlags(): print([i for i in dir(cv2) if i.startswith('COLOR_')])
+
+
+def my_RGB_to_HSV(_col):
+	(R, G, B) = _col[:3]
+	## <skip>: Make sure _col is 0..255
+	RR = R / 255
+	GG = G / 255
+	BB = B / 255
+	Cmax = max(RR, GG, BB)
+	Cmin = min(RR, GG, BB)
+	delta = Cmax - Cmin
+	### prep
+	hue = 0; sat = 0; val = 0
+	### Hue
+	if delta == 0: hue = 0
+	elif Cmax == RR: hue = ((GG - BB)/delta) % 6
+	elif Cmax == GG: hue = (BB - RR) / delta + 2
+	elif Cmax == BB: hue = (RR - GG) / delta + 4
+	hue *= 60
+	if hue < 0: hue += 360
+	### Saturation
+	if Cmax == 0: sat = 0
+	else: sat = delta / Cmax
+	### Value
+	val = Cmax
+	## Convert from % to full number
+	sat *= 100;
+	val *= 100;
+	return [hue, sat, val]
+
+
+def change_hue(_img, _val): ## Using default order of BGR
+	img_hsv = cv2.cvtColor(_img, cv2.COLOR_BGR2HSV)
+	img_hsv[:,:,0] = _val
+	img_BBB = cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR)
+	return np.dstack([img_BBB[:,:,:3], _img[:,:,3]])
+
 ######
 ## Tester
 ######
-def testOutModes_wrap(main, mask): ## To use [testOutModes] in ad-hoc way
+def testOutModes_wrap(main, mask, msg = "<< Using Wrapper >>", _opt=None): ## To use [testOutModes] in ad-hoc way
 	show = True
-	opt = makeOptions(locals())
+	opt = _opt if _opt is not None else makeOptions(locals())
 	_main = converterScaled(opt, main, None, True)
 	_mask = converterScaled(opt, mask, None, True)
-	testOutModes(opt, _main, _mask, 256, "<< Using Wrapper >>", advanced=True)
+	testOutModes(opt, _main, _mask, 256, msg, advanced=True)
 
 """
 #### https://pythonhosted.org/blend_modes/

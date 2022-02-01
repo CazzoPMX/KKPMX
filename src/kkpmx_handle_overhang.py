@@ -128,18 +128,21 @@ def run_kk_defaults(pmx, input_filename_pmx):
 	## Do shoulders as well? --> Needs Shirt (also fix Emblem bc bleed through)
 	## Ask if providing own bounds or using default box (extended or only around nips)
 	bounds = { "minY": 10.20, "minZ": 0, "maxZ": 0 }
-	def addIfFound(name,key,idx):
+	def addIfFound(name,key,idx,pad=None):
 		bone_idx = util.find_bone(pmx, name)
-		if bone_idx: bounds[key] = pmx.bones[bone_idx].pos[idx]
+		if bone_idx:
+			bounds[key] = pmx.bones[bone_idx].pos[idx]
+			if pad is not None: bounds[key] += pad
 	def averageOut(name, key, idx):
 		bone_idx = util.find_bone(pmx, name)
 		if bone_idx:
 			tmp = pmx.bones[bone_idx].pos[idx]
 			bounds[key] = (bounds.get(key,0)+tmp)/2
 	
-	choices = [("Detailed", 0), ("Rough Box", 1), ("No", 2)]
+	CH__DETAIL = 0; CH__BOX_SMALL = 1; CH__BOX_BIG = 2; CH__NO = 3;
+	choices = [("Detailed", CH__DETAIL), ("Rough Box (small)", CH__BOX_SMALL), ("Rough Box (big)", CH__BOX_BIG), ("No", CH__NO)]
 	choice = util.ask_choices("KK Defaults: Restrict to optimized box around chest ?", choices)
-	if choice == 0:
+	if choice == CH__DETAIL:
 		#if util.find_bone(pmx, "cf_j_spinesk_02", True):
 		#	addIfFound("cf_j_spinesk_02", "maxY", 1)
 		#	addIfFound("cf_hit_bust00", "minY", 1)
@@ -161,11 +164,18 @@ def run_kk_defaults(pmx, input_filename_pmx):
 		averageOut("胸親", "maxZ", 2)
 		averageOut("cf_s_bust03_R", "maxZ", 2)
 		averageOut("cf_s_bust03_R", "maxZ", 2)
-	elif choice == 1:
+	elif choice == CH__BOX_BIG:
 		addIfFound("cf_d_arm01_R", "minX", 0)
 		addIfFound("cf_d_arm01_L", "maxX", 0)
 		addIfFound("cf_s_spine02", "minY", 1)
 		addIfFound("cf_d_arm01_L", "maxY", 1)
+		bounds["maxZ"] = 3
+		bounds["minZ"] = -3
+	elif choice == CH__BOX_SMALL:
+		addIfFound("cf_s_bnip02_R", "minX", 0, -0.2)
+		addIfFound("cf_d_bust03_R", "maxX", 0)
+		addIfFound("胸親", "minY", 1, -0.25)
+		addIfFound("胸親", "maxY", 1, 0.25)
 		bounds["maxZ"] = 3
 		bounds["minZ"] = -3
 	elif has_inside:
@@ -178,7 +188,7 @@ def run_kk_defaults(pmx, input_filename_pmx):
 		"initial_hidden": True,
 	}
 	
-	if choice == 1:
+	if choice in [CH__BOX_BIG, CH__BOX_SMALL]:
 		if has_inside:
 			results = cut_out_box_from_material(pmx, bounds, util.find_mat(pmx, inside.name_jp))
 			#log_line.append(f"Isolated vertices of {inside.name_jp} peaking through {outside.name_jp}")

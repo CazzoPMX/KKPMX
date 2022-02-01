@@ -29,6 +29,7 @@ overcolor    = data["color"]
 # 1 = Org of [White] gets [Specularity] overlay
 #-- tex1mask = 0 :: disables nip_specular
 nip_specular = data.get("spec", 0.5)
+nip_specular = max(nip_specular, 0) ## Min allowed value of [blend_modes]
 nip_specular = min(nip_specular, 1) ## Max allowed value of [blend_modes]
 ###
 # 0     = Full RGB-Color
@@ -42,10 +43,12 @@ alpha   = 64 / 255    ## For mask
 beta    = 1.0 - alpha ## For main
 show    = False       ## Do cv2.imshow
 
-cX_L  = 195
-cX_R  = 382
-cY    = 285
-size  = 64
+### These cords work for a standard size of 4096 x 4096 -- Todo: (do not scale down to 64 anymore.)
+_scale = 16
+cX_L  = 195 - int(_scale/2)
+cX_R  = 382 - int(_scale/2)
+cY    = 285 - int(_scale/2)
+size  = 64  + _scale
 
 opt = imglib.makeOptions(locals())
 
@@ -67,7 +70,7 @@ image = cv2.merge([image[:,:,0], image[:,:,1], image[:,:,2], imgAlpha])
 #DisplayWithAspectRatio(opt, 'Mask only', mask, 256)
 
 ## Resize Mask to target size ---> x__resize_mask
-maskRes = imglib.resize(mask, [size, size])
+maskRes = imglib.resize(mask, [size, size], inter=cv2.INTER_AREA)
 
 ## Make sure Color is not float anymore
 overcolorInt = imglib.normalize_color(overcolor)
@@ -75,13 +78,7 @@ overcolorInt = imglib.normalize_color(overcolor)
 ##------------ Main work
 def conv(img): return img.astype(float)
 def convI(img): return img.astype("uint8")
-
-#### Workaround since unable to figure out consistent way that works for both
-sumR = maskRes[:,:,0].sum().astype('int64')
-sumG = maskRes[:,:,1].sum().astype('int64')
-sumB = maskRes[:,:,2].sum().astype('int64')
-
-is_bitmask = (abs(sumR - sumG) < 500) and (abs(sumR - sumB) < 500)
+def modeTest(src, dst, name): return imglib.testOutModes(opt, src, dst, 256, name, True, _alpha=1)
 
 #################################### Cut out segment (because org file is too big)
 def cutHelper(_image, _area, insert=None):
@@ -95,7 +92,7 @@ def cutHelper(_image, _area, insert=None):
 		return _image
 
 img_segR  = cutHelper(image, [cY, cX_R], None)
-#DisplayWithAspectRatio(opt, 'Cut from Main', img_seg.astype("uint8"), 256)
+DisplayWithAspectRatio(opt, "ImgSegR", img_segR, 256)
 ####################################
 
 ### Do DisplayWithAspectRatio:
@@ -118,61 +115,100 @@ imglib.testOutModes(opt, image_f, imgBase_f, 256, "Both Float", True, _alpha=1)
 ### Get color and apply self
 # tex1mask: Affects alpha of [col_seg] by tex1mask%
 # nip:      Affects size of [col_seg] by a small margin
-col_seg = imglib.getColorMask(opt, convI(imgBase_f), overcolorInt, "")
-DisplayWithAspectRatio_f(opt, 'ColorMask', conv(col_seg), 256)
-col_seg2 = imglib.colorizeBitmask(opt, convI(imgBase_f), overcolorInt, "")
-DisplayWithAspectRatio_f(opt, 'ColorMask (BM)', conv(col_seg2), 256)
 
-if not is_bitmask: col_seg = col_seg2
+####################################
+## Split into separate channels
 
-col_seg = conv(col_seg)
+def extractChannel(src, chIdx):# Uses [maskRes, cv2, convI]
+    maskCh = src[:,:,chIdx]
+    
+    ### Stretch to same shape as imgMain
+    if (maskCh.shape[:2] != maskRes.shape[:2]):
+        maskCh = cv2.resize(maskCh, (maskRes.shape[1], maskRes.shape[0]), interpolation=cv2.INTER_AREA)
+    ### Widen into 3-Channel img_seg again
+    maskChX = cv2.merge([maskCh, maskCh, maskCh, convI(maskRes)[:,:,3]])
+    DisplayWithAspectRatio(opt, 'Channel '+str(chIdx), maskChX, 256) 
 
-_alpha = 1#192/255
+    return maskChX
+#-----
+cv2.destroyAllWindows()
+
+maskB = extractChannel(mask, 0) ## Pink   == Color 3
+maskG = extractChannel(mask, 1) ## Yellow == Color 2
+maskR = extractChannel(mask, 2) ## Red    == Color 1
+
+####################################
+## Create a Color Image for reference
+
+def getColorImg(_mask, _colArr):
+	## Create an image of this color
+	colImg0 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[0]
+	colImg1 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[1]
+	colImg2 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[2]
+	return cv2.merge([colImg2, colImg1, colImg0, _mask[:,:,3]])
+colImg = getColorImg(mask, overcolorInt)
+DisplayWithAspectRatio(opt, "colImg", colImg, 256)
+
+#####################
+## img_segR \\ image_f ## maskRes \\ imgBase_f
+#-- COLOR_BGR2HSV, COLOR_RGB2HSV, COLOR_HSV2BGR
+col_hsv = imglib.arrCol(overcolorInt, cv2.COLOR_RGB2HSV)
+#print(overcolorInt);print(col_hsv);print(imglib.RGB_to_real_HSV(overcolorInt))
+
+
+img_hsv = cv2.cvtColor(maskRes, cv2.COLOR_BGR2HSV)
+## Apply mix of color vs. tex1mask in percent
+img_hsv[:,:,0] = col_hsv[0]
+img_hsv[:,:,1] = col_hsv[1]
+img_tex = cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR)
+img_tex = np.dstack([img_tex[:,:,:3], maskRes[:,:,3]])
+
+def add_maskB(_img_seg):
+	modeTest(_img_seg, img_tex, "maskB using HSV[0]")
+	_image = imglib.blend_segmented(blend_modes.normal, conv(_img_seg), conv(img_tex), 1)
+	DisplayWithAspectRatio(opt, "Great", _image, 256)
+	return _image
+img_seg = add_maskB(img_segR)
 
 ####
-##-- Only normal keeps BG, all else use the Black BG of the mask
-#imglib.testOutModes(opt, conv(col_seg), image_f, 256, "Color + Img", True, _alpha=_alpha)
+## Apply Specularity
+##-- Black: normal, mul, darken, hard_light
+##-- Screen looks the closest to without -- Try out with just appling BW 
+def add_maskG(_img_seg):
+	modeTest(_img_seg, maskG, "normal + maskG")
+	#_image = imglib.blend_segmented(blend_modes.screen, _img_seg, maskG, nip_specular)
+	_image = imglib.blend_segmented(blend_modes.overlay, _img_seg, maskG, nip_specular)
+	DisplayWithAspectRatio(opt, "Great 2", _image, 256)
+	return _image
+img_seg = add_maskG(img_seg)
 
-mode_1 = blend_modes.normal if is_bitmask else blend_modes.multiply
-img_seg = mode_1(image_f, conv(col_seg), _alpha)
-DisplayWithAspectRatio_f(opt, 'ImgSeg', img_seg, 256)## >> Useless
-
-# tex1mask: Affects bleeding of [col_seg] non-R channels (0 = keep 100%, 1 = R,R,R)
-test = imglib.extendChannel(imgBase_f[:,:,0], imgBase_f[:,:,3])
-test2 = imglib.extendChannel(imgBase_f[:,:,1], imgBase_f[:,:,3])
-
-imglib.testOutModes(opt, conv(img_seg), test, 256, "ImgSeg + Mask", True, _alpha=1)
-##>> Looks ok again
-
-mode_2 = blend_modes.multiply if is_bitmask else blend_modes.screen
-
-img_seg = mode_2(conv(img_seg), test, 1)
-DisplayWithAspectRatio_f(opt, 'ImgSeg after Test', img_seg, 256)## >> Useless
-img_seg = mode_2(conv(img_seg), test2, nip_specular)
-DisplayWithAspectRatio_f(opt, 'ImgSeg after Test2', img_seg, 256)## >> Useless
-##---
+ ## Looks good, but needs more testing if actually required.
+def add_maskR(_img_seg):## -- Adds back a bit of contrast
+	modeTest(_img_seg, maskR, "normal + maskR")
+	_image = imglib.blend_segmented(blend_modes.multiply, _img_seg, maskR, 1)
+	DisplayWithAspectRatio(opt, "Great 3", _image, 256)
+	return _image
+img_seg = add_maskR(img_seg)
 
 DisplayWithAspectRatio(opt, 'Final Seg[CV2]', conv(img_seg), 256)
+def modeTest2(src, dst, name): pass
+modeTest = modeTest2
 
 #### Paste back
-image = cutHelper(image, [cY, cX_R], conv(img_seg))
+image = cutHelper(image, [cY, cX_R], img_seg)
 
 ###################### Other side
 img_segL  = cutHelper(image, [cY, cX_L], None)
-image_f   = conv(img_segL)
 
-img_seg = mode_1(image_f, conv(col_seg), _alpha)
-img_seg = mode_2(conv(img_seg), test, 1)
-img_seg = mode_2(conv(img_seg), test2, nip_specular)
-
-#img_seg = blend_modes.multiply(image_f, conv(col_seg), _alpha)
-##img_seg = blend_modes.multiply(conv(img_seg), test, 1)
-#if do_spec: img_seg = blend_modes.multiply(conv(img_seg), test2, nip_specular)
+img_seg = add_maskB(img_segL)
+img_seg = add_maskG(img_seg)
+img_seg = add_maskR(img_seg)
 
 image = cutHelper(image, [cY, cX_L], img_seg)
 ######################
 
-DisplayWithAspectRatio(opt, 'Final', image[cY-size*2:cY+size*2, cX_L-size:cX_R+size, :], None, 512+256)
+#print(f'{cY-size*2}:{cY+size*2}, {cX_L-size}:{cX_R+size}')
+DisplayWithAspectRatio(opt, 'Final', image[max(0,cY-size*2):cY+size*2, max(0,cX_L-size):cX_R+size, :], None, 512+256)
 if show: k = cv2.waitKey(0) & 0xFF
 
 ### Write out final image

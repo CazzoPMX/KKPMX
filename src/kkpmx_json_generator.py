@@ -85,6 +85,7 @@ raw_meta = "meta"
 raw_name = "name"
 raw_ren  = "render"
 raw_mat  = "mats"
+raw_eye  = "resetEyes"
 ##--## Raw JSON keys (Output)
 out_name    = "name"
 out_opt     = "options"
@@ -141,7 +142,7 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 		mat_dict[mat] = kk_skip.match(name)
 	
 	arr = [ ]
-	arr.append(Comment("Generated with KKPMX v.1.0"))
+	arr.append(Comment("Generated with KKPMX v.1.4"))
 	arr.append(Comment("Colors are RGBA mapped to [0...1]; Alpha is added if missing"))
 	##	write Name
 	arr.append((out_name, "....")) ## in [json_ren]
@@ -163,6 +164,8 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 	if raw_meta in json_ren:
 		if raw_name in json_ren[raw_meta]:
 			arr[2] = (out_name, json_ren[raw_meta][raw_name])
+		if raw_eye in json_ren[raw_meta]:
+			global_dict[raw_eye] = json_ren[raw_meta][raw_eye] in ["True", "true"]
 	render_tree = generate_render_tree(pmx, tree, json_ren[raw_ren])
 	json_tree = generate_material_tree(pmx, tree, render_tree, json_ren[raw_mat])
 	
@@ -200,7 +203,7 @@ def GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree):
 	##	write "cf_m_face_00"
 	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_face_00", opt_Group: "face",
 		opt_texAvail: [t__Detail, t__Line, t__Main, t__NorMap, t__NorMapDet, t__overtex1], ## t__overtex2, t__overtex3
-		opt_texUse: [t__Detail, t__Line, t__Main],
+		opt_texUse: [t__Detail, t__Line, t__Main, t__Alpha],
 		})
 	##	write WS
 	arr.append(Comment(NL=True))
@@ -227,13 +230,13 @@ def GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree):
 	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_hitomi_00",
 		opt_Group: "eye",
 		opt_texUse: [ t__Main, t__overtex1, t__overtex2 ],
-		opt_Comment: Comment("Export Highlight manually", idx="Left Eye")
+		opt_Comment: Comment("offset+Scale (X,Y)", idx="Left Eye")
 		})
 	##	>	cf_m_hitomi_00*1 ---> inherit: "cf_m_hitomi_00", textures: [main_tex]
 	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_hitomi_00", opt_Iter: 1,
 		opt_Group: "eye",
 		opt_texUse: [ t__Main, t__overtex1, t__overtex2 ],
-		opt_Comment: Comment("Export Highlight manually", idx="Right Eye"),
+		opt_Comment: Comment("If Eyes look weird, use (0.0, -0.05) as offset", idx="Right Eye"),
 		})
 	##	>	cf_m_tang
 	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_tang",
@@ -250,7 +253,7 @@ def GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree):
 		arr.append(Comment("", idx=cat_to_Title.get(cat,cat)))
 		opt = { opt_Name: cat, opt_Group: "hair",
 				opt_texAvail: [t__Alpha, t__Another, t__Color, t__Detail, t__HairGloss, t__Main, t__NorMap],
-				opt_texUse: [t__Color, t__Detail],
+				opt_texUse: [t__Color, t__Detail, t__Alpha],
 			}
 		for _name in parent_tree.get(cat, []):
 			opt[opt_Name] = _name
@@ -359,7 +362,7 @@ def GenerateJsonFile__Accs(pmx, arr, tree, slots, parent_tree):
 				opt_Name: slot, # opt_Group: "cloth",
 				## "#// t__Alpha, t__Another, t__Detail, t__Line, t__Main, t__NorMap",
 				opt_texAvail: [t__Alpha, t__Another, t__Detail, t__Line, t__Main, t__NorMap],
-				opt_texUse: [t__Color, t__Detail, t__Main],
+				opt_texUse: [t__Alpha, t__Color, t__Detail, t__Main],
 			}
 		for _name in parent_tree.get(slot, []):
 			opt[opt_Name] = _name
@@ -393,6 +396,8 @@ cat_to_Title = {
 
 def write_entity(pmx, arr, json_tree, opt):
 	"""
+#	Search in [json_tree] for all entities named 'opt' (if str) or opt[opt_Name] (if dict)
+#	-- then skip [opt.opt_Iter] entries and store the result in [elem]:
 #	[[receive]]
 #	"m_hood (Instance) (Instance)@ca_slot22": {
 #		"offset": "(0.0, 0.0)",
@@ -428,6 +433,11 @@ def write_entity(pmx, arr, json_tree, opt):
 	render = mat.get("render",{})
 	## @todo: print comment
 	
+	### if using [meta.resetEyes], change it accordingly
+	if global_dict.get(raw_eye, False):
+		if opt.get(opt_Group, "") == "eye":
+			mat["offset"] = "(0.0, -0.05)"
+	
 	def appendMatch(_key, _name):
 		if _key != _name: return False
 		v = mat.get(_name, None)
@@ -435,7 +445,9 @@ def write_entity(pmx, arr, json_tree, opt):
 		if _name == "shader":
 			targetBase["shader"] = opt.get(opt_Group, re.sub("Shader ?Forge/","",v))
 			return True
+		## Use a different [default] for offset
 		df = "(0.0, 0.0)" if _name == "offset" else "(1.0, 1.0)"
+		## Only add to tree if [value != default] 
 		if v != df: targetBase[_name] = v
 		return True
 		

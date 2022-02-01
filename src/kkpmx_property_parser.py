@@ -62,6 +62,7 @@ OPTIONS  = "options"
 #---
 OPT_ENG  = "use_english"
 OPT_HAIR = "process_hair"
+OPT_IMG  = "skip_images"
 #---
 GROUP    = "group"    ### Determines the texture type to use. Will fallback to [shader] if missing.
 TEXTURES = "textures" ### Maybe call it "used_textures"
@@ -219,6 +220,7 @@ def __parse_json_file(pmx, data: dict, root: str):
 	hair_tabu = []
 	global_state[OPT_HAIR] = {}
 	
+	global_state[OPT_IMG] = util.ask_yes_no("Skip images", "n")
 	
 	for mat_name in data.keys():
 		if mat_name in [NAME, BASE, OPTIONS]: continue
@@ -231,6 +233,7 @@ def __parse_json_file(pmx, data: dict, root: str):
 		mat = pmx.materials[mat_idx]
 		attr = data[mat_name]
 		if len(attr) == 0: continue ## Catches {},[],"" #@todo_add "<< silent ignore of empty elements >>"
+		#if (mat.name_jp != "cf_m_hair_f_02*16"): continue
 		print("\n==== Processing " + mat.name_jp)
 		# Copy Type
 		if type(attr) in [str, list]:
@@ -271,7 +274,9 @@ def __parse_json_file(pmx, data: dict, root: str):
 			base_mat = mat
 			if NO_FILES in attr: base_mat = pmx.materials[util.find_mat(pmx, attr[PARENT])] #@todo_ref "<< Inherit[A] >>"
 			name = base_mat.name_en if options[OPT_ENG] else base_mat.name_jp ## @todo_ref "<< OPT_ENG >>"
-			name = re.sub(r"\*\d","",name) #@todo_note "<< smt about '* not allowed in filename' >>"
+			#<< Because multi-part assets share a common texture, the unique-fyed name must be reduced for them.
+			name = re.sub(r"\*\d+","",name) #@todo_note "<< smt about '* not allowed in filename' >>"
+			## Transform supported textures into actual paths
 			for tex in attr[TEXTURES]:
 				if tex not in texSuffix:
 					print("[NotImpl] Could not find texture key '{}'".format(tex))
@@ -297,6 +302,7 @@ def __parse_json_file(pmx, data: dict, root: str):
 			'eye': parse_eye, 'hair': parse_hair, 'color': parse_color,
 			'alpha': parse_acc, 'ignore': parse_pass, 'glass': parse_glass,
 			}
+		#parseDict = { 'eye': parse_eye }
 		if attr[GROUP] in parseDict: parseDict[attr[GROUP]](pmx, mat, attr); #exit()
 		else:
 			msgs['no_action'].append(msgsPre + mat.name_jp)
@@ -345,6 +351,7 @@ def parse_color(pmx, mat, attr):
 	#	mat.ambRGB = attr.get(Color_Shadow, attr[Color_1])[:3]
 	#elif Color_Shadow in attr:
 	#	mat.ambRGB = attr[Color_Shadow][:3]
+	process_common_attrs(pmx, mat, attr)
 
 def parse_body(pmx, mat, attr):
 	print(":: Running 'body' parser")
@@ -360,6 +367,7 @@ def parse_body(pmx, mat, attr):
 	#attr[Color_Shadow] = None ## @todo_note:: "custom Shadows make skin look weird"
 	#del attr[Color_Shadow]
 	process_common_attrs(pmx, mat, attr)
+	if global_state.get(OPT_IMG, False): return
 	if t__Detail in attr: #pass ## Load file, pass to [detail python]
 		process_color_and_detail(pmx, mat, attr)
 	if t__Line in attr:
@@ -383,6 +391,7 @@ def parse_face(pmx, mat, attr):
 	###
 	extend_colors(attr, [Color_Tex1, Color_Tex2, Color_Tex3, Color_Shadow, Color_Specular])
 	process_common_attrs(pmx, mat, attr)
+	if global_state.get(OPT_IMG, False): return
 	## [t__Line] ++ DetailNormalMapScale :: [SpecialEffects]
 	#>> RGB-B ++ Alpha (0-200)
 	if t__Detail in attr: #pass ## Load file, pass to [detail python]
@@ -409,6 +418,7 @@ def parse_acc(pmx, mat, attr):
 	###
 	extend_colors(attr, [Color_1, Color_2, Color_3, Color_Shadow, Color_Specular])
 	process_common_attrs(pmx, mat, attr)
+	if global_state.get(OPT_IMG, False): return
 	process_color_and_detail(pmx, mat, attr)
 	if t__Line in attr: process_line_mask(pmx, mat, attr)
 
@@ -419,6 +429,7 @@ def parse_eye(pmx, mat, attr): ## @open: rotation, offset, scale
 	## Color_Tex1+2, Color_Shadow, exppower, isHighLight, rotation
 	####
 	extend_colors(attr, [Color_Tex1, Color_Tex2, Color_Shadow], True)
+	if global_state.get(OPT_IMG, False): return
 	if t__overtex1 in attr or t__overtex2 in attr:
 		handle_eye_highlight(pmx, attr)
 		set_new_texture(pmx, mat, attr, [attr[t__Main], suffix_HL + ".png"])
@@ -432,6 +443,7 @@ def parse_hair(pmx, mat, attr): ## @open: t__Color, t__Detail, t__HairGloss, Col
 	###
 	extend_colors(attr, [Color_1, Color_2, Color_3, Color_Line, Color_Shadow])
 	process_common_attrs(pmx, mat, attr)
+	if global_state.get(OPT_IMG, False): return
 	if attr[OPT_HAIR]: process_color_and_detail(pmx, mat, attr)
 	elif attr[INHERIT] in global_state[OPT_HAIR]:
 		attr[t__Reuse] = global_state[OPT_HAIR][attr[INHERIT]]
@@ -449,6 +461,7 @@ def parse_alpha(pmx, mat, attr): ## @todo
 	###
 	extend_colors(attr, [Color_1, Color_2, Color_3, Color_Line, Color_Shadow])
 	process_common_attrs(pmx, mat, attr)
+	if global_state.get(OPT_IMG, False): return
 	process_color_and_detail(pmx, mat, attr)
 	if Color_1 in attr: mat.diffRGB = attr[Color_1][:3]
 
@@ -529,7 +542,7 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 	if "SpecularPower" in attr: mat.specpower = attr["SpecularPower"]
 	if "LineWidthS" in attr:    mat.edgesize  = attr["LineWidthS"]
 	if Color_Shadow in attr:# and attr[GROUP] not in ["hair"]:
-		# smt smt only if bnot already set
+		# smt smt only if not already set
 		#if mat.ambRGB == [1,1,1]: mat.ambRGB    = attr[Color_Shadow][:3]
 		#mat.diffRGB   = attr[Color_Shadow][:3]
 		if mat.diffRGB == [1,1,1]:
@@ -561,20 +574,36 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 			if comment in ["BodyTop","p_cf_head_bone"]: comment = meta[MT_PARENT]
 			comment = "[:Slot:] " + comment
 			par = meta[MT_PARENT]
-			if re.match("ca_slot\d+", par):
-				comment += "\r\n[:AccId:] " + re.match("ca_slot(\d+)", par)[1]
+			### Add accessory slot as extra line
+			if re.match("ca_slot\d+", par):    comment += "\r\n[:AccId:] " + re.match("ca_slot(\d+)", par)[1]
+			### Add Top sub slots as extra line
+			if re.match("ct_top_parts_", par): comment += "\r\n[:TopId:] " + par
+			
 			if not mat.comment or len(mat.comment) == 0:
 				mat.comment = comment
-			else: mat.comment += "\r\n" + comment
+			else:
+				mat.comment = re.sub("(\r\n)?[:Slot:] \w+",  "", mat.comment)
+				mat.comment = re.sub("\r\n[:AccId:] \d+", "", mat.comment)
+				mat.comment = re.sub("\r\n[:TopId:] \w+", "", mat.comment)
+				mat.comment += "\r\n" + comment
 
 def process_color_and_detail(pmx, mat, attr):
 	def replFN(elem, name): return os.path.join(os.path.split(elem)[0], name)
-	def getFN(elem): return os.path.splitext(os.path.split(elem)[1])[0]
-	if t__Color in attr:
+	def getFN(elem): return "" if elem is None else os.path.splitext(os.path.split(elem)[1])[0]
+	
+	## main_opaque has no color
+	if t__Color in attr and Color_1 not in attr:
+		attr.setdefault(t__Main, "")
+		if (getFN(attr[t__Main]).startswith("mf_m_primmaterial")):
+			mat.flaglist[4] = False ## Disable Edge as well
+			return
+		print(f"> No colors found, skipping ColorMask")
+	elif t__Color in attr:
 		attr.setdefault(t__Main, None)
 		if attr[t__Main] and not os.path.exists(attr[t__Main]): attr[t__Main] = None
 		## Check if there is no MainTex
 		noMain = attr[t__Main] in [None,""] and META in attr
+		#print("------ before handle_acc_color"); print(attr); print("-----")
 		if noMain:
 			ff = getFN(attr[t__Color])
 			if (ff.startswith("mf_m_primmaterial")):
@@ -582,7 +611,9 @@ def process_color_and_detail(pmx, mat, attr):
 			attr["altName"] = re.sub("_ColorMask","",ff) + "@" + attr[META][MT_PARENT]
 		else:
 			### Ignore mf_m_primmaterial if they have a MainTex
-			if (getFN(attr[t__Main]).startswith("mf_m_primmaterial")): return
+			if (getFN(attr[t__Main]).startswith("mf_m_primmaterial")):
+				mat.flaglist[4] = False ## Disable Edge as well
+				return
 		handle_acc_color(pmx, attr)
 		ff = attr[t__Color if attr[t__Main] is None else t__Main]
 		if noMain: ff = replFN(attr[t__Color], attr["altName"])
@@ -608,6 +639,8 @@ def process_color_and_detail(pmx, mat, attr):
 		global_state[OPT_HAIR][attr[INHERIT]] = get_working_texture(attr)
 
 def process_line_mask(pmx, mat, attr): handle_body_line(pmx, mat, attr)#pass
+
+def process_alpha_mask(pmx, mat, attr): pass
 
 ##############
 #### Body ####
@@ -662,7 +695,7 @@ def handle_body_line(pmx, attr):
 #### Face ####
 ##############
 
-def handle_face_detail(pmx, attr): pass ## @todo
+def handle_face_detail(pmx, attr): pass ## --> Body
 
 def handle_face_effects(pmx, attr): ## @todo
 	if NO_FILES in attr: return
@@ -717,7 +750,7 @@ def handle_acc_color(pmx, attr):
 	arg1 = '""' if attr[t__Main] == None else quote(attr[t__Main])
 	arg2 = quote(attr[t__Color])
 	arg3 = quoteColor(attr[Color_1])
-	arg4 = quoteColor(attr[Color_2])
+	arg4 = '"[]"' if attr[Color_2] == None else quoteColor(attr[Color_2])
 	arg5 = '"[]"' if attr[Color_3] == None else quoteColor(attr[Color_3])
 	
 	data = {"mode": "Additive", "altName" : attr.get("altName","")}
@@ -725,7 +758,9 @@ def handle_acc_color(pmx, attr):
 	data[state_info] = global_state[state_info]
 	arg6 = quoteJson(data)
 	
-	argStr = "color"+arg1+arg2+arg3+arg4+arg5
+	## Build reuse id, apply [Alpha] in case it exists (since it should only be reused if same alpha)
+	argStr = "color"+arg1+arg2+arg3+arg4+arg5 + attr.get(t__Alpha, "")
+	
 	attr[ARGSTR] = argStr
 	tmp = global_state[ARGSTR].get(argStr, None)
 	if (tmp): attr[t__Reuse] = tmp
@@ -733,8 +768,9 @@ def handle_acc_color(pmx, attr):
 
 def handle_acc_detail(pmx, attr): ## Has @todo_add \\ @open: All the props affecting t__Detail
 	if NO_FILES in attr: return
-	if t__Reuse in attr: return
-	if NotFound(attr, t__Detail): return
+	# [t__Reuse] is set by ColorMask if happening -- Only do AlphaMask then
+	if t__Reuse in attr: return handle_acc_alpha(pmx, attr)
+	if NotFound(attr, t__Detail): return handle_acc_alpha(pmx, attr)
 	
 	### Determine main texture & blend mode
 	attr.setdefault(t__Main, None)
@@ -748,22 +784,60 @@ def handle_acc_detail(pmx, attr): ## Has @todo_add \\ @open: All the props affec
 	else: main = attr[t__Main]
 	if MODE in attr: mode = attr[MODE]
 	####
-	if not os.path.exists(main):
-		print(f">--> [MissingFile(Detail)]: {main}")
-		return
+	#if not os.path.exists(main):
+	#	print(f">--> [MissingFile(Detail)]: {main}")
+	#	return
 	args = {}
 	arg1 = quote(main)
 	arg2 = quote(attr[t__Detail])
-	arg3 = quote(global_state[state_info])
-	arg4 = quote(attr[t__Main] is None)
-	arg5 = quote(mode)
-	arg6 = quote(attr[SHADER] == "body")
+	
+	data = { }
+	data["details"] = global_state[state_info] ## argv3 -> details
+	data["is_main"] = attr[t__Main] is not None ## argv4 -> mainSize
+	data["mode"]    = mode                     ## argv5 -> mode
+	if attr[SHADER] == "body": data["is_body"] = True ## argv6 -> is_body
+	arg3 = quoteJson(data)
+	arg4 = ""
+	if NotFound(attr, t__Alpha, True) == False: arg4 = quote(attr[t__Alpha])
+	## Ignore alpha for cloths
+	if attr[SHADER] == "cloth": arg4 = ""
+	
 	if ARGSTR not in attr:
-		argStr = "detail"+arg1+arg2+arg4+arg5
+		argStr = "detail"+arg1+arg2+arg3+arg4
 		attr[ARGSTR] = argStr
 		tmp = global_state[ARGSTR].get(argStr, None)
 		if (tmp): attr[t__Reuse] = tmp; return
-	call_img_scripts((pathDetail, arg1, arg2, arg3, arg4, arg5, arg6), "detail")
+	call_img_scripts((pathDetail, arg1, arg2, arg3, arg4), "detail")
+
+def handle_acc_alpha(pmx, attr): ## Has @todo_add \\ @open: All the props affecting t__Detail
+	if NO_FILES in attr: return
+	if t__Reuse in attr: return
+	if NotFound(attr, t__Alpha, True): return
+	
+	### Determine main texture & blend mode
+	attr.setdefault(t__Main, None)
+	mode = "overlay"
+	if t__MainCol in attr:
+		main = attr[t__MainCol]
+	elif attr[GROUP] == 'cloth':
+		main = attr[t__Main]
+	else: main = attr[t__Main]
+	####
+	#if not os.path.exists(main):
+	#	print(f">--> [MissingFile(Detail)]: {main}")
+	#	return
+	args = {}
+	arg1 = quote(main)
+	arg2 = ""
+	
+	data = { }
+	data["details"] = global_state[state_info] ## argv3 -> details
+	data["is_main"] = attr[t__Main] is not None ## argv4 -> mainSize
+	data["mode"]    = mode                     ## argv5 -> mode
+	if attr[SHADER] == "body": data["is_body"] = True ## argv6 -> is_body
+	arg3 = quoteJson(data)
+	arg4 = quote(attr[t__Alpha])
+	call_img_scripts((pathDetail, arg1, arg2, arg3, arg4), "detail")
 
 ############
 #	X = attr[t__liquid]        ###	X = attr[t__Texture2]      ###	X = attr[t__Texture3]      ###	X = attr[Color_Liquid]     ##
@@ -958,6 +1032,7 @@ shader_dict = {
 	"shadowcast": "ignore",
 	"Bonelyfans": "ignore",
 	"mnpb": "ignore",          ## cf_m_mnpb
+	"Standard": "color",       ## -- Too much going on, just do colors for now.
 	# t__Glass, t__Main, t__NorMap ++ Color, Color4, *Sort,*Inverse,RimPower
 	"toon_glasses_lod0": "glass", ## cf_m_namida_00, c_m_gomu
 	### Small
@@ -965,12 +1040,14 @@ shader_dict = {
 	"toon_eye_lod0": "eye",    ## t__Main, t__expression, t__overtex1, t__overtex2 ++ **
 	"toon_nose_lod0": "color", ## t__Main ++ Color
 	"main_emblem": "color",    ## t__Main ++ shadowcolor
+	"main_color": "color",     ## Color
 	#########
 	## "main_skin": --> "face","body" are special case
 	#	"main_skin": "body", ## cm_m_dankon, cm_m_dan_f
 	# t__Another, t__Color, t__Detail, t__Line, t__Main, t__NorMap
 	"main_item": "item",          ## AnotherRampFull, DetailBLineG, DetailRLineR, LineWidthS, ...
 	"main_item_studio": "item",   ## ++ PatternMask 1,2,3 \\ several uncommon attr
+	"main_item_studio_alpha": "item", ## ++ PatternMask 1,2,3 \\ several uncommon attr
 	"main_item_emission": "item", ##  ++ z__AnimationMask \\ z__EmissionPower
 	# t__Alpha, t__Another, t__Detail, t__Line, t__liquid, t__Main, t__NorMap, 
 	"main_opaque": "cloth",

@@ -54,8 +54,8 @@ colorArr = []
 
 
 colB_3Pink   = json.loads(sys.argv[5])
-colG_1Yellow = json.loads(sys.argv[4])
-colR_2Red    = json.loads(sys.argv[3])
+colG_2Yellow = json.loads(sys.argv[4])
+colR_1Red    = json.loads(sys.argv[3])
 
 data = {}
 if (argLen > 6): data = json.loads(sys.argv[6])
@@ -72,7 +72,7 @@ else: print("\n=== Running ColorMask Script")
 
 #---------- Flags
 ### Apply Transparency of 30% ( = 64 of 255)
-alpha     = 64 / 255    ## For mask
+alpha     = 1.0 #64 / 255    ## For mask
 beta      = 1.0 - alpha ## For main
 show      = False       ## Do cv2.imshow
 noMainTex = len(imgMain) == 0
@@ -83,8 +83,8 @@ def isUseful(arr):
 	if len(arr) < 3: return False
 	return all([a == 0 for a in arr]) == False
 
-flagRed   = isUseful(colR_2Red)
-flagGreen = isUseful(colG_1Yellow)
+flagRed   = isUseful(colR_1Red)
+flagGreen = isUseful(colG_2Yellow)
 flagBlue  = isUseful(colB_3Pink)
 
 ### Read in pics
@@ -102,7 +102,6 @@ else:
 	DisplayWithAspectRatio(opt, 'Org', raw_image, 256)
 
 
-
 ## Pull out the alpha for later
 has_alpha = raw_image.shape[2] >= 4
 if has_alpha:
@@ -117,8 +116,7 @@ def extractChannel(src, chIdx):# Uses [image, cv2]
     ### Extract channels and invert them
     maskCh = 255 - src[:,:,chIdx]
     ### ... or not. Tried at end again, and yes, no invert
-    if mode == "Additive":
-        maskCh = src[:,:,chIdx]
+    maskCh = src[:,:,chIdx]
     
     ### Stretch to same shape as imgMain
     if (maskCh.shape[:2] != image.shape[:2]):
@@ -133,8 +131,8 @@ def extractChannel(src, chIdx):# Uses [image, cv2]
 cv2.destroyAllWindows()
 
 maskB = extractChannel(mask, 0) ## Pink == Color 3
-maskG = extractChannel(mask, 1) ## Yellow == Color 1
-maskR = extractChannel(mask, 2) ## Red == Color 2... Last pic says that red might be G...
+maskG = extractChannel(mask, 1) ## Yellow == Color 2
+maskR = extractChannel(mask, 2) ## Red == Color 1... Last pic says that red might be G...
 
 #### Make colors stronger before being toned down again
 #hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -144,6 +142,7 @@ maskR = extractChannel(mask, 2) ## Red == Color 2... Last pic says that red migh
 
 #### Apply color per channel
 bitmaskArr = []
+showCol = show and False
 def applyColor(_mask, _colArr, tag): ## read: [show, np, cv2, mode], write: [bitmaskArr]
 	"""
 	_mask :: One Color channel of [imgMask] as BW, extended into 3-Channel
@@ -152,13 +151,13 @@ def applyColor(_mask, _colArr, tag): ## read: [show, np, cv2, mode], write: [bit
 	
 	Given a mask [0], apply an RGB color [1] where '[0].pixel > 0'
 	"""
-	if show: print(_colArr)
+	if showCol: print(_colArr)
 	#tag = str(_colArr[0])
 	## Make a white image to create a mask for "above 0"
 	bitmask = np.ones(_mask.shape[:2], dtype="uint8") * 255
 	bitmask[:,:] = (_mask[:,:,0] != 0)
 	bitmask = cv2.merge([bitmask*255, bitmask*255, bitmask*255])
-	if show: DisplayWithAspectRatio(opt, tag+'-bitmask', bitmask, 256) ## Where to add color
+	if showCol: DisplayWithAspectRatio(opt, tag+'-bitmask', bitmask, 256) ## Where to add color
 	bitmaskArr.append(bitmask)
 	
 	## Create an image of this color
@@ -166,33 +165,47 @@ def applyColor(_mask, _colArr, tag): ## read: [show, np, cv2, mode], write: [bit
 	colImg1 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[1]
 	colImg2 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[2]
 	colImg = cv2.merge([colImg2, colImg1, colImg0]) ## Apparently the KK-RGB is as BGR ???
-	if show: DisplayWithAspectRatio(opt, tag+'-Color', colImg, 256)  ## A canvas of this Color
-	if show: DisplayWithAspectRatio(opt, tag+'-ColorMask', _mask, 256) ## How the channel looks
+	if showCol: DisplayWithAspectRatio(opt, tag+'-Color', colImg, 256)  ## A canvas of this Color
+	if showCol: DisplayWithAspectRatio(opt, tag+'-ColorMask', _mask, 256) ## How the channel looks
 	
 	#imglib.testOutModes_wrap(colImg, _mask)
 	
-	## Apply that color
-	if mode == "Overlay":
-		#_mask = cv2.addWeighted(_mask, beta, colImg, alpha, 0)
-		_mask = imglib.blend_segmented(blend_modes.overlay, _mask, colImg, 1)
-	elif mode == "Additive":
-		_mask[:,:,0] = ((_mask[:,:,0] / 255) * (colImg[:,:,0]))
-		_mask[:,:,1] = ((_mask[:,:,1] / 255) * (colImg[:,:,1]))
-		_mask[:,:,2] = ((_mask[:,:,2] / 255) * (colImg[:,:,2]))
-		#_mask = imglib.blend_segmented(blend_modes.addition, _mask / 255, colImg, alpha)
-	if show: DisplayWithAspectRatio(opt, tag+'-NoMask+Color', _mask, 256)
+	_mask[:,:,0] = ((_mask[:,:,0] / 255) * (colImg[:,:,0]))
+	_mask[:,:,1] = ((_mask[:,:,1] / 255) * (colImg[:,:,1]))
+	_mask[:,:,2] = ((_mask[:,:,2] / 255) * (colImg[:,:,2]))
+	#_mask = imglib.blend_segmented(blend_modes.addition, _mask / 255, colImg, alpha)
+	if showCol: DisplayWithAspectRatio(opt, tag+'-NoMask+Color', _mask, 256)
 	
 	## Apply mask again
 	return np.bitwise_and(bitmask, _mask)
 
-maskG = applyColor(maskG, colG_1Yellow, "G")
-if show: DisplayWithAspectRatio(opt, 'Mask G: '+str(colG_1Yellow), maskG, 256)
-maskR = applyColor(maskR, colR_2Red, "R")
-if show: DisplayWithAspectRatio(opt, 'Mask R: '+str(colR_2Red), maskR, 256)
+maskG = applyColor(maskG, colG_2Yellow, "G")
+if showCol: DisplayWithAspectRatio(opt, 'Mask G', maskG, 256)
+maskR = applyColor(maskR, colR_1Red, "R")
+if showCol: DisplayWithAspectRatio(opt, 'Mask R', maskR, 256)
 
 if flagBlue:
 	applyColor(maskB, colB_3Pink, "B")
-	if show: DisplayWithAspectRatio(opt, 'Mask B: '+str(colB_3Pink), maskB, 256)
+	if showCol: DisplayWithAspectRatio(opt, 'Mask B', maskB, 256)
+
+
+### Get all black spots in the mask
+# Only R: Normal, hard_light
+# Only G: Ovl, Dodge, Div, Soft_Light, Sub
+# [G] + B where both W: Multiply, Darken
+# [R] + W where either W: Screen, Lighten, Add
+# Add inverted G to R: Diff
+# Keep where equal, average where not: GMerge
+# Grey where both same, B for B on W, W for W on B: GExtract
+###
+##-- Combine Masks
+bitmask = imglib.blend_segmented(blend_modes.addition, bitmaskArr[0], bitmaskArr[1], 1)
+if flagBlue: bitmask = imglib.blend_segmented(blend_modes.addition, bitmask, bitmaskArr[2], 1)
+
+##-- Invert to mask out part of image
+tmp = np.ones(bitmask.shape, dtype="uint8") * 255
+inverted = imglib.blend_segmented(blend_modes.difference, tmp, bitmask, 1)
+keeper = imglib.blend_segmented(blend_modes.multiply, image, inverted, 1)
 
 """
 #### https://pythonhosted.org/blend_modes/
@@ -201,7 +214,8 @@ Lighten Only  (blend_modes.lighten_only)
 Dodge         (blend_modes.dodge)
 Addition      (blend_modes.addition)
 Darken Only   (blend_modes.darken_only)
-Multiply      (blend_modes.multiply)
+Multiply      (blend_modes.multiply) -- a * b
+Screen        (blend_modes.screen)   -- [inverse multiply]
 Hard Light    (blend_modes.hard_light)
 Difference    (blend_modes.difference)
 Subtract      (blend_modes.subtract)
@@ -211,64 +225,44 @@ Divide        (blend_modes.divide)
 
 """
 
-if mode == "Additive":
-	#imglib.testOutModes_wrap(maskR, maskG)
-	if isHair:### Works for:
-		### Convert to BW, convert into alpha, use that as bitmask for mixing
-		bwGreen = imglib.convert_to_BW(maskG, False)
-		maskG = imglib.converterScaled(opt, maskG, bwGreen, True).astype("uint8")
-		final = imglib.blend_segmented(blend_modes.difference, maskR, maskG, 1)
-		if flagBlue:
-			bwBlue = imglib.convert_to_BW(maskB, False)
-			maskB = imglib.converterScaled(opt, maskB, bwBlue, True).astype("uint8")
-			final = imglib.blend_segmented(blend_modes.difference, final, maskB, 1)
-	elif noMainTex:### Works for: [acs_m_accZ4601: German Cross], only two colors
-		final = imglib.combineWithBitmask(opt, maskR, maskG, bitmaskArr[0])
-		if flagBlue:
-			final = imglib.combineWithBitmask(opt, final, maskB, bitmaskArr[2])
-	else:
-		final = imglib.blend_segmented(blend_modes.normal, maskR, maskG, alpha)
-		if flagBlue:
-			final = imglib.blend_segmented(blend_modes.normal, final, maskB, alpha)
-	if show: DisplayWithAspectRatio(opt, '[F] CM Additive', final, 256)
-elif mode == "Overlay":
-	final = cv2.addWeighted(maskR, beta, maskG, alpha, 0)
+is_dark = False
 
-DisplayWithAspectRatio(opt, '[I] Final w/o Main', final.astype("uint8"), 256)
+if True:#isHair:
+	## Hair: Red = Base, Yellow = Root, Pink = Tips
+	
+	x_Mode = blend_modes.difference if is_dark else blend_modes.overlay
+	
+	### Convert to BW, convert into alpha, use that as bitmask for mixing
+	bwGreen = imglib.convert_to_BW(maskG, False)
+	maskG = imglib.converterScaled(opt, maskG, bwGreen, True).astype("uint8")
+	final = imglib.blend_segmented(x_Mode, maskR, maskG, 1)
+	if flagBlue:
+		if show: DisplayWithAspectRatio(opt, '[hair] Pre-Blue', final, 256)
+		bwBlue = imglib.convert_to_BW(maskB, False)
+		maskB = imglib.converterScaled(opt, maskB, bwBlue, True).astype("uint8")
+		final = imglib.blend_segmented(x_Mode, final, maskB, 1)
+else:#elif noMainTex:### Works for: [acs_m_accZ4601: German Cross], only two colors
+	## Will look ugly on gradient colors
+	final = imglib.combineWithBitmask(opt, maskR, maskG, bitmaskArr[0])
+	if flagBlue:
+		if show: DisplayWithAspectRatio(opt, '[NT] Pre-Blue', final, 256)
+		final = imglib.combineWithBitmask(opt, final, maskB, bitmaskArr[2])
 
-def converter(img): ## read: [imgAlpha, cv2]
-	if img.shape[2] == 4:
-		return (cv2.merge([img[:,:,0], img[:,:,1], img[:,:,2], img[:,:,3]]) / 255).astype(float)
-	return (cv2.merge([img[:,:,0], img[:,:,1], img[:,:,2], imgAlpha]) / 255).astype(float)
-
-### If a MainTex exists, apply the ColorMask to it
+### If no MainTex exists, use the ColorMask directly
 if (noMainTex):
+	DisplayWithAspectRatio(opt, '[I] Final no Main', final.astype("uint8"), 256)
 	image = final
-else:
-	#print("img:{} final:{} beta:{} alpha:{}".format(image.shape, final.shape, beta, alpha))
-	#if image.shape[2] == 3 and final.shape[2] >= 4: ## Actually always bc 'final' always has alpha through 'converter'
-	if useBrightColors:
-		#imglib.testOutModes_wrap(image, final)
-		image = converter(image)#cv2.merge([image[:,:,0], image[:,:,1], image[:,:,2], imgAlpha])
-		final = converter(final)
-		DisplayWithAspectRatio(opt, '[F] Image w/o Mask', image*255, 256)
-		DisplayWithAspectRatio(opt, '[F] Final w/o Main', final*255, 256)
-		#if has_alpha:
-		#	#image = converter(image)#cv2.merge([image[:,:,0], image[:,:,1], image[:,:,2], imgAlpha])
-		#	image = cv2.addWeighted(image, beta, final, alpha, 0)
-		#	has_alpha = False ## Because already added
-		#else:
-		#imglib
-		#imglib.testOutModes_wrap((image[:,:,:3] * 255).astype('uint8'), (final[:,:,:3] * 255).astype('uint8'))
-		image = cv2.addWeighted(image[:,:,:3], beta, final[:,:,:3], alpha, 0) * 255
-	else:
-		DisplayWithAspectRatio(opt, '[I] Image w/o Mask', image, 256)
-		DisplayWithAspectRatio(opt, '[I] Final w/o Main', final, 256)
-		image = imglib.blend_segmented(blend_modes.normal, image, final, 1)
+else: ### Otherwise apply the ColorMask to it
+	if show: DisplayWithAspectRatio(opt, '[I] Pre-merge', image, 256)
+	image = imglib.blend_segmented(blend_modes.multiply, image, final, 1)
 
+### Apply the non-affected parts back.
+image = imglib.blend_segmented(blend_modes.screen, image, keeper, 1)
 
 #### Remerge Alpha
-if has_alpha: image = cv2.merge([image[:,:,0], image[:,:,1], image[:,:,2], imgAlpha.astype(float)])
+if has_alpha:
+	DisplayWithAspectRatio(opt, 'Pre-alpha', image.astype("uint8"), 256)
+	image = cv2.merge([image[:,:,0], image[:,:,1], image[:,:,2], imgAlpha.astype(float)])
 
 DisplayWithAspectRatio(opt, 'Final', image.astype("uint8"), 256)
 if show: k = cv2.waitKey(0) & 0xFF

@@ -112,6 +112,27 @@ To compile the project yourself, you need to install the following dependencies:
     - All necessary packages can be installed by "Restore Packages".
     - After compilation, put the *.dll into `{KK-Folder}/BepInEx/plugins`
 
+## What I do when working on a model (aka What to do if you don't know what to do)
+
+ - After exporting, usually looking at the raw model to see how it looks (just out of curiosity)
+ - In some cases, reorder clothes into proper order
+ - Run the 'All-in-one' mode
+ - Using a fitting processing option of [mode 4].
+ - Opening 'model_cutScan.pmx' for additional edits.
+    - It would be 'model_better.pmx' when skipping [mode 4] .
+ - Going through Rigids, setting noisy ones to 'all green'.
+ - Also detangling some chains if necessary
+    - This involves either removing Rigids + Joints -or- rewire bones & rigids to split chains
+    - Since I'm the dev, sometimes adding them, if possible, as pattern into the script. Only core KK assets or big enough mods are added, though.
+ - Adjusting morph items that should always stay hidden / always stay visible
+ - Reorder the clothes if I haven't done it yet.
+ - Cleanup the [Display] Group from morphs I don't need for this model.
+ - Going through materials to untick 'Edge (Outline)' in severe cases (those with lots of 'black textures')
+ - Apply opacity of 0.5 to glassy items
+ - Adding the extra bones from 'Semi-Standard Bones Plugin (PMX)'
+ - Applying the 'bounce' morph.
+ - Saving as 'model.pmx'
+
 ## Help
 
 

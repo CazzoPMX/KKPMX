@@ -200,6 +200,8 @@ Output: PMX File '[filename]_cleaned.pmx'
 		mat = pmx.materials[idx]
 		if name.startswith("Bonelyfans"): disable_mat(idx)
 		if name.startswith("Standard"): disable_mat(idx)
+		if name.startswith("acs_head_hana_botan"):
+			pmx.materials[mat_idx].flaglist[4] = False
 		if name in names:
 			while True:
 				suffix += 1
@@ -467,16 +469,21 @@ enAccs = ['Accessories','Bracelet','Crown','Armband','Scrunchie','Headband','Flo
 ## All core mats
 baseMats = ['body', 'mm', 'face', 'hair', 'noseline', 'tooth', 'eyeline', 'mayuge', 'sirome', 'hitomi', 'tang']
 ## Aux parts that should always stay
-accMats = ['hair','ahoge','tail','acs_m_mimi_','kedama','mermaid'] ## Hair & Kemomimi
+accMatsNoHair = ['tail','acs_m_mimi_','kedama','mermaid','wing'] ## Hair & Kemomimi
+accMatsNoHair += ['aku01_tubasa', 'back_angelwing'] ## Vanilla wings
+#>	acs_m_mermaid ++ Fins
+#>	acs_m_hair_*  -- Hair decoration
+accMats = ['hair','ahoge'] + accMatsNoHair
 hairAcc = ['mat_body','kamidome'] ## Common hair accs
 ## Additional parts that are not main clothing
-accOnlyMats = ['socks','shoes','gloves','miku_headset','hood']
-accOnlyMats += ['^acs_m_', '^cf_m_acs_']
+accOnlyMats = ['socks','shoes','gloves','miku_headset','hood', 'mf_m_primmaterial']
+accOnlyMats += ['^\'?cf_m_acs_'] + ['^\'?mf_m_acc'] + ['^\'?acs_(?!m_(' + '|'.join(accMatsNoHair) +  '|mimi))']
 ####--- 
 rgxBase = 'cf_m_(' + '|'.join(baseMats) + ')'
 rgxBase += '|' + '|'.join(accMats)
 rgxBase += '|\\b(' + '|'.join(jpMats + jpHair) + ')'
 rgxBase += '|' + '|'.join(enMats)
+rgxBasnt = '|'.join(accOnlyMats)
 
 rgxAcc  = '|'.join(accOnlyMats + jpAccs + enAccs)
 rgxSkip = '|'.join(["Bonelyfans","shadowcast","Standard"])
@@ -497,6 +504,8 @@ slotMostly = slot_dict["hand"] + slot_dict["foot"] + ["ct_gloves", "ct_socks", "
 slotMed    = slot_dict["body"] + slot_dict["nether"]
 slotFull   = slot_dict["lower"] + slot_dict["upper"]
 slotCloth  = ["ct_clothesTop", "ct_clothesBot", "ct_bra", "ct_shorts"] + slotMostly
+
+rgx_filter = r'(eye|kuti)_[a-zLRM_]+\.[a-zLRM]+00\w+|mayuge\.\w+'
 
 def make_material_morphs(pmx, input_filename_pmx, write_model=True, moreinfo=False, opt={}): ## [02]
 	"""
@@ -543,11 +552,24 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 	itemsAcc = []
 	itemsSlots = { "always": [], "mostly": [], "med": [], "full": [], "slotMatch": False }
 	flag = opt.get("body", None)
+	flag2 = opt.get("Full", None)
 	if flag is None: flag = util.ask_yes_no("Emit morphs for body-like materials", "n")
+	if flag2 is None: flag2 = not util.ask_yes_no("Group by slots", "y")
 	frame = []
+	dictSlots = {}
+	### If both flags, make sure that head+body is first
+	if flag and not flag2:
+		dictSlots["ct_head"] = []
+		dictSlots["p_cf_body_00"] = []
+	
 	def addMatMorph(name, arr, disp=None):
+		if len(arr) == 0: return
 		if type(name) is str: names = [ name, name ]
 		else: names = name
+		## Shrink prefix since only 13 letters are visible in [Facials]
+		names[1] = re.sub(r'^ct_', '_', names[1])
+		names[1] = re.sub(r'^a_n_', '__', names[1])
+		
 		## Replace if already exists
 		tmp = find_morph(pmx, names[0], False)
 		if tmp in [None,-1]:
@@ -555,12 +577,14 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 			if disp is not None: disp.append(len(pmx.morphs) - 1)
 		else:
 			pmx.morphs[tmp] = pmxstruct.PmxMorph(names[0], names[1], 4, 8, arr)
+			#if disp is not None: disp.append(tmp)
 	
 	for idx, mat in enumerate(pmx.materials):
 		### Filter out what we do not want
 		if re.search(rgxSkip, mat.name_jp): continue
 		name_both = f"'{mat.name_jp}'  '{mat.name_jp}'"
-		isBody = re.search(rgxBase, name_both, re.I)
+		isBody = re.search(rgxBase, name_both, re.I) is not None
+		isBody = isBody and (re.search(rgxBasnt, name_both, re.I) is None)
 		
 		### Check if comments contain Slot names (added by Plugin Parser)
 		if re.search(r'\[:Slot:\]', mat.comment):
@@ -568,6 +592,18 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 			m = re.search(r'\[:Slot:\] (\w+)', mat.comment)[1]
 			if m in slotBody   : isBody = True
 			if m in slotCloth  : isBody = False
+			if m is not None and len(m) > 0 and not (not flag and m in slotBody):
+				dictSlots[m] = dictSlots.get(m, [])
+				appender = __append_itemmorph_mul
+				if re.search(r'_delta$', mat.name_jp): appender = __append_itemmorph_sub
+				appender(dictSlots[m], idx)
+				### Add extra slots for ct_clothesTop
+				# ct_clothesTop, ct_top_parts_A, ct_top_parts_B, ct_top_parts_C
+				if m == 'ct_clothesTop':
+					mm = re.search(r'\[:TopId:\] (\w+)', mat.comment)
+					if mm is not None:
+						dictSlots[mm[1]] = dictSlots.get(mm[1], [])
+						appender(dictSlots[mm[1]], idx)
 			if m in slotAlways : __append_itemmorph_add(itemsSlots["always"], idx)
 			if m in slotMostly : __append_itemmorph_add(itemsSlots["mostly"], idx)
 			if m in slotMed    : __append_itemmorph_add(itemsSlots["med"]   , idx)
@@ -575,7 +611,7 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 		elif moreinfo and not isBody: print(f"{mat.name_jp} did not match any slot")
 		#>> mayuge, noseline, tooth, eyeline, sirome, hitomi
 		
-		### Skip the rest if part of Body
+		### Skip the rest if part of Body ddMatMorph
 		if isBody:
 			# Make sure hidden body-like parts can be made visible
 			if mat.alpha == 0: __append_itemmorph_add(itemsCloth, idx)
@@ -590,14 +626,19 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 		
 		name_jp = re.sub(r'( \(Instance\))+', '', mat.name_jp)
 		name_en = re.sub(r'^cf_m_+|^acs_m_+|( \(Instance\))+', '', name_en)
-		addMatMorph([name_jp, name_en], items, frame)
+		if flag2: addMatMorph([name_jp, name_en], items, frame)
 		
 		## Sort into Body, Accessories, Cloth
 		if isBody: continue
 		if re.search(rgxAcc, name_both, re.I): __append_itemmorph_mul(itemsAcc, idx)
 		else: __append_itemmorph_mul(itemsCloth, idx)
-		
+	#############
+	
 	do_ver3_check(pmx)
+	#### Add slot morphs
+	# ask first to add, then use name "{slot}" as name
+	if not flag2: [addMatMorph(key,  dictSlots[key], frame) for key in dictSlots.keys()]
+	
 	#### Add extra morphs
 	items = []
 	if find_morph(pmx, "Move Model downwards", False) == -1:
@@ -618,7 +659,10 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 	
 	log_line = "Added Material Morphs"
 	if not flag: log_line += " (without body-like morphs)"
-	if len(frame) > 0: pmx.frames[1].items = [[1,i] for i in core.flatten(frame)]
+	if len(frame) > 0:
+		## Filter out the messy morphs if they are added to display (only effective for reruns)
+		_tmp = list(filter(lambda x: re.match(rgx_filter, pmx.morphs[x[1]].name_jp) == None, pmx.frames[1].items))
+		pmx.frames[1].items = [[1,i] for i in core.flatten(frame)] + _tmp
 	
 	return end(pmx if write_model else None, input_filename_pmx, "_morphs", log_line)
 

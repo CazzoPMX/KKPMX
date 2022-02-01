@@ -200,19 +200,19 @@ def is_number(text, allow_bool=False):
 
 find_info = """ [pmx] instance -- Entity Name -- Flag to print error if not found (default True) """
 
-def find_bone (pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.bones,e,idx)
-def find_mat  (pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.materials,e,idx)
-def find_disp (pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.frames,e,idx)
-def find_morph(pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.morphs,e,idx)
-def find_rigid(pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.rigidbodies,e,idx)
-find_bone.__doc__ = find_mat.__doc__ = find_disp.__doc__ = find_morph.__doc__ = find_rigid.__doc__ = find_info
-
 def __find_in_pmxsublist(name, arr, e, idx):
 	if not is_number(idx) or idx < 0: idx = 0
 	if idx >= len(arr): return -1
 	if idx > 0: arr = arr[idx : -1]
 	result = morph_scale.get_idx_in_pmxsublist(name, arr, e)
 	return -1 if result in [-1, None] else result
+
+def find_bone (pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.bones,e,idx)
+def find_mat  (pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.materials,e,idx)
+def find_disp (pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.frames,e,idx)
+def find_morph(pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.morphs,e,idx)
+def find_rigid(pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.rigidbodies,e,idx)
+find_bone.__doc__ = find_mat.__doc__ = find_disp.__doc__ = find_morph.__doc__ = find_rigid.__doc__ = find_info
 
 ######
 ## Math Types for Rigging

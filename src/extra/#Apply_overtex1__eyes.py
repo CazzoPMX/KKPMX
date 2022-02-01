@@ -88,7 +88,7 @@ if (dw != 0):
 			else:             tmp[:, -dw:dw, :] = image
 		else:                 tmp[:, -dw+1:dw, :] = image
 		image = tmp
-print(f"tmp:{tmp.shape} vs. {image.shape}")
+#print(f"tmp:{tmp.shape} vs. {image.shape}")
 DisplayWithAspectRatio(opt, 'Resized', image, 256)
 if show: k = cv2.waitKey(0) & 0xFF
 
@@ -99,7 +99,9 @@ if (dh != 0):
 		if scale[1] > 1: ## 1 off error in (1.0, big)
 			if scale[0] != 1: ## oversized when both are big
 				tmp = image[-int(dh/2):int(dh/2), :, :]
-			else: tmp[-dh:dh, :, :]   = image
+			else:
+				try: tmp[-dh:dh, :, :]   = image
+				except: tmp[-dh+1:dh, :, :]   = image
 		else:     tmp[-dh+1:dh, :, :] = image
 		image = tmp
 
@@ -109,28 +111,30 @@ DisplayWithAspectRatio(opt, 'Resized', image, 256)
 padX = 0; padY = 0; tmp = np.zeros(orgShape, dtype='uint8')
 if image.shape[0] < orgShape[0]: padY = int((orgShape[0] - image.shape[0])/2) ## for (*, big)
 if image.shape[1] < orgShape[1]: padX = int((orgShape[1] - image.shape[1])/2) ## for (big,*)
-
+changed = False
 try:
 	#print(f"[Y:Y,X+1:X] tmp:{tmp.shape} vs. {image.shape}")
-	if padX > 0 and padY > 0: tmp[padY:-padY,padX+1:-padX,:] = image
-	elif padX > 0:            tmp[:,padX+1:-padX,:]          = image
-	elif padY > 0:            tmp[padY:-padY,:,:]            = image
+	if padX > 0 and padY > 0: tmp[padY:-padY,padX+1:-padX,:] = image; changed=True
+	elif padX > 0:            tmp[:,padX+1:-padX,:]          = image; changed=True
+	elif padY > 0:            tmp[padY:-padY,:,:]            = image; changed=True
 except: ## Fixing rare one-off cases
 	try:
 		#print(f"[Y:Y,X:X] tmp:{tmp.shape} vs. {image.shape}")
-		if padX > 0 and padY > 0: tmp[padY:-padY,padX:-padX,:] = image
-		elif padX > 0:            tmp[:,padX:-padX,:]          = image
-		elif padY > 0:            tmp[padY:-padY,:,:]          = image
+		if padX > 0 and padY > 0: tmp[padY:-padY,padX:-padX,:] = image; changed=True
+		elif padX > 0:            tmp[:,padX:-padX,:]          = image; changed=True
+		elif padY > 0:            tmp[padY:-padY,:,:]          = image; changed=True
 	except:
 		#print(f"[Y-1:Y,X:X] tmp:{tmp.shape} vs. {image.shape}")
-		if padX > 0 and padY > 0: tmp[padY+1:-padY,padX+1:-padX,:] = image
-		elif padX > 0:            tmp[:,padX+1:-padX,:]            = image
-		elif padY > 0:            tmp[padY+1:-padY,:,:]            = image
-image = tmp
+		if padX > 0 and padY > 0: tmp[padY+1:-padY,padX+1:-padX,:] = image; changed=True
+		elif padX > 0:            tmp[:,padX+1:-padX,:]            = image; changed=True
+		elif padY > 0:            tmp[padY+1:-padY,:,:]            = image; changed=True
+DisplayWithAspectRatio(opt, 'Fixed', tmp, 256)
+if changed: image = tmp
 
 #### Apply Offset
 tmp = np.zeros(image.shape, dtype='uint8')
-factorY = int(image.shape[0] * (offset[1] - 0.05)) # Sink Eyes by 1/20 per default, to reflect Model position
+tmpOff = offset[1] if offset[1] < 0 else (offset[1] - 0.1)
+factorY = int(image.shape[0] * tmpOff) # Sink Eyes by 1/20 per default, to reflect Model position
 if factorY != 0:
 	invY = factorY * -1
 	tmp[:invY, :, :]  = image[ factorY:, :, :]
@@ -139,6 +143,7 @@ if factorY != 0:
 
 tmp = np.zeros(image.shape, dtype='uint8')
 factorX = int(image.shape[1] * offset[0])
+#print(f"Offset: {offset} -> X:{factorX}, Y:{factorY}")
 if factorX != 0:
 	invX = factorX * -1
 	tmp[:, :invX, :]  = image[:,  factorX:, :]
