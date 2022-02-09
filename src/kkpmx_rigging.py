@@ -76,7 +76,8 @@ Rigging Helpers for KK.
 ###############
 
 def adjust_body_physics(pmx):
-	mask = 65534 # == [1] is 2^16-1
+	#mask = 65534 # == [1] is 2^16-1
+	mask = 65535 # == [1] is 2^16-1
 
 	## Butt collision
 	if find_bone(pmx, "cf_j_waist02", False):
@@ -104,8 +105,12 @@ def adjust_body_physics(pmx):
 			"nocollide_mask": mask, "shape": 1, #"group": 1,
 			"phys_move_damp": 0.9999, "phys_rot_damp": 0.9999
 			}
-		commonSph = {
+		commonPill = {
 			"nocollide_mask": mask, "shape": 2, #"group": 1,
+			"phys_move_damp": 0.9999, "phys_rot_damp": 0.9999
+			}
+		commonSph = {
+			"nocollide_mask": mask, "shape": 0, #"group": 1,
 			"phys_move_damp": 0.9999, "phys_rot_damp": 0.9999
 			}
 		
@@ -166,7 +171,7 @@ def adjust_body_physics(pmx):
 		height = (lenOut - lenIn)
 		size = absarr([rad, height, 0])
 		
-		add_rigid(pmx, name_jp="RB_arm_L", pos=pos, size=size, rot=rot, bone_idx=find_bone(pmx, "cf_hit_arm_L"), **commonSph)
+		add_rigid(pmx, name_jp="RB_arm_L", pos=pos, size=size, rot=rot, bone_idx=find_bone(pmx, "cf_hit_arm_L"), **commonPill)
 		
 		####
 		## Right arm
@@ -182,7 +187,7 @@ def adjust_body_physics(pmx):
 		height = (lenIn - lenOut)
 		size = absarr([rad, height, 0])
 		
-		add_rigid(pmx, name_jp="RB_arm_R", pos=pos, size=size, rot=rot, bone_idx=find_bone(pmx, "cf_hit_arm_R"), **commonSph)
+		add_rigid(pmx, name_jp="RB_arm_R", pos=pos, size=size, rot=rot, bone_idx=find_bone(pmx, "cf_hit_arm_R"), **commonPill)
 		
 		####
 		## Right shoulder

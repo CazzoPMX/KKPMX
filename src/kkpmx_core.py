@@ -96,7 +96,10 @@ def main(moreinfo=True):
 			doc = "{}===({}) {} ({}):\n{}{}".format(line, _idx, name, choice.__name__, "", doc)
 		core.MY_PRINT_FUNC(doc if doc is not None else (f"<< no help for '{choices[_idx][0]}' >>"))
 	if idx == 0: return [print_help(idx) for idx in range(1,len(choices))]
-	elif idx == 6: exit()
+	elif idx == 6:
+		if DEBUG:
+			if util.ask_yes_no("Transfer Filenames"): transfer_names();
+		exit()
 	else: print_help(idx)
 	# prompt PMX name
 	core.MY_PRINT_FUNC(">> The script can be terminated at any point by pressing Ctrl+C")
@@ -1206,6 +1209,30 @@ def ask_for_material(pmx, extra = None, default = "cf_m_body", returnIdx = False
 	elif type(text) is str: idx = find_mat(pmx, text)
 	else: idx = int(text)
 	return idx if returnIdx else pmx.materials[idx]
+
+def transfer_names():
+	print("Input the source")
+	input_filename_pmx = core.MY_FILEPROMPT_FUNC('.pmx')
+	src = pmxlib.read_pmx(input_filename_pmx, moreinfo=True)
+	print("Input the destination")
+	input_filename_pmx = core.MY_FILEPROMPT_FUNC('.pmx')
+	dst = pmxlib.read_pmx(input_filename_pmx, moreinfo=True)
+	
+	## small tabu list for not yet unique-fied materials
+	names = []
+	for mat in dst.materials:
+		#print(f"Search for {mat.name_jp}...")
+		idx = find_mat(src, mat.name_jp, False)
+		#print(f"--> Idx: {idx}")
+		while idx in names:
+			idx = find_mat(src, mat.name_jp, False, idx+1)
+			#print(f"--> Idx: {idx}")
+		if idx == -1:
+			print(f"Not found: {mat.name_jp}...")
+			continue;
+		dst.textures[mat.tex_idx] = src.textures[src.materials[idx].tex_idx]
+		names.append(idx)
+	return end(dst, input_filename_pmx, "_org")
 
 def __do(pmx, input_filename_pmx): pass
 

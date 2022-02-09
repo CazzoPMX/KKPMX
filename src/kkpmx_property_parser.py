@@ -235,6 +235,7 @@ def __parse_json_file(pmx, data: dict, root: str):
 		if len(attr) == 0: continue ## Catches {},[],"" #@todo_add "<< silent ignore of empty elements >>"
 		#if (mat.name_jp != "cf_m_hair_f_02*16"): continue
 		print("\n==== Processing " + mat.name_jp)
+		
 		# Copy Type
 		if type(attr) in [str, list]:
 			isStr = type(attr) == type("")
@@ -421,6 +422,10 @@ def parse_acc(pmx, mat, attr):
 	if global_state.get(OPT_IMG, False): return
 	process_color_and_detail(pmx, mat, attr)
 	if t__Line in attr: process_line_mask(pmx, mat, attr)
+	
+	if mat.name_jp.startswith("cf_m_tang"):
+		mat.diffRGB = attr[Color_1][:3]
+	
 
 def parse_eye(pmx, mat, attr): ## @open: rotation, offset, scale
 	print(":: Running 'eye' parser")

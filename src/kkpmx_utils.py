@@ -205,7 +205,7 @@ def __find_in_pmxsublist(name, arr, e, idx):
 	if idx >= len(arr): return -1
 	if idx > 0: arr = arr[idx : -1]
 	result = morph_scale.get_idx_in_pmxsublist(name, arr, e)
-	return -1 if result in [-1, None] else result
+	return -1 if result in [-1, None] else result + idx
 
 def find_bone (pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.bones,e,idx)
 def find_mat  (pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.materials,e,idx)
