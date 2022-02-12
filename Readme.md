@@ -129,10 +129,10 @@ To compile the project yourself, you need to install the following dependencies:
     - This involves either removing Rigids + Joints -or- rewire bones & rigids to split chains
     - Since I'm the dev, sometimes adding them, if possible, as pattern into the script. Only core KK assets or big enough mods are added, though.
  - Adjusting morph items that should always stay hidden / always stay visible
- - Reorder clothes into proper order (if I haven't already done it at the start)
+ - Reorder clothes into proper order
     - Proper order means 'inside' is sorted before 'outside' (e.g. Socks before Shoes, Bra before Shirt before Jacket, etc.
  - Cleanup the [Display] Group from morphs I don't need for this model.
- - Going through materials to untick 'Edge (Outline)' in severe cases (those with lots of 'black textures')
+ - Going through materials to untick 'Edge (Outline)' in severe cases (those with lots of 'black textures'), if I haven't already done it at the start.
  - Apply opacity of 0.5 to glassy items
  - Adding the extra bones from 'Semi-Standard Bones Plugin (PMX)'
  - Applying the 'bounce' morph.
