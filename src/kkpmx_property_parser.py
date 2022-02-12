@@ -1063,6 +1063,10 @@ shader_dict = {
 	"main_alpha": "alpha",
 	# t__Color, t__Detail, t__Line, t__Main, t__NorMap
 	"main_texture": "acc",  ## C+2+3+S, AnotherRampFull, DetailBLineG+RR, ShadowExtend(Another), SpeclarHeight
+	#### KKS
+	"main_clothes_alpha": "alpha",
+	"main_clothes_opaque": "cloth",
+	"main_clothes_item": "item",
 	#### 
 	}
 

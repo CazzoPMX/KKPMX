@@ -28,7 +28,7 @@ imgMask = sys.argv[2] ## DetailMask.png
 data = {}
 if (argLen > 3): data = json.loads(sys.argv[3])
 mode            = data.get("mode", "overlay")
-details         = data.get("moreinfo", True)
+details         = data.get("moreinfo", False)
 mainSize        = data.get("is_main", False)
 is_body         = data.get("is_body", False)
 #-------------

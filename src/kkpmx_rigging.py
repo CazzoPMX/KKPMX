@@ -556,6 +556,7 @@ def split_merged_materials(pmx, input_filename_pmx): #-- Find and split merged M
 	#>	Either the "max+1" bone directly references max, and is also the last bone.
 	#>	Or it references something far before
 	last = find_bone(pmx, "KK_Colliders_cf_j_root", False)
+	if last in [-1,None]: last = find_bone(pmx, "KKS_Colliders_cf_j_root", False)
 	if last in [-1,None]:#>> This branch is still untested
 		## This means the model is already cleaned up. This one exists in both.
 		last = find_bone(pmx, "cf_s_waist01", False)
@@ -563,10 +564,12 @@ def split_merged_materials(pmx, input_filename_pmx): #-- Find and split merged M
 			tmp = [x for x in slots if x > last]
 			# if there are any slots (an_*), get the last of it
 			if len(tmp) > 0:
-				tmp = get_children_map(pmx, tmp, True)[-1]
-			##>> Avoid taking one of those bones we try to fix
-				if tmp[-1]+1 == len(pmx.bones): last = tmp[-2]
-				else: last = tmp[-1]
+				try:
+					tmp = get_children_map(pmx, tmp, True)[-1]
+				##>> Avoid taking one of those bones we try to fix
+					if tmp[-1]+1 == len(pmx.bones): last = tmp[-2]
+					else: last = tmp[-1]
+				except: last = tmp[0]
 		else: last = len(pmx.bones) - 2
 	last += 1
 	## If we have that bone, only allow bones whose parent is smaller than that

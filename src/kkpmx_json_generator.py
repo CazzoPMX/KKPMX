@@ -443,7 +443,7 @@ def write_entity(pmx, arr, json_tree, opt):
 		v = mat.get(_name, None)
 		if not v: return True
 		if _name == "shader":
-			targetBase["shader"] = opt.get(opt_Group, re.sub("Shader ?Forge/","",v))
+			targetBase["shader"] = opt.get(opt_Group, re.sub("Shader ?Forge/|Koikano/","",v))
 			return True
 		## Use a different [default] for offset
 		df = "(0.0, 0.0)" if _name == "offset" else "(1.0, 1.0)"

@@ -1,4 +1,4 @@
-# Cazoo - 2021-06-12
+# Cazoo - 2022-02-10
 # This code is free to use and re-distribute, but I cannot be held responsible for damages that it may or may not cause.
 #####################
 from typing import List
@@ -342,7 +342,7 @@ There are some additional steps that cannot be done by a script; They will be me
 		if GenerateJsonFile(pmx, input_filename_pmx):
 			## run parseMatComments
 			#>> <<< ask for base path
-			_opt = {"apply": all_yes}
+			_opt = {"apply": True if all_yes else None}
 			path = PropParser.parseMatComments(pmx, input_filename_pmx, write_model, opt=_opt)
 			if write_model and path != input_filename_pmx: util.copy_file(path, input_filename_pmx)
 	#-------------#
@@ -371,7 +371,7 @@ There are some additional steps that cannot be done by a script; They will be me
 	# ++ Clears and fills the [Facials] Frame with own morphs, which is again repopulated by sorting[5]
 	if all_yes or util.ask_yes_no("Generate Material Morphs", "y"):
 		## -- run make_material_morphs
-		_opt = {"body": all_yes}
+		_opt = {"body": True if all_yes else None}
 		path = make_material_morphs(pmx, input_filename_pmx, write_model, moreinfo=moreinfo, opt=_opt)
 		if write_model: util.copy_file(path, input_filename_pmx)
 	#-------------#
@@ -1273,7 +1273,7 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 	return None
 
 if __name__ == '__main__':
-	print("Cazoo - 2021-08-05 - v.1.3.0")
+	print("Cazoo - 2022-02-10 - v.1.5.2")
 	if DEBUG or DEVDEBUG:
 		main()
 		core.pause_and_quit("Done with everything! Goodbye!")
