@@ -60,12 +60,13 @@ Any Eye and/or Mouth Position works, as long as the Eyes stay open and the mouth
  4. Click on [Export] in the upper left corner -- It may take a short moment depending on size.
     - Will add a folder containing the *.pmx + main textures into `C:\koikatsu_model`, named with a random 4-digit number.
        - See the next subsection for how to use the model immediately.
- 5. Click on the 'Info' Tab (Heart) and then on [Generate JSON Data].
-    - Will add a file called `{CharName}.json` into the same folder.
+ 5. ~~Click on the 'Info' Tab (Heart) and then on [Generate JSON Data].~~
+    - ~~Will add a file called `{CharName}.json` into the same folder.~~
+    >[1.5.1+] Merged this into PmxExport, so it is now created with [Export]
  6. ~~[Old] This step is (almost) entirely optional, but improves the quality of the textures a lot and requires the [MaterialEditor].<br/>
 The goal is to go through every asset (Body, Clothes, Accessory) and export the auxiliary textures (in most cases, ColorMask & DetailMask)<br/>
 See the [Help]-Section of [Scan Plugin File] for more details of which are currently supported.~~
-    >Older versions of [PmxExport] only export the Main-Textures.  
+    >[1.3.1+] Older versions of [PmxExport] only export the Main-Textures.  
     >I added an updated version which also exports all 'extra' textures into a folder called 'extra'
     >So there is no need to manually export the textures anymore.
     - See the [Help]-Section of [Scan Plugin File] for how to use a different name / path.
