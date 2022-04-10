@@ -227,10 +227,15 @@ Input: STDIN -> Offset to shift vertices (updates ref in faces) <br/>
 
 Export a material with all faces and vertices as *.csv. <br/>
 The default operation of the editor only writes the material + faces but leaves out the vertices.
+This may be helpful in case you don't want to merge bones (but still want the material to reuse existing ones)
+-- Reason: 'Add 2nd Model' works by simply appending each list of objects.
+-- -- The 'Merge Bones' option then simply merges all bones who have the same name (incl. pre-existing ones)
 
 An optional offset can be used to allow re-importing it later without overriding vertices.
 - Note: Vertices are imported first, and will be adjusted by the editor to start at the first free index
 -- -- Which will mess up the references in the faces, so make sure the first vertex index is correct.
+-- -- For the same reason, it sometimes does not import everything. Just import the file again in that case
+- You usually want the next free vertex of your target model, which is the number above the list in the vertex tab.
 
 Output: CSV file '[modelname]_[mat.name_jp].csv'
 """
@@ -268,7 +273,8 @@ Output: CSV file '[modelname]_[mat.name_jp].csv'
 		faceArr = [face[0]-first+offset,face[1]-first+offset,face[2]-first+offset]
 		myarr.append('Face,"' + newName + '",' + str(idx) + "," + str(faceArr)[1:-1])
 	
-	core.write_list_to_txtfile(input_filename_pmx[0:-4]+"_"+name+".csv", myarr)
+	from kkpmx_utils import slugify
+	core.write_list_to_txtfile(input_filename_pmx[0:-4]+"_"+slugify(name)+".csv", myarr)
 
 ###############
 ### Helpers ###

@@ -187,12 +187,57 @@ def copy_file(src, dst): # https://stackoverflow.com/questions/123198
 	#copyfile(src, dst)
 	copy2(src, dst)
 
+################
+### Numerics ###
+################
+
 def is_number(text, allow_bool=False):
 	if type(text) is bool: return allow_bool
 	try:
 		return float(text) is not None
 	except:
 		return False
+
+# Checks if [text] has the form 000,000,000,000 (ignoring spaces)
+def is_csv_number(text): return all([is_number(x.strip()) for x in text.split(',')])
+
+def get_list_of_numbers(num, lim, msg):
+	if not is_number(num):
+		print("num is not a number"); return []
+	num = int(num)
+	if num < 1: return []
+	arr = []
+	print(msg)
+	while(True):
+		value = core.MY_GENERAL_INPUT_FUNC(is_csv_number, f"> Input a list of {num} numbers, separated by ',' (example: 1,2,3)")
+		arr = [int(x.strip()) for x in value.split(',')]
+		if len([True for i in arr if lim[0] > i or i > lim[1]]) == 0: break
+		print(f"Invalid values (allowed are {lim[0]} - {lim[1]})")
+	while(len(arr) < num): arr.push(0)
+	return arr[:num]
+
+
+import unicodedata
+import re
+
+# https://stackoverflow.com/a/295466
+def slugify(value, allow_unicode=False):
+    """
+    Taken from https://github.com/django/django/blob/master/django/utils/text.py
+    Convert to ASCII if 'allow_unicode' is False. Convert spaces or repeated
+    dashes to single dashes. Remove characters that aren't alphanumerics,
+    underscores, or hyphens. Convert to lowercase. Also strip leading and
+    trailing whitespace, dashes, and underscores.
+    """
+    value = str(value)
+    if allow_unicode:
+        value = unicodedata.normalize('NFKC', value)
+    else:
+        value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
+    value = re.sub(r'[^\w\s-]', '', value.lower())
+    return re.sub(r'[-\s]+', '-', value).strip('-_')
+
+
 
 ######
 ## Finders
@@ -486,6 +531,7 @@ def __typePrinter_List(arg):
 
 def __typePrinter_Dict(arg, shallow=False):
 	""" Shorthand for printing all elements of a dict """
+	print(f":: {type(arg)} of length {len(arg)}")
 	for (k,v) in arg.items(): __typePrinter(v, enum=k, shallow=shallow)
 
 def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False):

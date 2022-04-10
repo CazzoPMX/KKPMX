@@ -34,27 +34,41 @@ Rigging Helpers for KK.
 -  - The "normal" rigging can also be reproduced by selecting a linked bone range, and opening [Edit]>[Bone]>[Create Rigid/Linked Joint]
 -  - Disclaimer: Might not work in 100% of cases since there is no enforced bone naming convention for plugins (e.g. using 'root' as start)
 
+[Issues]:
+- In rare cases, the Skirt Rigids named 'cf_j_sk12' point into the wrong direction. Simply negate the [RotX] value on the 5 segments.
+
 [Options] '_opt':
 - "mode":
--  - 0 -- main run-down
--  - 1 -- ônly rig Hair
--  - 2 -- rig a list of bones together
+-  - 0 -- Main mode
+-  - 1 -- Reduce chest bounce
+-  - 2 -- Rig a list of bones together (== fix unrecognized chain starts)
+-  - 3 -- Cut morph chains (== fix unrecognized chain ends)
 """
 	### Add some kind of list chooser & ask for int[steps] to execute
 	import kkpmx_core as kkcore
 	global_state["moreinfo"] = moreinfo or DEBUG
 	modes = _opt.get("mode", -1)
-	choices = [("Regular Fixes", 0), ("Only rig_hair_joints",1), ("Rig Bone Array", 2)]
+	choices = [("Regular Fixes", 0), ("Reduce Chest bounce",1), ("Rig Bone Array", 2), ("Split Chains", 3)]
 	modes = util.ask_choices("Choose Mode", choices, modes)
+	if modes == 3:
+		arr_log = ["Modified Rigging (Split Chains)"]
+		arr_log += [split_rigid_chain(pmx)]
+		return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", arr_log)
 	if modes == 1:
-		rig_hair_joints(pmx)
-		return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", "Modified Rigging (Hair only)")
+		#rig_hair_joints(pmx)
+		#return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", "Modified Rigging (Hair only)")
+		#transform_skirt(pmx)
+		#fix_skirt_rigs(pmx)
+		#rig_rough_detangle(pmx)
+		msg = "\n> ".join([""] + adjust_chest_physics(pmx))
+		return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", "Modified Rigging (Chest only)" + msg)
 	if modes == 0:
 		adjust_body_physics(pmx)
 		transform_skirt(pmx)
 		split_merged_materials(pmx, None)
 		rig_hair_joints(pmx)
 		rig_other_stuff(pmx)
+		rig_rough_detangle(pmx)
 		return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", "Modified Rigging")
 	#######
 	print("This will connect a consecutive list of bones and rig them together.")
@@ -70,12 +84,14 @@ Rigging Helpers for KK.
 			patch_bone_array(pmx, None, arr, pmx.bones[arr[0]].name_jp, 16)
 		if util.ask_yes_no("-- Add another one","y") == False: break
 	return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", arr_log)
-	
+
 ###############
 ### Riggers ###
 ###############
 
+## [Step 01]
 def adjust_body_physics(pmx):
+	print("--- Stage 'Adjust Body Physics'...")
 	#mask = 65534 # == [1] is 2^16-1
 	mask = 65535 # == [1] is 2^16-1
 
@@ -96,6 +112,7 @@ def adjust_body_physics(pmx):
 		pmx.rigidbodies[rigid].phys_rot_damp = 0.999
 		pmx.rigidbodies[rigid].phys_repel = 0
 		pmx.rigidbodies[rigid].phys_friction = 0.5
+	
 	## Hair collision
 	if find_rigid(pmx, "RB_upperbody", False) in [-1,None]:
 		
@@ -152,8 +169,9 @@ def adjust_body_physics(pmx):
 		pos = [((maxX+minX)/2), bn_shou_L.pos[1], bn_shou_L.pos[2]]
 		#print(f"[SL]size = [({maxX}-{minX}), ({maxY}-{minY}), ({maxZ}-{minZ})]")
 		size = absarr([(maxX-minX)/2, (maxY-minY)/1.5, (maxZ-minZ)/1.5])
+		rot  = [0, 0, 90]
 		
-		add_rigid(pmx, name_jp="RB_shoulder_L", pos=pos, size=size, bone_idx=find_bone(pmx, "左肩"), **common)
+		add_rigid(pmx, name_jp="RB_shoulder_L", pos=pos, size=size, bone_idx=find_bone(pmx, "左肩"), rot=rot, **commonPill)
 		neck_minX = minX
 		
 		####
@@ -202,8 +220,12 @@ def adjust_body_physics(pmx):
 		pos = [((maxX+minX)/2), bn_shou_R.pos[1], bn_shou_R.pos[2]]
 		#print(f"[SR]size = [({maxX}-{minX}), ({maxY}-{minY}), ({maxZ}-{minZ})]")
 		size = absarr([(maxX-minX)/2, (maxY-minY)/1.5, (maxZ-minZ)/1.5])
+		rot = [0, 0, 90]
 		
-		add_rigid(pmx, name_jp="RB_shoulder_R", pos=pos, size=size, bone_idx=find_bone(pmx, "右肩"), **common)
+		sizeSh = size
+		posSh = pos
+		
+		add_rigid(pmx, name_jp="RB_shoulder_R", pos=pos, size=size, bone_idx=find_bone(pmx, "右肩"), rot=rot, **commonPill)
 		neck_maxX = minX
 		
 		####
@@ -219,9 +241,59 @@ def adjust_body_physics(pmx):
 		pos = [((maxX+minX)/2), (maxY+minY)/2, (maxZ+minZ)/2]
 		#print(f"[NK]size = [({maxX}-{minX}), ({maxY}-{minY}), ({maxZ}-{minZ})]")
 		size = absarr([(maxX-minX)/2, (maxY-minY)/2, (maxZ-minZ)/1.5])
+		sizeNeck = size
 		
-		add_rigid(pmx, name_jp="RB_neck", pos=pos, size=size, bone_idx=find_bone(pmx, "首"), **common)
+		add_rigid(pmx, name_jp="RB_neck", pos=pos, size=size, bone_idx=find_bone(pmx, "首"), **commonPill)
+		
+		####
+		## Full shoulder
+		
+		pos = [0, posSh[1], 0]
+		size = [sizeSh[0], sizeSh[1]*2 + sizeNeck[0]*3, sizeSh[2]]
+		add_rigid(pmx, name_jp="RB_shoulders", pos=pos, size=size, bone_idx=find_bone(pmx, "首"), **commonPill)
 
+## [Mode 01]
+def adjust_chest_physics(pmx):
+	## Chest collision
+	if find_rigid(pmx, "左胸操作", False) == -1: return ["No chest anchor found"]
+	## The two long bones: 左AH1, 右AH1: Auto adjusts bc link
+	## The two hidden bones: 左AH2, 右AH2:  PosZ +0.4
+	bone = find_bone(pmx, "左AH2")
+	pmx.bones[bone].pos[2] += 0.4
+	bone = find_bone(pmx, "右AH2")
+	pmx.bones[bone].pos[2] += 0.4
+	## Long Rigid: 左胸操作接続, 右胸操作接続: Height -0.4, PosZ +0.2
+	rigid = find_rigid(pmx, "左胸操作接続")
+	pmx.rigidbodies[rigid].size[1] -= 0.4
+	pmx.rigidbodies[rigid].pos[2] += 0.2
+	rigid = find_rigid(pmx, "右胸操作接続")
+	pmx.rigidbodies[rigid].size[1] -= 0.4
+	pmx.rigidbodies[rigid].pos[2] += 0.2
+	## End Rigid: 左AH2, 右AH2: PosZ +0.4
+	rigid = find_rigid(pmx, "左AH2")
+	pmx.rigidbodies[rigid].pos[2] += 0.4
+	rigid = find_rigid(pmx, "右AH2")
+	pmx.rigidbodies[rigid].pos[2] += 0.4
+	return ["Bone+Rigid(左AH2, 右AH2): PosZ +0.4","Rigid(左胸操作接続,右胸操作接続): Height -0.4, PosZ +0.2"]
+
+def fix_skirt_rigs(pmx):
+	def replaceBone(target):
+		if target == 202: return 192
+		return target
+	for vert in pmx.verts:
+		#vert = pmx.verts[idx]
+		if vert.weighttype == 0:
+			vert.weight[0] = replaceBone(vert.weight[0])
+		elif vert.weighttype == 1:
+			vert.weight[0] = replaceBone(vert.weight[0])
+			vert.weight[1] = replaceBone(vert.weight[1])
+		elif vert.weighttype == 2:
+			vert.weight[0] = replaceBone(vert.weight[0])
+			vert.weight[1] = replaceBone(vert.weight[1])
+			vert.weight[2] = replaceBone(vert.weight[2])
+			vert.weight[3] = replaceBone(vert.weight[3])
+
+## [Step 02]
 def transform_skirt(pmx):
 	## Skirt is segmented into 7 stripes with 5 segments each
 	##-- Their joints are rotated such that Z always faces away from the body
@@ -234,32 +306,60 @@ def transform_skirt(pmx):
 	#-- [-Z] = away from body
 	#-- [+X] = To the left (roughly previous segment)
 	
+	print("--- Stage 'Transform Skirt'...")
+	moreinfo = global_state["moreinfo"]
+	
+	rotY = 0
+	rigids = []
 	for rigid in pmx.rigidbodies:
 		## Change width of all but [05] to XX (start at 0.6)
 		if not re.match(r"cf_j_sk", rigid.name_jp): continue
+		rigids.append(rigid)
 		m = re.match(r"cf_j_sk_(\d+)_(\d+)", rigid.name_jp)
+		
+		## Unify the Rotation for all lines (some assets mess them up)
+		if int(m[2]) == 0: rotY = rigid.rot[1]
+		else: rigid.rot[1] = rotY
+		
+		rigid.phys_mass = 2
+		rigid.phys_move_damp = 0.5
+		rigid.phys_rot_damp = 0.5
+		rigid.phys_repel = 0
+		rigid.phys_friction = 0
 		if int(m[2]) == 5: continue
+		
 		## Change mode to 1 & set depth to 0.02
 		rigid.shape = 1
 		rigid.size[0] = 0.6
 		rigid.size[2] = 0.02
+		
 		#-- Make front / back pieces a bit wider
 		if int(m[1]) in [0,4]: rigid.size[0] = 0.7
 	
+	if len(rigids) == 0:
+		print("> No Skirt rigids found, skipping")
+		return
+	elif len(rigids) > 48:
+		print("> Skirt already rigged, skipping")
+		return
+	
+	## Create more rigids inbetween
+	
 	## Move Side Joints to sides (X + width / 2, Y + height / 2)
-	skirt = []
+	joints = []
 	for joint in pmx.joints:
 		if not re.match(r"cf_j_sk", joint.name_jp): continue
-		skirt.append(joint)
+		joints.append(joint)
 		if re.match(r"cf_j_sk_\d\d_05", joint.name_jp): continue
 		if re.match(r"cf_j_sk_\d\d_\d\d\[side\]", joint.name_jp):
 			rigid = pmx.rigidbodies[joint.rb1_idx]
 			## X pos requires using triangulation, maybe later
-			joint.pos[1] = rigid.pos[1] + rigid.size[1] / 2
-			joint.pos[2] = rigid.pos[2] + rigid.size[2] / 2
+			#joint.pos[0] = rigid.pos[0] + rigid.size[0] / 2
+			joint.pos[1] = rigid.pos[1] + rigid.size[1]# / 2
+			joint.pos[2] = rigid.pos[2] + rigid.size[2]# / 2
 
 	#### Make skirt move more like a fluid
-	for joint in skirt:
+	for joint in joints:
 		m = re.match(r"cf_j_sk_(\d+)_(\d+)(\[side\])?", joint.name_jp)
 		main = int(m[1])
 		sub = int(m[2])
@@ -279,12 +379,154 @@ def transform_skirt(pmx):
 		elif sub == 4: (joint.movemin[0], joint.movemax[0]) = (-20, 20)
 		
 		## Issue: Still too much collision with body during hectic movements
+	##################################
+	####### Extend skirt with more "lines"
+	#### First the rigidbodies
+	commonRbd = {
+		#name_jp: str, name_en: str, "bone_idx": int,
+		#pos: List[float], rot: List[float], size: List[float],
+		#"shape": rigids[0].shape,
+		"group": rigids[0].group,
+		"nocollide_mask": rigids[0].nocollide_mask,
+		#"phys_mode": int,
+		"phys_mass": rigids[0].phys_mass,
+		"phys_move_damp": rigids[0].phys_move_damp,
+		"phys_rot_damp": rigids[0].phys_rot_damp,
+		"phys_repel": rigids[0].phys_repel,
+		"phys_friction": rigids[0].phys_friction,
+	}
+	
+	## Get pair of 0-1, 1-2, ... 7-0 for each rigid
+	def chunk(lst, n): return [lst[i:i + n] for i in range(0, len(lst), n)]
+	def pairwise(lst): return zip(*[iter(lst)]*2)
+	def average(arr1, arr2):
+		arr = []
+		arr.append((arr1[0] + arr2[0]) / 2)
+		arr.append((arr1[1] + arr2[1]) / 2)
+		arr.append((arr1[2] + arr2[2]) / 2)
+		return arr
+	
+	rlst = chunk(rigids, 6)
+	rigid_dict = {
+		"10": zip(rlst[0], rlst[1]), "12": zip(rlst[1], rlst[2]),
+		"23": zip(rlst[2], rlst[3]), "34": zip(rlst[3], rlst[4]),
+		"45": zip(rlst[4], rlst[5]), "56": zip(rlst[5], rlst[6]),
+		"67": zip(rlst[6], rlst[7]), "70": zip(rlst[7], rlst[0]),
+	}
+	
+	if moreinfo: print("-------- Physics")
+	## Get pos,rot,size of both, and set the average as new
+	for grp in rigid_dict.items():
+		#print("----- P Grp " + grp[0])
+		## Grp = {
+		#	[0]: class='str': len=2,
+		#	[1]: class 'zip'
+		#	>0 it> class 'tuple': 0 = Rigid, 1 = Rigid
+		#	>1 it> class 'tuple': 0 = Rigid, 1 = Rigid
+		#	>2 it> class 'tuple': 0 = Rigid, 1 = Rigid
+		#	>3 it> class 'tuple': 0 = Rigid, 1 = Rigid
+		#	>4 it> class 'tuple': 0 = Rigid, 1 = Rigid
+		#	>5 it> class 'tuple': 0 = Rigid, 1 = Rigid
+		#}
+		for l,r in list(grp[1]):
+			m = re.match(r"cf_j_sk_(\d+)_(\d+)", l.name_jp)
+			name = f"cf_j_sk_{grp[0]}_{m[2]}"
+			pos = average(l.pos, r.pos)
+			rot = average(l.rot, r.rot)
+			## 1 -> 2 can be weird, so flip the X
+			##>> 1=Pos/Rot(-+- +++) vs 2=Pos/Rot(-++ +-+) -> 12=Pos/Rot(-+- +-+)
+			#if grp[0] == '12': rot[0] = -rot[0] #        -> 12=Pos/Rot(-+- --+)
+			size = average(l.size, r.size)
+			bone_idx = l.bone_idx
+			shape = l.shape # 2 if int(m[1]) == 5 else 1
+			mode = l.phys_mode # 0 if int(m[1]) == 0 else 1
+			add_rigid(pmx, name_jp=name, pos=pos, rot=rot, size=size, shape=shape,
+				phys_mode=mode, bone_idx=bone_idx, **commonRbd)
+	
+	################
+	## Same for joints
+	
+	jlst = chunk(joints[0:8*5], 5)
+	joint_dict = {
+		"10": zip(jlst[0], jlst[1]), "12": zip(jlst[1], jlst[2]),
+		"23": zip(jlst[2], jlst[3]), "34": zip(jlst[3], jlst[4]),
+		"45": zip(jlst[4], jlst[5]), "56": zip(jlst[5], jlst[6]),
+		"67": zip(jlst[6], jlst[7]), "70": zip(jlst[7], jlst[0]),
+	}
+	## Get pos,rot,size of both, and set the average as new
+	if moreinfo: print("-------- Joints")
+	for grp in joint_dict.items():
+		for l,r in list(grp[1]):
+			m = re.match(r"cf_j_sk_(\d+)_(\d+)", l.name_jp)
+			name = f"cf_j_sk_{grp[0]}_{m[2]}"
+			## Starts with 10_01 -- connects 10_00 to 10_01
+			rb1_idx    = find_rigid(pmx, f"cf_j_sk_{grp[0]}_0{int(m[2])-1}")
+			rb2_idx    = find_rigid(pmx, f"cf_j_sk_{grp[0]}_0{int(m[2])}")
+			pos        = average(l.pos, r.pos)
+			rot        = average(l.rot, r.rot)
+			
+			add_joint(pmx, name_jp=name, 
+				jointtype  = l.jointtype ,
+				rb1_idx    = rb1_idx   , rb2_idx    = rb2_idx   ,
+				pos        = pos       , rot        = rot       ,
+				movemin = l.movemin, movemax = l.movemax, movespring = l.movespring,
+				rotmin  = l.rotmin , rotmax  = l.rotmax , rotspring  = l.rotspring
+			)
+	####### And again for the side ones
+	jslst = chunk(joints[8*5:-1], 6)
+	side_dict = {
+		"10": zip(jslst[0], jslst[1]), "12": zip(jslst[1], jslst[2]),
+		"23": zip(jslst[2], jslst[3]), "34": zip(jslst[3], jslst[4]),
+		"45": zip(jslst[4], jslst[5]), "56": zip(jslst[5], jslst[6]),
+		"67": zip(jslst[6], jslst[7]), "70": zip(jslst[7], jslst[0]),
+	}
+	
+	## Have to rebind the original side joints as well
+	grp_dict = {
+		"10": "01",  "01": "12",
+		"12": "02",  "02": "23",
+		"23": "03",  "03": "34",
+		"34": "04",  "04": "45",
+		"45": "05",  "05": "56",
+		"56": "06",  "06": "67",
+		"67": "07",  "07": "70",
+		"70": "00",  "00": "10",
+	}
+	
+	## Get pos,rot,size of both, and set the average as new
+	if moreinfo: print("-------- Side Joints")
+	for grp in side_dict.items():
+		for l,r in list(grp[1]):
+			m = re.match(r"cf_j_sk_(\d+)_(\d+)(\[side\])", l.name_jp)
+			name = f"cf_j_sk_{grp[0]}_{m[2]}{m[3]}"
+			## Starts with 10_00 -- connects 10_00 with 01_00
+			rb1_idx    = find_rigid(pmx, f"cf_j_sk_{grp[0]}_{m[2]}")
+			rb2_idx    = find_rigid(pmx, f"cf_j_sk_{grp_dict[grp[0]]}_{m[2]}")
+			pos        = average(l.pos, r.pos)
+			rot        = average(l.rot, r.rot)
+			
+			add_joint(pmx, name_jp=name, 
+				jointtype  = l.jointtype,
+				rb1_idx    = rb1_idx   , rb2_idx    = rb2_idx   ,
+				pos        = pos       , rot        = rot       ,
+				movemin = l.movemin, movemax = l.movemax, movespring = l.movespring,
+				rotmin  = l.rotmin , rotmax  = l.rotmax , rotspring  = l.rotspring
+			)
+	### Rebind original joints
+	for joint in joints[8*5:-1]:
+		## Starts with 00_00 -- connects 00_00 with old:01_00 / new:10_00
+		m = re.match(r"cf_j_sk_(\d+)_(\d+)(\[side\])", joint.name_jp)
+		joint.rb2_idx = find_rigid(pmx, f"cf_j_sk_{grp_dict[m[1]]}_{m[2]}")
+	
+	
 ##########
 	pass# To keep trailing comments inside
 
 # --[Fix materials that exist multiple times]-- #
 
+## [Step 04]
 def rig_hair_joints(pmx): #--- Find merged / split hair chains --> apply Rigging to them
+	print("--- Stage 'Rig Hair'...")
 	### Add a Head Rigid for the Hair to anchor onto -- return if none
 	head = find_bone(pmx, "a_n_headflont", True)
 	if head == -1: return
@@ -298,12 +540,15 @@ def rig_hair_joints(pmx): #--- Find merged / split hair chains --> apply Rigging
 	try: limit = pmx.bones[find_bone(pmx, "胸親", False)].pos[1]
 	except: limit = 0.0
 	_limit = lambda i: i < limit
+	
+	#print(f"Limit: {limit}")
 
 	global_state[OPT__HAIR] = True
 	################################
 	_patch_bone_array = lambda x,n: patch_bone_array(pmx, head_body, x, n, grp=3)
 	__rig_acc_joints(pmx, _patch_bone_array, _limit)
 
+## [Common of 04+05]
 def __rig_acc_joints(pmx, _patch_bone_array, limit):
 	"""
 	:: private method as common node for both normal and hair chains
@@ -312,7 +557,7 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit):
 	### At least this exists for every accessory
 	__root_Name = "N_move"
 	bones = [i for (i,b) in enumerate(pmx.bones) if b.name_jp.startswith(__root_Name)]
-	
+	#print(bones)
 	if len(bones) == 0:
 		print("No acc chains found to rig.")
 		return
@@ -338,6 +583,7 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit):
 		
 		## These exist just to make it... less complicated
 		def finder(name): return [x for x in root_arr0 if pmx.bones[x].name_jp.startswith(name)]
+		def finder2(name, _arr): return [x for x in _arr if pmx.bones[x].name_jp.startswith(name)]
 		def descend_first(root_arrX):
 			## Reduce to its children
 			_arr = get_children_map(pmx, root_arrX[0], returnIdx=False, add_first=False)
@@ -348,10 +594,27 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit):
 			all_child = get_children_map(pmx, _arr, returnIdx=False, add_first=True)
 			## Reduce to the chains whose first bone has the above as parent
 			return [all_child[pmx.bones[x].name_jp] for x in _arr if pmx.bones[x].parent_idx == parent_idx]
+		
+		
 		##################
 		#-- CM3D2 Handling -- because it contains [joints.xxx]
+		root_arr1 = finder("Bone_Face")
+		if any(root_arr1):
+			##[C] Descend onto Hair_R etc.
+			arr = descend_first(root_arr1) ## [Bone_Face -> all children]
+			##[C] Reduce to children but keep first -- it contains some root weights
+			##[A] Reduce to the chains whose first bone has "AS01_J_kami" as parent
+			child_arr = []
+			hair = finder2("Hair_F", arr)
+			if len(hair) > 0: child_arr += get_direct_chains(arr, hair[0])
+			hair = finder2("Hair_R", arr)
+			if len(hair) > 0: child_arr += get_direct_chains(arr, hair[0])
+			#child_arr = get_direct_chains(arr, arr[0])
+			for i,arr in enumerate(child_arr): _patch_bone_array(arr, name+'_'+str(i))
+			continue
+		##################
 		#-- AS01 Handling  -- contains "SCENE_ROOT"
-		root_arr1 = finder("Bone_Face") + finder("AS01_N_kami")
+		root_arr1 = finder("AS01_N_kami")
 		if any(root_arr1):
 			##[C] Descend onto Hair_R etc.
 			arr = descend_first(root_arr1)
@@ -403,13 +666,38 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit):
 ####################
 	pass
 
+## [Step 05]
 def rig_other_stuff(pmx):
+	print("--- Stage 'Rig non hair stuff'...")
 	## Get reference point for discard
 	try: limit = pmx.bones[find_bone(pmx, "胸親", False)].pos[1]
 	except: limit = 0.0
 	_limit = lambda i: i > limit
 	_patch_bone_array = lambda x,n: patch_bone_array(pmx, None, x, n, grp=16)
 	__rig_acc_joints(pmx, _patch_bone_array, _limit)
+
+## [Step 06]
+def rig_rough_detangle(pmx):
+	print("--- Stage 'Detangle some chains'...")
+	print("> aka perform [Mode: 3] for some obvious cases")
+	## Get all rigging starting with ca_slot
+	def collect(item):
+		idx = item[0]
+		rig = item[1]
+		if not rig.name_jp.startswith("ca_slot"): return False
+		if idx == len(pmx.rigidbodies) - 1: return False
+		
+		## "ca_slot05_0:joint1-3" > "ca_slot05_0:joint2-1"
+		m = re.search(r"joint(\d+)-(\d+)", rig.name_jp)
+		if m:
+			n = re.search(r"joint(\d+)-\d+", pmx.rigidbodies[idx+1].name_jp)
+			if not n: return False
+			return int(m[1]) < int(n[1])
+		## Nothing matched
+		return False
+	######
+	arr = [item[0] for item in enumerate(pmx.rigidbodies) if collect(item)]
+	return split_rigid_chain(pmx, arr)
 
 ########
 ## ca_slot (a_n_headside)
@@ -448,8 +736,10 @@ def rig_other_stuff(pmx):
 ## -- N_hairback00 >> 32_mesh
 ######
 
+## [Mode 02]
 ##--- Hook a chain of RigidBodies to a static Body and anchor it to [head_body]
 def patch_bone_array(pmx, head_body, arr, name, grp):
+	""" Hook a chain of RigidBodies to a static Body and anchor it to [head_body] """
 	if True: ## To keep the History aligned
 		if check_no_dupes(pmx, find_rigid, name+"_r"):
 			if DEBUG: print(f"Already added a bone chain for {name}")
@@ -505,6 +795,7 @@ def patch_bone_array(pmx, head_body, arr, name, grp):
 ##########
 	pass# To keep trailing comments inside
 
+## [Step 03]
 def split_merged_materials(pmx, input_filename_pmx): #-- Find and split merged Material chains (full chain match)
 	"""
 	
@@ -517,6 +808,7 @@ def split_merged_materials(pmx, input_filename_pmx): #-- Find and split merged M
 	By removing the tag from certain materials, they stay glued to the original (e.g. move together)
 	Important: This must be run before [nuthouse01 cleanup], as that removes all unused bones (== all whose children have no vertices connected)
 	"""
+	print("--- Stage 'split_merged_materials'...")
 	verbose = global_state.get("moreinfo", False)
 	#### Get parental map of all bones
 	par_map = get_parent_map(pmx, range(len(pmx.bones)))
@@ -642,6 +934,74 @@ def split_manually(pmx, key, values): #-- Loop within cluster and pull apart
 		if not reweight_bones(pmx, first_chain, arr, int(re.search(r"ca_slot(\d+)", name)[1]), False):
 			if not chain_matched: first_chain = None
 		else: chain_matched = True
+
+## [Mode 03]
+def split_rigid_chain(pmx, arr=None):
+#>	Move Rigid to linked Bone
+	# Ask for list of Rigids to fix (only the first)
+	if arr is None:
+		arr = core.MY_GENERAL_INPUT_FUNC(util.is_csv_number, "List of Rigids (comma separated)" + f"?: ")
+	slot_map = {}
+	# Process list
+	def __split_rigid_chain(idx):
+		# Get Rigid
+		rigid = pmx.rigidbodies[idx]
+		# Get RigidBody1 (Rigid.Id+1)
+		rigid2 = pmx.rigidbodies[idx+1]
+		
+		# Get Linked Bone of Rigid
+		bone = pmx.bones[rigid.bone_idx]
+		# Set Rigid.Position to Bone.Position
+		rigid.pos = bone.pos
+		# Set Rigid.Rotation to [0 0 0]
+		rigid.rot = [0, 0, 0]
+		# Set Rigid.Size to [0.1 -0.1]
+		rigid.size = [0.1, -0.1, 0]
+		# Set RigidBody1.Type to Green
+		rigid2.phys_mode = 0
+		
+		# Store Bone.LinkTo as BoneLink
+		tail = bone.tail
+		if bone.tail_usebonelink == False:
+			print(f"{bone.tail} was already without link")
+			return
+		# Set Bone.LinkTo as [Offset: 0 0 -0.1]
+		bone.tail_usebonelink = False
+		bone.tail = [0, 0, -0.1]
+		
+		# Find Rigid linked to BoneLink (RigidBody2)
+		rigid3 = None
+		for r in pmx.rigidbodies[idx-30:idx]:
+			if r.bone_idx == tail:
+				rigid3 = r
+				break
+		if rigid3 == None:
+			print(f"Could not find any rigid linked to bone {tail}, cannot verify joints")
+			return
+		
+		# Find Joint that connects Rigid & RigidBody1
+		prefix = re.sub("(ca_slot\d+).*", "$1", rigid.name_jp)
+		if prefix in slot_map: joints = slot_map[prefix]
+		else:
+			joints = [x for x in pmx.joints if x.name_jp.startswith(prefix)]
+			slot_map[prefix] = joints
+		joint = None
+		for j in joints:
+			if j.rb1_idx == idx and j.rb2_idx == idx+1:
+				joint = j
+				break
+		if joint == None:
+			print(f"Could not find any joint linking the two bodies. Skipping Joints")
+			return
+		
+		# Set A to RigidBody2
+		idx2 = find_rigid(pmx, rigid3.name_jp)
+		joint.rb1_idx = idx2
+		
+	#[int(x.strip()) for x in arr.split(',')]
+	if arr is str: [__split_rigid_chain(int(x.strip())) for x in arr.split(',')]
+	else:          [__split_rigid_chain(int(x)) for x in arr]
+	return arr
 
 ########
 ## Riggers Util
@@ -973,6 +1333,8 @@ def check_no_dupes(pmx, func, name):
 
 
 ## /(\w+): (List\[\w+\]|\w+), *:: (.+)/  -- /\1: \2 = \3,/
+######
+##-- Add a new object with default values unless specified
 
 def add_bone(pmx,
 			 name_jp: str = "New Bone1",

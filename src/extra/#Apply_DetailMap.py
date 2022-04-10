@@ -31,6 +31,7 @@ mode            = data.get("mode", "overlay")
 details         = data.get("moreinfo", False)
 mainSize        = data.get("is_main", False)
 is_body         = data.get("is_body", False)
+alpha           = data.get("alpha", 64 / 256) #<< add to docu (!)
 #-------------
 _mask = None;imgAlpha = ""
 if (argLen > 4): imgAlpha = sys.argv[4]
@@ -46,7 +47,11 @@ if details: print((f"\n=== Running {name} Script with arguments:" + "\n-- %s" * 
 else: print(f"\n=== Running {name} Script")
 
 ### Apply Transparency of 30% ( = 64 of 255)
-alpha   = 64 / 255    ## For mask
+try:
+	alpha = float(alpha)#32 / 256    ## For mask
+except:
+	alpha = 64 / 256
+##
 show    = False       ## Do cv2.imshow
 opt = imglib.makeOptions(locals())
 

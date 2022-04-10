@@ -124,10 +124,16 @@ except: ## Fixing rare one-off cases
 		elif padX > 0:            tmp[:,padX:-padX,:]          = image; changed=True
 		elif padY > 0:            tmp[padY:-padY,:,:]          = image; changed=True
 	except:
-		#print(f"[Y-1:Y,X:X] tmp:{tmp.shape} vs. {image.shape}")
-		if padX > 0 and padY > 0: tmp[padY+1:-padY,padX+1:-padX,:] = image; changed=True
-		elif padX > 0:            tmp[:,padX+1:-padX,:]            = image; changed=True
-		elif padY > 0:            tmp[padY+1:-padY,:,:]            = image; changed=True
+		try:
+			#print(f"[Y-1:Y,X:X] tmp:{tmp.shape} vs. {image.shape}")
+			if padX > 0 and padY > 0: tmp[padY+1:-padY,padX+1:-padX,:] = image; changed=True
+			elif padX > 0:            tmp[:,padX+1:-padX,:]            = image; changed=True
+			elif padY > 0:            tmp[padY+1:-padY,:,:]            = image; changed=True
+		except:
+			if padX > 0 and padY > 0: tmp[padY+1:-padY,padX:-padX,:] = image; changed=True
+			elif padX > 0:            tmp[:,padX:-padX,:]            = image; changed=True
+			elif padY > 0:            tmp[padY+1:-padY,:,:]          = image; changed=True
+		
 DisplayWithAspectRatio(opt, 'Fixed', tmp, 256)
 if changed: image = tmp
 

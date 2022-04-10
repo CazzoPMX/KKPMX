@@ -172,8 +172,9 @@ def run_kk_defaults(pmx, input_filename_pmx):
 		bounds["maxZ"] = 3
 		bounds["minZ"] = -3
 	elif choice == CH__BOX_SMALL:
-		addIfFound("cf_s_bnip02_R", "minX", 0, -0.2)
-		addIfFound("cf_d_bust03_R", "maxX", 0)
+		addIfFound("cf_s_bnip02_R", "minX", 0, -0.3)
+		#addIfFound("cf_d_bust03_R", "maxX", 0)
+		addIfFound("cf_s_bnip02_L", "maxX", 0, 0.3)
 		addIfFound("胸親", "minY", 1, -0.25)
 		addIfFound("胸親", "maxY", 1, 0.25)
 		bounds["maxZ"] = 3
@@ -273,7 +274,7 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, opt
 				except: pass
 		extendBounds("minX",0,0,max)
 		extendBounds("minY",0,1,max)
-		extendBounds("minZ",0,2,min)
+		extendBounds("minZ",0,2,max)
 		extendBounds("maxX",1,0,min)
 		extendBounds("maxY",1,1,min)
 		extendBounds("maxZ",1,2,max)
@@ -430,11 +431,27 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, opt
 	return move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options)
 
 def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options={}):
+	"""
+	:param pmx             [Pmx]
+	:param new_mat         [PmxMaterial] The Material from which we cut off the vertices
+	:param that_verts_list [list[int]]   The list of Vertex indices to relocate
+	:param __results       [list[str]]   Log lines for #edit_log
+	:param options         [dict]        Options passed through from previous method
+	
+	Options = {
+		"affectPMX":   False for simulation mode; default is True
+		"exceed":      Array of int (1 to 6) -- directions that ignore the bounding box
+		"ask":         True to ask for material to store into, False to not ask
+		:     -- Also allows a material index directly, but will fall back to [ask=True] if invalid. -1 for new
+		"initial_hidden": When generating a new material, set True to hide it initially, else false.
+	}
+	"""
 	import kkpmx_core as kklib
 	import kkpmx_utils as util
 	affectPMX = options.get("affectPMX", True)
 	mat_idx2 = util.find_mat(pmx, new_mat.name_jp)
 	that_faces_list = kklib.from_vertices_get_faces(pmx, vert_arr=that_verts_list, mat_idx=mat_idx2, returnIdx=False, debug=False, trace=True)
+	#>> dict { int, <class 'list', len=3> [ int, int, int ] }
 	#util.write_json(that_faces_list, "moved_faces", False)
 	################
 	print("----[Stage] Delete the original faces")
@@ -442,7 +459,7 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options
 	that_list_flat = list(sorted(set(list(that_faces_list)))) # list(reduce to idx) -> set(unique) -> list(cast)
 	
 	##  Delete the old faces and decrease the faces_ct of the old material
-	__results.append("-- Moved {} of {} faces to new material".format(len(that_list_flat), new_mat.faces_ct))
+	__results.append("-- Moved {} of {} faces from '{}' to new material".format(len(that_list_flat), new_mat.faces_ct, new_mat.name_jp))
 	
 	if affectPMX:
 		new_mat.faces_ct -= len(that_list_flat)
@@ -450,7 +467,7 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options
 
 	########
 	##  Add new material(s)
-	print("----[Stage] Create a new material and add the deleted faces to it ")
+	print("----[Stage] Ask for a material to add the deleted faces to")
 	
 	add_mat = None
 	ask = options.get("ask", False)
@@ -465,8 +482,9 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options
 	elif type(ask) != bool: value = int(ask)
 	
 	if verbose: print(f"Ask: {old_ask}, IsNumber: {util.is_number(old_ask)}, Value: {value}")
-	if verbose: print(f">> Valid: {valid_value(old_ask)} -> ask: {ask}")
+	if verbose: print(f">> Provided is Valid: {valid_value(old_ask)} -> ask: {ask}")
 	
+	is_new_mat = True
 	if ask == True:
 		value = int(core.MY_GENERAL_INPUT_FUNC(valid_value, "Id of the Material to append to (-1 for new)"))
 	if value == -1:
@@ -476,18 +494,28 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options
 		add_mat.name_en = kklib.translate_name(add_mat.name_jp, new_mat.name_en) + "_delta"
 		add_mat.name_jp = add_mat.name_jp + "_delta"
 	else:
+		is_new_mat = False
 		add_mat = pmx.materials[value]
-		__results.append(f"--- Extended {add_mat.name_jp} instead of creating new material")
+		if (value == mat_idx2): __results.append(f"--- Adding back to {add_mat.name_jp}({mat_idx2}) instead of creating new material")
+		else: __results.append(f"--- Extended {add_mat.name_jp} instead of creating new material")
 		
 
 	########
 	##  Add faces from that_list with respect to the material at the end
 	if affectPMX:
-		for i in iter(that_faces_list): pmx.faces.append(that_faces_list[i])
-	##  Refresh base_mat.faces_ct
+		## New mats are added to the end, so we can simply append the moved faces
+		if is_new_mat or value == len(pmx.materials) - 1:
+			pmx.faces += list(that_faces_list.values())
+		## When reusing the mat, we need to insert the faces at the correct position
+		else:
+			xx = [m.faces_ct for m in pmx.materials[:value]]
+			insert_idx = sum(xx, pmx.materials[value].faces_ct) ## int of last index
+			pmx.faces = pmx.faces[:insert_idx] + list(that_faces_list.values()) + pmx.faces[insert_idx:]
+		
+	##  Refresh target.faces_ct
 	add_mat.faces_ct += len(that_list_flat)
 	##  Add morph to fade in / out
-	if value == -1:
+	if is_new_mat:
 		print("----[Stage] Create morphs to fade it in/out")
 		items = []
 		add_idx = len(pmx.materials)
@@ -498,12 +526,11 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options
 			__results.append("--- Material is initially hidden")
 			add_mat.alpha = 0
 			kklib.__append_itemmorph_add(items, add_idx)
-			add_mat.flaglist[4] = 0
+			add_mat.edgealpha = 0
 		else:
 			__results.append("--- Material is initially visible")
 			add_mat.alpha = 1
 			kklib.__append_itemmorph_mul(items, add_idx)
-			add_mat.flaglist[4] = 1
 		##### If an material of that name already exists, add "Hide" to it
 		if affectPMX:
 			add_to_morph_hide(pmx, new_mat.name_jp, add_idx, __results)
@@ -524,11 +551,11 @@ def move_verts_to_new_material(pmx, new_mat, that_verts_list, __results, options
 	
 	####
 	if affectPMX:
-		if value == -1:
+		if is_new_mat:
 			pmx.morphs.append(pmxstruct.PmxMorph(add_mat.name_jp, add_mat.name_en, 4, 8, items))
 			#pmx.frames[1].items.append(len(pmx.morphs) - 1)
 			pmx.materials.append(add_mat)
-		print("--------\n Results:" + "\n".join(__results))
+		print("--------\n Results:\n" + "\n".join(__results))
 		return __results
 	else:
 		__results.append("-- As this was just a simulation, no model was written")

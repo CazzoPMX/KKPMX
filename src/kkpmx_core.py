@@ -78,6 +78,7 @@ def get_choices():
 		("Print material bones", print_material_bones),
 		("Slice helper", slice_helper),
 		("Run Rigging Helpers", kkrig.run),
+		("Draw Shader", PropParser.draw_toon_shader, True),
 	]
 def main(moreinfo=True):
 	# promt choice
@@ -106,7 +107,8 @@ def main(moreinfo=True):
 	core.MY_PRINT_FUNC("Type the Name of the PMX input file (or drag'n'drop it into the console window)")
 	input_filename_pmx = core.MY_FILEPROMPT_FUNC('.pmx')
 	print("")
-	pmx = pmxlib.read_pmx(input_filename_pmx, moreinfo=moreinfo)
+	if len(choices[idx]) == 3: pmx = None
+	else: pmx = pmxlib.read_pmx(input_filename_pmx, moreinfo=moreinfo)
 	print("==--==")
 	choices[idx][1](pmx, input_filename_pmx)
 	print("==--==")
@@ -160,7 +162,6 @@ Output: PMX File '[filename]_cleaned.pmx'
 	#disable_mat("Bonelyfans*1")
 	#disable_mat("Standard (Instance) (Instance)") ## Exists with kedama (?)
 	#disable_mat("acs_m_kedama (Instance) (Instance)")
-
 	kk_re = re.compile(r" ?\(Instance\)_?(\([-0-9]*\))?")
 	flag = opt.get("colors", None)
 	if flag is None: flag = util.ask_yes_no("Standardize Colors")
@@ -204,7 +205,7 @@ Output: PMX File '[filename]_cleaned.pmx'
 		if name.startswith("Bonelyfans"): disable_mat(idx)
 		if name.startswith("Standard"): disable_mat(idx)
 		if name.startswith("acs_head_hana_botan"):
-			pmx.materials[mat_idx].flaglist[4] = False
+			pmx.materials[idx].flaglist[4] = False
 		if name in names:
 			while True:
 				suffix += 1
@@ -240,6 +241,12 @@ Output: PMX File '[filename]_cleaned.pmx'
 	bind_bone(["左足", "左ひざ", "左足首", "左つま先"])
 	bind_bone(["右足", "右ひざ", "右足首", "右つま先"])
 	
+	from itertools import product
+	fingers = product(["左","右"], ["人指", "小指", "中指", "薬指"])
+	for item in fingers: bind_bone([''.join(x) for x in product([''.join(item)], ["1", "2", "3"])])
+	bind_bone(["左親指０", "左親指1", "左親指2"])
+	bind_bone(["右親指０", "右親指1", "右親指2"])
+	
 	## Fix Feet
 	def tmp(A, B, C):
 		ankle = find_bone(pmx, A, False)
@@ -256,28 +263,91 @@ Output: PMX File '[filename]_cleaned.pmx'
 	## add [腰][waist] at ??? between [upper]/[lower] and [cf_j_hips]
 		
 	###############
+	###### ---- morphs
+	# Rename the morphs used by the 5 Speech Morphs
+	usedMorphs = [
+		["eye_face.f00_def_cl",			"face.default.close"],
+		["eye_face.f00_egao_cl",		"face.smile.close"],
+		["kuti_face.f00_a_l_op",		"mouth.a.open"],
+		["kuti_face.f00_i_l_op",		"mouth.i.open"],
+		["kuti_face.f00_u_l_op",		"mouth.u.open"],
+		["kuti_face.f00_e_l_op",		"mouth.e.open"],
+		["kuti_face.f00_o_l_op",		"mouth.o.open"],
+		["eye_line_u.elu00_def_cl",		"eyeline_u.default.close"],
+		["eye_line_u.elu00_egao_cl",	"eyeline_u.smile.close"],
+		["eye_line_l.ell00_def_cl",		"eyeline_l.default.close"],
+		["eye_line_l.ell00_egao_cl",	"eyeline_l.smile.close"],
+		["kuti_ha.ha00_a_l_op",			"teeth.a.open"],
+		["kuti_ha.ha00_i_l_cl",			"teeth.i.close"],
+		["kuti_ha.ha00_e_s_op",			"teeth.e.open_s"],
+	]
+	
+	for item in usedMorphs:
+		morph = find_morph(pmx, item[0], False)
+		if morph == -1: continue
+		pmx.morphs[morph].name_jp = item[1]
+		pmx.morphs[morph].name_en = item[1]
+	
+	pmx.morphs.append(pmxstruct.PmxMorph("unbounce", "unbounce", 4, 2, [
+		pmxstruct.PmxMorphItemBone(find_bone(pmx, "右腕", False), [0,0,0], [0,0,-35]),
+		pmxstruct.PmxMorphItemBone(find_bone(pmx, "左腕", False), [0,0,0], [0,0,35]),
+	]))
+	
+	###############
 	###### ---- dispframes
 	## add [BodyTop], [両目], [eye_R, eye_L], [breast parent] [cf_j_hips] to new:[TrackAnchors]
 	frames = [
 		[0, find_bone(pmx, "両目", False)],      #	19.14828 - Over the head
 		[0, find_bone(pmx, "左目", False)], [0, find_bone(pmx,"右目", False)],
-		[0, find_bone(pmx, "cf_J_Eye_tz", False)], #	- Between Eyes
-		#[0, find_bone(pmx, "cf_J_FaceUp_ty", False)], #	- Slightly below base of eyes
-		[0, find_bone(pmx, "首", False)],        #	15.45564 - Top of Arms
-		[0, find_bone(pmx, "胸親", False)],      #	14.10473 - Center of Chestbone
-		[0, find_bone(pmx, "上半身2", False)],    #	13.19746 - Bottom edge of Chestbone
-		[0, find_bone(pmx, "上半身", False)],     #	12.23842 - Slightly above navel
-		#[0, find_bone(pmx, "cf_j_hips", False)], #	12.18513 - 
-		[0, find_bone(pmx, "下半身", False)],     #	12.13186 - Slightly above navel
+		[0, find_bone(pmx, "cf_J_Eye_tz", False)],       #	- Between Eyes
+		#[0, find_bone(pmx, "cf_J_FaceUp_ty", False)],   #	- Slightly below base of eyes
+		#[0, find_bone(pmx, "首", False)],                #	15.45564 - Top of Arms
+		[0, find_bone(pmx, "cf_j_spine03", False)],      #	14.10473 - Center of Chestbone
+		#[0, find_bone(pmx, "上半身2", False)],            #	13.19746 - Bottom edge of Chestbone
+		#[0, find_bone(pmx, "上半身", False)],             #	12.23842 - Slightly above navel
+		[0, find_bone(pmx, "cf_j_hips", False)],        #	12.18513 - Navel
+		#[0, find_bone(pmx, "下半身", False)],             #	12.13186 - Slightly above navel
 		### navel -- 11.96193 < cf_d_sk_top (12.0253)
 	]
-	rename_bone("cf_J_Eye_tz", None, "Between Eyes")
-	#rename_bone("両目", None, "Top of Head")
+	rename_bone("両目",          None, "Track Head")
+	rename_bone("cf_J_Eye_tz",  None, "Track Eyes")
+	rename_bone("cf_j_spine03", None, "Track Chest")
+	rename_bone("cf_j_hips",    None, "Track Navel")
 	
-	if find_disp(pmx, "TrackAnchors", False) in [None, -1]:
+	if find_disp(pmx, "TrackAnchors", False) == -1:
 		pmx.frames.append(pmxstruct.PmxFrame("TrackAnchors", "TrackAnchors", False, frames))
-	## add [groove] to [center]
-	## add [waist] to [lower body]
+		
+	if find_disp(pmx, "ChestGravity", False) == -1:
+		src = find_bone(pmx, "cf_d_bust00", False)
+		dst = find_bone(pmx, "cf_d_shoulder_L", False)
+		if src != -1 and dst != -1:
+			frames = [[0,idx] for idx in range(src, dst)]
+			pmx.frames.append(pmxstruct.PmxFrame("ChestGravity", "ChestGravity", False, frames))
+	
+	if find_disp(pmx, "SkirtGravity", False) == -1:
+		src = find_bone(pmx, "cf_d_sk_top", False)
+		dst = find_bone(pmx, "cf_j_sk_07_05", False)
+		if src != -1 and dst != -1:
+			frames = [[0,idx] for idx in range(src, dst+1)]
+			pmx.frames.append(pmxstruct.PmxFrame("SkirtGravity", "SkirtGravity", False, frames))
+	
+	def addIfNot(name, bone):
+		disp = find_disp(pmx, name, False)
+		if disp == -1: return
+		if pmx.frames[disp].name_jp == "morebones": return
+		_frames = map(lambda x: x[1], pmx.frames[disp].items)
+		if type(bone) is not list: bone = [bone]
+		for b in bone:
+			idx = find_bone(pmx, b, False)
+			if idx == -1: continue
+			if idx in _frames: continue
+			pmx.frames[disp].items.append([0, idx])
+	
+	addIfNot("体(上)", ["cf_s_spine03", "cf_s_spine02", "cf_s_spine01"]) ## spine to Upper Body
+	addIfNot("体(下)", ["腰", "cf_j_waist02"]) ## waist to Lower Body
+	
+	
+	
 	
 	### Clean up invalid dispframes
 	for disp in pmx.frames:
@@ -318,8 +388,9 @@ There are some additional steps that cannot be done by a script; They will be me
 	def section(msg): print("------\n> "+msg+"\n------")
 	## ask if doing new model per step or only one at the end
 	write_model = util.ask_yes_no("Store individual steps as own model (will copy into main file regardless)", "y")
-	moreinfo = util.ask_yes_no("Display more details in some cases")
-	all_yes = util.ask_yes_no("Do all yes")
+	moreinfo = util.ask_yes_no("Display more details in some cases","n")
+	all_yes = util.ask_yes_no("Do all yes","y")
+	
 	## rename input_filename_pmx to "_org"
 	orgPath = input_filename_pmx[0:-4] + "_org.pmx"
 	if os.path.exists(orgPath):
@@ -332,6 +403,8 @@ There are some additional steps that cannot be done by a script; They will be me
 		util.copy_file(input_filename_pmx, orgPath)
 	#-------------#
 	section("[0] Bare minimum cleanup")
+	if all_yes or util.ask_yes_no("Convert filenames in local folder","y"):
+		ask_to_rename_extra(pmx, input_filename_pmx)
 	## run cleanup_texture --- [0] because it renames the materials as well
 	path = cleanup_texture(pmx, input_filename_pmx, write_model, {"colors": True})
 	if write_model: util.copy_file(path, input_filename_pmx)
@@ -450,29 +523,32 @@ def __append_vertexmorph(items, idx, move, name): ## morphtype: 1
 		items.append(item)
 
 #### JP originals
-jpMats = ['[上下]半身','白目','眼','耳','頭','顔','体','舌','瞳','まぶた','口内','ハイライト']
-# 眼(Eyes), 白目(sirome), 瞳(hitomi), まぶた(eyelids), ハイライト(Highlights)
-# 顔(Face), 口内(Inside of Mouth), 舌(Tongue), 耳(Ears)
-# 頭(Head), 体(Body), [上下]半身(upper / lower body), 肌(Skin), 首(Neck)
+jpMats = ['[上下]半身','耳','頭','顔','体','舌','口内','胴','口元', '口中','後頭部']
+# 眼(Eyes), 白目(sirome), 瞳(hitomi), まぶた(eyelids), ハイライト(Highlights), 黒目(kurome=Iris)
+jpMats += ['白目','眼','瞳','まぶた','ハイライト','黒目','眉睫毛']
+# 顔(Face), 口内+口中(Inside of Mouth), 舌(Tongue), 耳(Ears), 口元(Mouth)
+# 頭(Head), 体(Body), [上下]半身(upper / lower body), 肌(Skin), 首(Neck), 胴(Trunk)
 jpMats += ['肌', '首', '脚', '手', '歯', '目']
 # 脚(Leg)  手(Hand)  歯(Teeth)  目(eye)
 
 
-jpHair = ['髪', 'もみあげ','まつ毛','まゆ毛','サイドテール','横髪','あほ毛','前髪','後ろ髪','睫毛']
+jpHair = ['髪', 'もみあげ','まつ毛','まゆ毛','サイドテール','横髪','あほ毛','前髪','後ろ髪','睫毛','後髪']
 # もみあげ(Sideburns), 前髪(Forelock), 後ろ髪(Back Hair)
 jpAccs = ['グローブ','チョーカー','ブーツ','帽子','頭リボン','ニーハイ', 'ソックス','靴','アクセサリー']
 # ソックス(Socks), 靴(Shoes), アクセサリー(Accessories)
 #>> 表情(Expression)
 #>> パーカー(Parker), スカート(Skirt), パンツ(Pantsu)
 #### EN originals
-enMats =  ['Head','Face','Teeth','Eyes?','Tng','Tongue','Lash','Ears?','Hair','Horns?','Neck']
+enMats =  ['Head','Face','Teeth','Eyes?','Tng','Tongue','Lash','(^|_)Ears?','Hair','Horns?','Neck']
 enMats += ['Skin','Chest','Tummy','Foot','Feet','Body','Tail','breasts?']
 enAccs = ['Accessories','Bracelet','Crown','Armband','Scrunchie','Headband','Flowers']
+enAccs += ['decor', 'bow', 'Ribbon']
 #### KK-Models
 ## All core mats
 baseMats = ['body', 'mm', 'face', 'hair', 'noseline', 'tooth', 'eyeline', 'mayuge', 'sirome', 'hitomi', 'tang']
+baseMats += ['expression']
 ## Aux parts that should always stay
-accMatsNoHair = ['tail','acs_m_mimi_','kedama','mermaid','wing'] ## Hair & Kemomimi
+accMatsNoHair = ['tail','acs_m_mimi_','kedama','mermaid','wing','cattail','cat_ear'] ## Hair & Kemomimi
 accMatsNoHair += ['aku01_tubasa', 'back_angelwing'] ## Vanilla wings
 #>	acs_m_mermaid ++ Fins
 #>	acs_m_hair_*  -- Hair decoration
@@ -501,12 +577,12 @@ slot_dict = {
 	"hand":   ["a_n_wrist_L", "a_n_wrist_R", "a_n_hand_L", "a_n_hand_R", "a_n_ind_L", "a_n_ind_R", "a_n_mid_L", "a_n_mid_R", "a_n_ring_L", "a_n_ring_R"],
 	"nether": ["a_n_dan", "a_n_kokan", "a_n_ana"],
 }
-slotBody   = ["ct_head", "p_cf_body_00"]
+slotBody   = ["ct_head", "p_cf_body_00", "cf_J_FaceUp_ty"]
 slotAlways = slot_dict["hair"] + slot_dict["face"] + ["ct_hairB", "ct_hairF", "ct_hairS"]
 slotMostly = slot_dict["hand"] + slot_dict["foot"] + ["ct_gloves", "ct_socks", "ct_shoes_outer", "ct_shoes_inner"]
 slotMed    = slot_dict["body"] + slot_dict["nether"]
 slotFull   = slot_dict["lower"] + slot_dict["upper"]
-slotCloth  = ["ct_clothesTop", "ct_clothesBot", "ct_bra", "ct_shorts"] + slotMostly
+slotCloth  = ["ct_clothesTop", "ct_clothesBot", "ct_bra", "ct_shorts", "ct_panst"] + slotMostly
 
 rgx_filter = r'(eye|kuti)_[a-zLRM_]+\.[a-zLRM]+00\w+|mayuge\.\w+'
 
@@ -563,13 +639,14 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 	### If both flags, make sure that head+body is first
 	if flag and not flag2:
 		dictSlots["ct_head"] = []
+		dictSlots["cf_J_FaceUp_ty"] = []
 		dictSlots["p_cf_body_00"] = []
 	
 	def addMatMorph(name, arr, disp=None):
 		if len(arr) == 0: return
 		if type(name) is str: names = [ name, name ]
 		else: names = name
-		## Shrink prefix since only 13 letters are visible in [Facials]
+		## Shrink prefix since only 13 letters are visible in [Facials] and *.vmd
 		names[1] = re.sub(r'^ct_', '_', names[1])
 		names[1] = re.sub(r'^a_n_', '__', names[1])
 		
@@ -611,7 +688,7 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 			if m in slotMostly : __append_itemmorph_add(itemsSlots["mostly"], idx)
 			if m in slotMed    : __append_itemmorph_add(itemsSlots["med"]   , idx)
 			if m in slotFull   : __append_itemmorph_add(itemsSlots["full"]  , idx)
-		elif moreinfo and not isBody: print(f"{mat.name_jp} did not match any slot")
+		elif moreinfo and not isBody: print(f"{mat.name_jp} does not contain slot information")
 		#>> mayuge, noseline, tooth, eyeline, sirome, hitomi
 		
 		### Skip the rest if part of Body ddMatMorph
@@ -663,7 +740,7 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 	log_line = "Added Material Morphs"
 	if not flag: log_line += " (without body-like morphs)"
 	if len(frame) > 0:
-		## Filter out the messy morphs if they are added to display (only effective for reruns)
+		## Filter out the messy facials if they are added to display (only effective for reruns)
 		_tmp = list(filter(lambda x: re.match(rgx_filter, pmx.morphs[x[1]].name_jp) == None, pmx.frames[1].items))
 		pmx.frames[1].items = [[1,i] for i in core.flatten(frame)] + _tmp
 	
@@ -1234,6 +1311,55 @@ def transfer_names():
 		names.append(idx)
 	return end(dst, input_filename_pmx, "_org")
 
+def ask_to_rename_extra(pmx, base):
+	if not os.path.exists(base):
+		print(f"{base} does not exist")
+		return
+	
+	re_cut = re.compile(r" ?\(Instance\)_?(\([-0-9]*\))?|_Export_[\d\-]+_")
+	
+	idx = -1
+	names = []
+	basepath = os.path.split(base)[0] + "\\"
+	for idx, basename in enumerate(pmx.textures):
+		fname = os.path.splitext(basename)[0]
+		ftype = os.path.splitext(basename)[1]
+		newname = re_cut.sub("", fname)
+		
+		suffix = 0
+		if newname in names:
+			while True:
+				suffix += 1
+				if ("{}+{}".format(newname, suffix)) not in names:
+					newname = "{}+{}".format(newname, suffix)
+					break
+		elif basename == (newname+ftype): continue
+		names.append(newname)
+		dst = newname + ftype
+		print(f"[{idx}] Rename '{basename}' to '{dst}'")
+		pmx.textures[idx] = dst
+		## Also rename the physical file
+		fpath = ""
+		if not os.path.isfile(basename):
+			## if the file does not exist, its trash and can be ignored
+			if not os.path.isfile(os.path.join(basepath,basename)): continue
+			else: fpath = basepath
+		try:
+			os.renames(fpath+basename, fpath+dst)
+		except:
+			# Mixed case: Somehow an unrenamed texture made it into a clean model
+			suffix = 0
+			newname = re_cut.sub("", fname)
+			tmp = ""
+			while os.path.exists(fpath+dst):
+				suffix += 1
+				tmp = "{}+{}".format(newname, suffix)
+				names.append(tmp)
+				dst = tmp + ftype
+			print(f"[!]--> Already exists. Renaming to {dst} instead")
+			pmx.textures[idx] = dst
+			os.renames(fpath+basename, fpath+dst)
+
 def __do(pmx, input_filename_pmx): pass
 
 def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
@@ -1260,6 +1386,8 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 	if log_line:
 		paths = os.path.split(output_filename_pmx)
 		path = os.path.join(paths[0], "editlog.log")
+		if os.path.exists(path): os.path.rename(path, os.path.join(paths[0], "#editlog.log"))
+		path = os.path.join(paths[0], "#editlog.log")
 		if type(log_line) is str: log_line = [ log_line ]
 		msg = "\n---- ".join([""] + log_line)
 		## Add name of target file that contains the change 

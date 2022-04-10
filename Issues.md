@@ -34,6 +34,9 @@ This section contains a list of known issues, and how to solve them.
 | Hair flies away like paper lanterns | Physics chains need two solid segments to stay where they are. (At least they didn't stay unless I did that) |
 | Some Textures have wrong colors | If texture color is supplied through the texture itself, the default color usually stays, which is then applied as 'expected' through Color & DetailMask. Delete the masks which cause the problems and run Mode:3 (Property Parser) again (or repair the filepaths manually yourself. |
 | Eyes have wrong offset | Depending on weird internals, the 'idle' position of the eyes without blinking or following can be such that the Render-State exports that with -0.1 resp. 0.1. Just replace them in 'cf_m_hitomi_00#-<<number>>'.Offset with 0.0 (or at least equal on both 'hitomi' entries, if they are bigger.). Same for scale |
+| Incomplete exports | Custom Head Shapes (especially if they do not use all 'common elements', e.g. no or renamed eyebrows, tongue etc.) can cause the Exporter to fail in the Editor. It seems to work when exporting from CharaStudio though. |
+| Incomplete exports (Studio) | However, with Exporter enabled, the Studio is unable to work with AdvancedBones, so they will stay unmodified. |
+| AlphaMasks (Hair) | Currently, textures are exported once per unique asset. Especially hair can have different masks though, so until this is fixed, export them manually and assign them in the #generatedJSON file. |
 
 ## Open Issues
 
@@ -41,5 +44,4 @@ This section contains a list of known issues, and how to solve them.
 Things that are worked on or haven't been fixed yet.
 
  - Extra textures for face are ignored. -- overtex2 stays optional
- - White-ish overtex1 is barely visible. -- Fixed partially
  - Knee looks broken when kneeling too much.

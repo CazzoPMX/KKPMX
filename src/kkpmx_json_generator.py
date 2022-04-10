@@ -8,6 +8,8 @@ import os
 import nuthouse01_core as core
 import morph_scale
 import kkpmx_utils as util
+DEBUG = util.DEBUG or False
+DEVDEBUG = False
 
 ###############
 
@@ -119,6 +121,11 @@ global_dict = { }
 
 #############
 def GenerateJsonFile(pmx, input_filename_pmx):
+	path = os.path.join(os.path.split(input_filename_pmx)[0], "#generateJSON.json")
+	if os.path.exists(path):
+		if not util.ask_yes_no("Found existing #generateJSON file. Regenerate?", "n"):
+			return path
+
 	##### Generate Bone tree
 	slots = []
 	tree = {}
@@ -171,11 +178,14 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 	
 	parent_tree = { "_blank": [] }#generate_parent_tree(json_tree)
 	for (k,v) in json_tree.items():
+		#print(f"Key: {k} \\ Value: {v['token']}")
 		if ren_Render not in v: _parent = "_blank"
 		else: _parent = list(v[ren_Render].values())[0].get(ren_Parent, "_blank")
 		parent_tree.setdefault(_parent, [])
 		parent_tree[_parent].append(k)
 	#util.write_json(parent_tree, "_gen\#3Parents")
+	
+	if DEBUG: print(parent_tree["_blank"])
 	
 	GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree)
 	GenerateJsonFile__Clothes(pmx, arr, json_tree, parent_tree)
@@ -289,6 +299,7 @@ def GenerateJsonFile__Clothes(pmx, arr, tree, parent_tree):
 				opt_texAvail: [t__Alpha, t__Another, t__Detail, t__Line, t__Main, t__NorMap],
 				opt_texUse: [t__Detail, t__Main],
 			}
+		print(f"Adding {len(parent_tree.get(cat, []))} for {cat}")
 		for _name in parent_tree.get(cat, []):
 			opt[opt_Name] = _name
 			write_entity(pmx, arr, tree, opt) ## add option for [custom group], [Comment]
@@ -423,7 +434,11 @@ def write_entity(pmx, arr, json_tree, opt):
 	if not _elem:
 		print("[!] Could not find any match for " + name)
 		return
-	elem = next(_elem)
+	try:
+		elem = next(_elem)
+	except StopIteration:
+		print(f"[!] Model does not contain an entry for {name}")
+		return
 	suffix = opt.get(opt_Iter, 0)
 	for x in range(suffix): elem = next(_elem)
 	
@@ -454,6 +469,8 @@ def write_entity(pmx, arr, json_tree, opt):
 	#### Generate Template
 	targetBase["available"] = opt.get(opt_texAvail, []) ## Build some map of {"t__Main": ["main_item", ...]} and do a filter over all included
 	targetBase["textures"] = opt.get(opt_texUse, [])
+	
+	if (t__Alpha in opt): targetBase[t__Alpha] = op.get(t__Alpha, "")
 	
 	for (k,v) in mat.items():
 		if k in ["render","token"]: continue
@@ -602,33 +619,43 @@ def generate_render_tree(pmx, tree, json_ren):
 	-- Which also ensures that only useable render elements / materials remain
 	"""
 	#util.write_json(json_ren, "_gen\#1R00_json_ren", True)
-	DEBUG = False
+	#DEBUG = True
 	
 	### Group by Parent
 	renArr = {}
+	if DEBUG: print(f"[json_ren]:")
 	for x in json_ren.keys(): ## RENDER in { RENDER: BODY }
 		r = json_ren[x]
+		if DEBUG: print(f"-- {x}")
 		renArr.setdefault(r[ren_Parent], [])
 		renArr[r[ren_Parent]].append(x) ## --> "Parent": { RENDER: BODY, ...}, ...
 		#if len(renArr[r[ren_Material]]) > 1:
 		#	print("[] Warning: Render '{}' contains multiple materials!".format(x))
 	#util.write_json(renArr, "_gen\#1R01_renArr", True) ### Dict of { "parent": [ "render", ...] }
 	### Link to bone_idx
+	#print("------------")
+	#print(renArr)
+	#print("------------")
+	
 	renToBone = {}
 	for (k,v) in renArr.items(): #// SLOT: { RENDER: BODY, .... }, ...
-		if DEBUG: print("==== " + k)
+		if DEVDEBUG: print("==== " + k)
 		cArr = collectSubTree(pmx, tree, k) #//--> dict{"name": idx}
+		if DEVDEBUG: print(f"Subtree: {cArr}") #// All bones under this slot
 		if cArr == {}: continue
+		#print(f"[V]: {v}")
 		for c in v: #// [RENDER, RENDER, ....]
 			cc = re.sub("@\w+$|#-?\d+$","", c) ## Cut away the meta suffix
+			#print(f"[CC]: {cc}")
 			if cc in cArr.keys(): #// if RENDER in cArr
 				i = cArr[cc] #// idx of Bone for RENDER
-				if DEBUG: print("{} << {}".format(i,cc))
+				if DEVDEBUG: print("{} << {}".format(i,cc)) #//== Render Bone
 				if i not in renToBone:
 					renToBone[i] = json_ren[c] #// idx: BODY
 					continue
 	#util.write_jsonX(renToBone, "#renToBone.json", indent="\t", sort_keys=True)
 	#util.write_jsonX(renToBone, "_gen\#1R02_renToBone.json", indent="\t", sort_keys=True)
+	#if DEBUG: print(f"------------------")
 	return json.loads(json.dumps(renToBone, sort_keys=True))
 #
 #	renToBone :: for each render that exists in EXPORT, we have its bone_idx and RENDER.BODY
@@ -648,8 +675,10 @@ def generate_material_tree(pmx, tree, render_tree: dict, json_mats: dict):
 	
 #	### Create unique material names for all render elements
 	uniqueMats = []
+	#print(f"RenderTree:")
 	for ren in render_tree.items():
 		_mat = ren[1][ren_Material][0]
+		#print(f"-- {_mat} --> {ren}")
 		render_tree[ren[0]][ren_Target] = uniquefy_material(_mat, uniqueMats)
 #	### Map existing render to existing materials
 		if _mat in json_mats:
