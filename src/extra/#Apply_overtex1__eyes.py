@@ -34,7 +34,8 @@ if hlOne:
 	if hlOne:
 		hldata   = json.loads(args[3])
 		hlColor  = hldata["color"]
-		hlAlpha  = hldata["alpha"]
+		try: hlAlpha    = int(hldata["alpha"])
+		except: hlAlpha = 1
 if hlTwo:
 	pathHL2  = args[4]
 	if len(pathHL2) == 0: hlTwo = False
@@ -42,7 +43,8 @@ if hlTwo:
 	if hlTwo:
 		hldata   = json.loads(args[5])
 		hlColor2 = hldata["color"]
-		hlAlpha2 = hldata["alpha"]
+		try: hlAlpha2    = int(hldata["alpha"])
+		except: hlAlpha2 = 1
 #-------------
 #if hlOne == False and hlTwo == False: exit()
 #-------------

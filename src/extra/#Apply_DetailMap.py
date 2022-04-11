@@ -60,6 +60,10 @@ raw_image = cv2.imread(imgMain, cv2.IMREAD_UNCHANGED)
 if has_detail: mask = cv2.imread(imgMask)
 if has_alpha: _mask = cv2.imread(imgAlpha)
 
+if raw_image is None:
+	print(f"'{imgMain}' does not exist. Skipping Detail/Alpha-Mask.")
+	exit()
+
 #if show: cv2.imshow('Org', raw_image)
 
 ## Pull out the alpha for later

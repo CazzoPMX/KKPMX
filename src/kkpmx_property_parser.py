@@ -744,7 +744,7 @@ def handle_face_effects(pmx, attr): ## @todo
 def handle_eye_highlight(pmx, attr): ## Actually uses all three colors, so color in like body.overtex1
 	if NO_FILES in attr: return
 	arg1 = quote(attr[t__Main])
-	js = { "highlight": attr["isHighLight"] }
+	js = { "highlight": attr.get("isHighLight", False) }
 	js["offset"] = attr.get("offset", "(0, 0)")
 	js["scale"] = attr.get("scale", "(1, 1)")
 	js[state_info] = global_state[state_info]
@@ -752,13 +752,13 @@ def handle_eye_highlight(pmx, attr): ## Actually uses all three colors, so color
 	#### offset(\d, \d), scale(\d,\d) overcolor1, overcolor2
 	if t__overtex1 in attr:
 		arg3 = quote(attr[t__overtex1])
-		col = (attr[Color_Tex1] * 255)
+		col = (attr.get(Color_Tex1, [1,1,1,1]) * 255)
 		js = { "color": col[:3], "alpha": col[3] }
 		arg4 = quoteJson(js)
 	else: arg3,arg4 = "","0"
 	if t__overtex2 in attr:
 		arg5 = quote(attr[t__overtex2])
-		col = (attr[Color_Tex2] * 255)
+		col = (attr.get(Color_Tex2, [1,1,1,1]) * 255)
 		js = { "color": col[:3], "alpha": col[3] }
 		arg6 = quoteJson(js)
 	else: arg5,arg6 = "","0"

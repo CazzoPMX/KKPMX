@@ -1401,7 +1401,7 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 	return None
 
 if __name__ == '__main__':
-	print("Cazoo - 2022-02-10 - v.1.5.2")
+	print("Cazoo - 2022-04-11 - v.1.6.1")
 	if DEBUG or DEVDEBUG:
 		main()
 		core.pause_and_quit("Done with everything! Goodbye!")
