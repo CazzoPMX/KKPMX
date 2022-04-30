@@ -399,6 +399,7 @@ def parse_face(pmx, mat, attr):
 	###
 	extend_colors(attr, [Color_Tex1, Color_Tex2, Color_Tex3, Color_Shadow, Color_Specular])
 	process_common_attrs(pmx, mat, attr)
+	if mat.diffRGB == [0.5, 0.5, 0.5]: mat.diffRGB = [1,1,1]
 	## [t__Line] ++ DetailNormalMapScale :: [SpecialEffects]
 	#>> RGB-B ++ Alpha (0-200)
 	if t__Detail in attr: #pass ## Load file, pass to [detail python]
@@ -457,7 +458,9 @@ def parse_hair(pmx, mat, attr): ## @open: t__Color, t__Detail, t__HairGloss, Col
 		print(f"> Reusing texture {attr[t__Reuse]}")
 		set_new_texture(pmx, mat, attr, [attr[t__Reuse], ".png"])
 		
-	if Color_1 in attr: mat.diffRGB = attr[Color_1][:3]
+	if Color_1 in attr:
+		mat.diffRGB = attr[Color_1][:3]
+		mat.specRGB = attr[Color_1][:3]
 
 def parse_alpha(pmx, mat, attr): ## @todo
 	print(":: Running 'alpha' parser")
@@ -488,6 +491,7 @@ def parse_pass(pmx, mat, attr): pass
 #### Processing ####
 ####################
 
+#### Toon
 def draw_toon_shader(pmx, input_file_name):
 	"""
 	Allows to manually generate a toon shader. [pmx] is only needed for the storage path & not loaded
@@ -563,6 +567,33 @@ def add_toon_shader(pmx, mat, attr):
 		script__draw_toon_shader(args)
 	set_new_texture(pmx, mat, attr, [pathFile], tex_mode_toon)
 
+def convert_color_for_RayMMD(pmx, input_file_name):
+	"""
+	Reads out the #generateJSON.json and applies the "Color" attribute as Diffuse color for the asset (if it has any)
+	This may not always be implicit desireable as certain materials are colored by their textures, hence an extra function
+	"""
+	root = os.path.split(input_file_name)[0]
+	path = os.path.join(root, "#generateJSON.json") #@todo_note "<< Default file name >>"
+	#### Load JSON
+	def callback(raw_data):
+		# replace Shorthand
+		raw_data = raw_data.replace("%PMX%", re.escape(root)) #@todo_note "<< explain %PMX% >>"
+		#raw_data = raw_data.replace("%PMX%", root.replace(r'\\', r'\\\\'))
+		raw_data = raw_data.replace("SpeclarHeight", "SpecularHeight")
+		raw_data = raw_data.replace("shadowcolor", Color_Shadow)
+		return raw_data
+	data = util.load_json_file(path, callback)
+	if not data: return None
+
+	for mat in pmx.materials:
+		attr = data.get(mat.name_jp, None)
+		if not attr: continue
+		if not Color in attr: continue
+		mat.diffRGB = attr[Color][:3]
+	return kklib.end(pmx, input_file_name, "_toon")
+
+#### Regular
+
 def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 	###
 	# Color_Line, Color_Shadow, Color_Specular (figure out smt new)
@@ -581,10 +612,11 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 		# smt smt only if not already set
 		#if mat.ambRGB == [1,1,1]: mat.ambRGB    = attr[Color_Shadow][:3]
 		#mat.diffRGB   = attr[Color_Shadow][:3]
+		add_toon_shader(pmx, mat, attr)
 		if mat.diffRGB == [1,1,1]:
 			mat.diffRGB = [0.5, 0.5, 0.5]
 			#mat.diffRGB   = [0,0,0]#attr[Color_Shadow][:3] smt only for black types
-		add_toon_shader(pmx, mat, attr)
+			#rgb = attr[Color_Shadow][:3]
 	#	mat.comment += "Make toon_shader: " + str(attr[Color_Shadow]) ## Multiply each by 255 before
 	if META in attr:
 		meta = attr[META]
@@ -618,6 +650,7 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 			if not mat.comment or len(mat.comment) == 0:
 				mat.comment = comment
 			else:
+				## Make sure that old comments are removed before readding
 				mat.comment = re.sub("(\r\n)?[:Slot:] \w+",  "", mat.comment)
 				mat.comment = re.sub("\r\n[:AccId:] \d+", "", mat.comment)
 				mat.comment = re.sub("\r\n[:TopId:] \w+", "", mat.comment)
@@ -627,12 +660,14 @@ def process_color_and_detail(pmx, mat, attr):
 	def replFN(elem, name): return os.path.join(os.path.split(elem)[0], name)
 	def getFN(elem): return "" if elem is None else os.path.splitext(os.path.split(elem)[1])[0]
 	
+	executedOnce = False
 	## main_opaque has no color
 	if t__Color in attr and Color_1 not in attr:
 		attr.setdefault(t__Main, "")
 		if (getFN(attr[t__Main]).startswith("mf_m_primmaterial")):
 			mat.flaglist[4] = False ## Disable Edge as well
 			return
+		if attr[t__Main] == "": attr[t__Main] = None
 		print(f"> No colors found, skipping ColorMask")
 	elif t__Color in attr:
 		attr.setdefault(t__Main, None)
@@ -654,22 +689,29 @@ def process_color_and_detail(pmx, mat, attr):
 		ff = attr[t__Color if attr[t__Main] is None else t__Main]
 		if noMain: ff = replFN(attr[t__Color], attr["altName"])
 		attr[t__MainCol] = os.path.splitext(ff)[0] + suffix_Col + ".png"
-	if t__Detail in attr:
+		executedOnce = True
+
+	if attr.get(t__Main, None) == None and attr.get(t__MainCol, None) == None:
+		msg = ""
+		if t__Detail in attr and t__Alpha in attr: msg = "DetailMask nor AlphaMask"
+		elif t__Detail in attr: msg = "DetailMask"
+		elif t__Alpha in attr: msg = "AlphaMask"
+		if len(msg) > 0: print(f"> No MainTex or ColorMask found, cannot apply " + msg)
+	elif t__Detail in attr:
 		handle_acc_detail(pmx, attr)
-		#if Color_Specular not in attr:
-		#	mat.specRGB = mat.dif
+		executedOnce = True
 	########
 	if t__Reuse in attr:
 		print(f"> Reusing texture {attr[t__Reuse]}")
 		set_new_texture(pmx, mat, attr, [attr[t__Reuse], ".png"])
 	# if no t__Main, but used t__Color and t__Detail
-	elif t__MainCol in attr: ## @todo_note
+	elif executedOnce and t__MainCol in attr: ## @todo_note
 		saved = False
 		if t__Detail in attr:
 			saved = set_new_texture(pmx, mat, attr, [ff, suffix_Col + suffix_Det + ".png"])
 		if (not saved) or (t__Detail not in attr):
 			set_new_texture(pmx, mat, attr, [ff, suffix_Col + ".png"])
-	elif t__Detail in attr:
+	elif executedOnce and t__Detail in attr:
 		set_new_texture(pmx, mat, attr, [attr[t__Main], suffix_Det + ".png"])
 	if attr.get(OPT_HAIR, False):
 		global_state[OPT_HAIR][attr[INHERIT]] = get_working_texture(attr)

@@ -250,9 +250,9 @@ def GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree):
 		})
 	##	>	cf_m_tang
 	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_tang",
-		opt_texUse: [ t__Color, t__Detail ],
+		opt_texUse: [ t__Color, t__Detail, t__Main ],
 		#// t__Another, t__Color, t__Detail, t__Line, t__Main, t__NorMap
-		opt_Comment: Comment("Export manually", idx="Tongue")
+		opt_Comment: Comment("Tongue may or may not be Gray or Cyan by default.", idx="Tongue")
 		})
 	#arr.append(Comment(NL=True))
 	#

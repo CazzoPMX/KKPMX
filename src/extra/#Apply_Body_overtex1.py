@@ -12,17 +12,21 @@ except ImportError as eee:
 	DisplayWithAspectRatio = imglib.DisplayWithAspectRatio
 	DisplayWithAspectRatio_f = imglib.DisplayWithAspectRatio_f
 
-args = sys.argv[1:]
-print(("\n=== Running overtex1(Body) Script with arguments:" + "\n-- %s" * len(args)) % tuple(args))
+argLen = len(sys.argv)
+if (argLen < 2):
+	print("Must have at least 2 arguments")
+	exit()
+
 #-------------
 imgMain   = sys.argv[1] ## MainTex.png
 imgMask   = sys.argv[2] ## overtex.png
-data      = json.loads(sys.argv[3])
 #-------------
+data = {};
+if (argLen > 3): data = json.loads(sys.argv[3])
 nip          = data.get("nip", 1.0)        ## Scales texture a bit
 nipsize      = data.get("size", 0.6677417) ## Increases Factor for nip (== Areola Size)
-###
-overcolor    = data["color"]
+overcolor    = data.get("color",  [1, 0.7771759, 0.7261904, 1])
+details      = data.get("moreinfo", False)
 ###
 #-- tex1mask = 1
 # 0 = Org of [White] and [Red] are equal
@@ -37,6 +41,9 @@ nip_specular = min(nip_specular, 1) ## Max allowed value of [blend_modes]
 # 1     = (Red, Red, Red) to be used as Alpha onto the BW version
 tex1mask     = 1
 #-------------
+args = sys.argv[1:]
+if details: print((f"\n=== Running overtex1(Body) Script with arguments:" + "\n-- %s" * len(args)) % tuple(args))
+else: print(f"\n=== Running overtex1(Body) Script")
 
 ### Apply Transparency of 30% ( = 64 of 255)
 alpha   = 64 / 255    ## For mask

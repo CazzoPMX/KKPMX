@@ -33,12 +33,11 @@ arguments_help = """
 3 4 5 are RGB or RGBA arrays mapped to 0...1
 """
 
-### Read in arguments
+#-------------
 imgMain = sys.argv[1] ## MainTex.png
 imgMask = sys.argv[2] ## ColorMask.png
 noMainTex = len(imgMain) == 0
-
-args = sys.argv[1:]
+#-------------
 
 colorArr = []
 #input --> int(float * 255) or RGB, single or arr.len=3
@@ -56,7 +55,7 @@ colorArr = []
 colB_3Pink   = json.loads(sys.argv[5])
 colG_2Yellow = json.loads(sys.argv[4])
 colR_1Red    = json.loads(sys.argv[3])
-
+#-------------
 data = {}
 if (argLen > 6): data = json.loads(sys.argv[6])
 mode            = data.get("mode", "Overlay")
@@ -67,6 +66,7 @@ verbose         = data.get("showinfo", False)
 if len(altname) == 0: altname = None
 #----------
 
+args = sys.argv[1:]
 if verbose: print(("\n=== Running ColorMask Script with arguments:" + "\n-- %s" * len(args)) % tuple(args))
 else: print("\n=== Running ColorMask Script")
 

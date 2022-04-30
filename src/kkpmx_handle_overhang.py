@@ -645,16 +645,16 @@ def get_bounding_box(pmx, mat=None, vertices=None, moreinfo=False):
 
 def add_to_morph_hide(pmx, name, add_idx, __results):
 	from kkpmx_core import find_morph, __append_itemmorph_sub
-	exist_morph = find_morph(pmx, name)
-	if exist_morph is not None:
+	exist_morph = find_morph(pmx, name, False)
+	if exist_morph != -1:
 		exist_morph = pmx.morphs[exist_morph]
 		__append_itemmorph_sub(exist_morph.items, add_idx)
 		__results.append("-- Extended morph '{}' to hide the new material.".format(exist_morph.name_jp))
 
 def add_to_morph_show(pmx, name, add_idx, __results):
 	from kkpmx_core import find_morph, __append_itemmorph_add
-	exist_morph = find_morph(pmx, name)
-	if exist_morph is not None:
+	exist_morph = find_morph(pmx, name, False)
+	if exist_morph != -1:
 		exist_morph = pmx.morphs[exist_morph]
 		__append_itemmorph_add(exist_morph.items, add_idx)
 		__results.append("-- Extended morph '{}' to show the new material.".format(exist_morph.name_jp))

@@ -47,13 +47,18 @@ Some less obvious things when working with Console applications
     - To repeat the commands for multiple input requests: Go 'up' till the first -- Enter to execute it -- Now the 'next' previous command can be accessed by pressing 'down', and so on.
  - You can enter commands and press 'enter' while no input is asked for. That way you can provide commands in advance.
 
+## FAQ
+
+[Issues.md](Issues.md)
+
 ## Recommended chain of actions
 
- 1. PMXExport has a weird quirk that messes up the Editor when started the first time after starting Koikatsu.<br/>
+ 1. [until < 1.6.1] PMXExport has a weird quirk that messes up the Editor when started the first time after starting Koikatsu.<br/>
 Return to the Title Screen and re-enter the Editor to fix it.
  2. Load the desired character and costume.
  3. Change Pose, Expression, Clothing State, or Accessory Visibility as necessary.
     - Recommended: Pose='T-Pose' (one to the left), Blinking=Off, Looking at='Top' (Slider on 0%), Mouth=Neutral.<br/>
+Alternatively (instead of 'Looking at') you can focus on yourself py pressing '5' and 'R' and then slightly moving the model straight upwards<br/>
 Any Eye and/or Mouth Position works, as long as the Eyes stay open and the mouth closed (aka Smiling, Sleepy, ...)
     - While the Tool-Chain is indifferent of whatever pose is used, it might produce funny results in MMD.
     - The same goes for facial expressions, which are further morphed by MMD-Sequences.
@@ -70,15 +75,15 @@ See the [Help]-Section of [Scan Plugin File] for more details of which are curre
     >I added an updated version which also exports all 'extra' textures into a folder called 'extra'
     >So there is no need to manually export the textures anymore.
     - See the [Help]-Section of [Scan Plugin File] for how to use a different name / path.
-    - Note: Some assets lack a Main-Texture (like the default Fox-Tail). If it exists, the ColorMask will instead be used as base texture.
+    - Note: Some assets lack a Main-Texture (like the default Fox-Tail). In such cases, the ColorMask (if any) will instead be used as base texture.
  7. Start KKPMX_core.exe, select option [(5) All-in-one converter] and follow the steps.
     - [Notes for Step(2)]: Recommended choices are: 2 (No) \ 2 (only top-level) \ 1 (Yes)
 
 The model should be (almost) ready, but some last adjustments have to be done manually.
 
- 8. Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
- 9. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
- 10. When making heavy use of morph sliders, adjust the order of the materials to prevent them getting invisible.
+ 8. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
+ 9. Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
+ 10. When making heavy use of morph sliders, adjust the order of the materials to prevent them getting invisible (inner sorted above outer).
 
 ## tl;dr: Minimum steps to make the exported model work immediately
 
@@ -87,14 +92,15 @@ If you just want to test out some things with minimum set of work, perform these
 
  1. You only need the [PMXExport] Plugin for this. Do the first 4 Steps in the above list.
  2. Open the *.pmx file and go to the Materials Tab
- 3. There are two assets called 'Bonelyfans'; Set their Opacity to 0 & tick off [Edge Outline]
+ 3. There are two assets called 'Bonelyfans' (one each for body and face); Set their Opacity to 0 & tick off [Edge Outline] (or delete them)
+    - If 'Standard' or 'Shadow' exists, do the same for these. 
  4. Go to the 'Display' Tab
  5. Go through all Display-Frames: Delete any '-1' Elements appearing in the right box
 
 The model should now work properly in MMD, but may perform weird with most TDA Dances. To further fix that:
 
- 6. Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
- 7. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
+ 6. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
+ 7. Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
 
 ## To compile it yourself
 
@@ -120,13 +126,18 @@ To compile the project yourself, you need to install the following dependencies:
 ## What I do when working on a model (aka What to do if you don't know what to do)
 
  - After exporting, usually looking at the raw model to see how it looks (just out of curiosity)
+    - This can also save some hassle in case something obvious isn't correct to re-export instead of wasting time.
+    - And don't worry if things are visible which are hidden in KK -- This will be taken care of later.
+ - Hiding materials that should stay hidden initially; They will receive a 'Show X' morph later (except if called Bonelyfans).
+ - Combining identical textures used by multiple materials so that they all use the same file and removing the duplicate files.
+    - Doing this avoids them being processed multiple times and simply being reused on demand.
  - Run the 'All-in-one' mode
     - Using the generated *.json when being asked for such.
  - Using a fitting processing option of [mode 4].
  - Opening 'model_cutScan.pmx' for additional edits.
     - It would be 'model_better.pmx' when skipping [mode 4].
  - Going through Rigids, setting noisy ones to 'all green'.
- - Also detangling some chains if necessary
+ - Also detangling some chains if necessary (See [Rigging Mode 3])
     - This involves either removing Rigids + Joints -or- rewire bones & rigids to split chains
     - Since I'm the dev, sometimes adding them, if possible, as pattern into the script. Only core KK assets or big enough mods are added, though.
  - Adjusting morph items that should always stay hidden / always stay visible
@@ -412,3 +423,8 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  	Why would you need that?
 >  	Because usually the card uses precolored textures which means the `[Color]` attributes are ignored
 >  	and thus contain mismatched values.
+
+### (14) Adjust for Raycast
+
+>  Reads out the #generateJSON.json and applies the "Color" attribute as Diffuse color for the asset (if it has any)
+>  	This may not always be implicit desireable as certain materials are colored by their textures, hence an extra function

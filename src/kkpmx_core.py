@@ -79,6 +79,7 @@ def get_choices():
 		("Slice helper", slice_helper),
 		("Run Rigging Helpers", kkrig.run),
 		("Draw Shader", PropParser.draw_toon_shader, True),
+		("Adjust for Raycast", PropParser.convert_color_for_RayMMD),
 	]
 def main(moreinfo=True):
 	# promt choice
@@ -217,6 +218,7 @@ Output: PMX File '[filename]_cleaned.pmx'
 	## Maybe sort them:
 	# [shadowcast], [<<face stuff>>], [<<hair>>], [body, "mm"], [shorts, bra, socks], [shoes,...],
 	## [skirt: bot_misya], [shirt: top_inner], [jacket], [ribbon, necktie], [any acs_m_]
+	# Tongue color: 1 \\ 0.6985294 \\ 0.6985294 -- or 191 244 255
 	
 	###############
 	###### ---- bones
@@ -226,26 +228,53 @@ Output: PMX File '[filename]_cleaned.pmx'
 			if newJP is not None: pmx.bones[tmp].name_jp = newJP
 			if newEN is not None: pmx.bones[tmp].name_en = newEN
 	def bind_bone(arr):
+		### Enclose in [] to make a bone optional
+		test = [type(x) == type([]) for x in arr]
+		if any(test):
+			_arr = []
+			for i,x in enumerate(arr):
+				if not test[i]: _arr.append(x)
+				elif find_bone(pmx, x[0], False) != -1: _arr.append(x[0])
+			arr = _arr
+		
 		while len(arr) > 1:
 			parent = find_bone(pmx, arr[0], False)
 			child = find_bone(pmx, arr[1], False)
-			if parent is not None and child is not None:
+			#print(f"Linking {arr[0]:10}={parent:3} to {arr[1]:10}={child:3}")
+			if parent != -1 and child != -1:
 				pmx.bones[parent].tail_usebonelink = True
 				pmx.bones[parent].tail = child
 			arr.pop(0)
 	## rename Eyes: [両目x] to [両目], [左目x] to [左目], [右目x] to [右目]
 	rename_bone("両目x", "両目", "both eyes")
-	rename_bone("左目x", "左目", "eye L")
-	rename_bone("右目x", "右目", "eye R")
+	rename_bone("左目x", "左目", "Eye_L")
+	rename_bone("右目x", "右目", "Eye_R")
 	
-	bind_bone(["左足", "左ひざ", "左足首", "左つま先"])
-	bind_bone(["右足", "右ひざ", "右足首", "右つま先"])
+	## Rename and bind fingers (先 = tip, end) -- Translation is added later anyway
+	rename_bone("cf_j_thumb04_L",  "左親指先", ""); rename_bone("cf_j_thumb04_R",  "右親指先", "")
+	rename_bone("cf_j_index04_L",  "左人指先", ""); rename_bone("cf_j_index04_R",  "右人指先", "")
+	rename_bone("cf_j_middle04_L", "左中指先", ""); rename_bone("cf_j_middle04_R", "右中指先", "")
+	rename_bone("cf_j_ring04_L",   "左薬指先", ""); rename_bone("cf_j_ring04_R",   "右薬指先", "")
+	rename_bone("cf_j_little04_L", "左小指先", ""); rename_bone("cf_j_little04_R", "右小指先", "")
 	
 	from itertools import product
-	fingers = product(["左","右"], ["人指", "小指", "中指", "薬指"])
-	for item in fingers: bind_bone([''.join(x) for x in product([''.join(item)], ["1", "2", "3"])])
-	bind_bone(["左親指０", "左親指1", "左親指2"])
-	bind_bone(["右親指０", "右親指1", "右親指2"])
+	fingers = product(["左","右"], ["親指", "人指", "中指", "薬指", "小指"])
+	for item in fingers:
+		bind_bone([''.join(x) for x in product([''.join(item)], ["０", "１", "２", "３", "先"])])
+		bone = find_bone(pmx, ''.join(item)+"先", False)
+		if bone == -1: continue
+		pmx.bones[bone].has_visible = False
+	bind_bone(["左親指２", "左親指先"]); bind_bone(["右親指２", "右親指先"])
+	
+	## Bind Arms
+	bind_bone(["cf_d_shoulder_L", "cf_j_shoulder_L", "左肩"]); bind_bone(["左腕", ["左腕捩"], "左ひじ", ["左手捩"], "左手首"])
+	bind_bone(["cf_d_shoulder_R", "cf_j_shoulder_R", "右肩"]); bind_bone(["右腕", ["右腕捩"], "右ひじ", ["右手捩"], "右手首"])
+	## Bind Body
+	bind_bone(["上半身", "上半身2", "cf_j_spine03", "首", "頭"])
+	bind_bone(["cf_j_hips", "下半身", "cf_j_waist02"])
+	## Bind Legs
+	bind_bone(["左足", "左ひざ", "左足首", "左つま先"])
+	bind_bone(["右足", "右ひざ", "右足首", "右つま先"])
 	
 	## Fix Feet
 	def tmp(A, B, C):
@@ -282,16 +311,42 @@ Output: PMX File '[filename]_cleaned.pmx'
 		["kuti_ha.ha00_e_s_op",			"teeth.e.open_s"],
 	]
 	
+	### Assign the morphs into proper groups
+	#r = re.compile("(mayuge)|(eye_(?:face|line_[ul])|hitomi)|(kuti_(?:face|ha|yaeba|sita))")
+	r = re.compile("(mayuge)|(eye|hitomi)|(kuti)")
+	for morph in pmx.morphs:
+		m = r.match(morph.name_jp)
+		if not m: continue
+		if m.group(1): morph.panel = 1
+		elif m.group(2): morph.panel = 2
+		elif m.group(3): morph.panel = 3
+	
+	### Rename the morphs used by A E I O U
 	for item in usedMorphs:
 		morph = find_morph(pmx, item[0], False)
 		if morph == -1: continue
 		pmx.morphs[morph].name_jp = item[1]
 		pmx.morphs[morph].name_en = item[1]
 	
-	pmx.morphs.append(pmxstruct.PmxMorph("unbounce", "unbounce", 4, 2, [
-		pmxstruct.PmxMorphItemBone(find_bone(pmx, "右腕", False), [0,0,0], [0,0,-35]),
-		pmxstruct.PmxMorphItemBone(find_bone(pmx, "左腕", False), [0,0,0], [0,0,35]),
-	]))
+	def setPanel(name, idx):
+		tmp = find_morph(pmx, name, False)
+		if tmp != -1: pmx.morphs[tmp].panel = idx
+	
+	setPanel("bounce", 4)
+	setPanel("あ", 3)
+	setPanel("い", 3)
+	setPanel("え", 3)
+	setPanel("う", 3)
+	setPanel("お", 3)
+	setPanel("まばたき", 4)
+	setPanel("笑い", 4)
+	
+	### Add an reverse morph for 'bounce'
+	if find_morph(pmx, "unbounce", False) == -1:
+		pmx.morphs.append(pmxstruct.PmxMorph("unbounce", "unbounce", 4, 2, [
+			pmxstruct.PmxMorphItemBone(find_bone(pmx, "右腕", False), [0,0,0], [0,0,35]),
+			pmxstruct.PmxMorphItemBone(find_bone(pmx, "左腕", False), [0,0,0], [0,0,-35]),
+		]))
 	
 	###############
 	###### ---- dispframes
@@ -1386,7 +1441,7 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 	if log_line:
 		paths = os.path.split(output_filename_pmx)
 		path = os.path.join(paths[0], "editlog.log")
-		if os.path.exists(path): os.path.rename(path, os.path.join(paths[0], "#editlog.log"))
+		if os.path.exists(path): os.rename(path, os.path.join(paths[0], "#editlog.log"))
 		path = os.path.join(paths[0], "#editlog.log")
 		if type(log_line) is str: log_line = [ log_line ]
 		msg = "\n---- ".join([""] + log_line)
@@ -1401,7 +1456,7 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 	return None
 
 if __name__ == '__main__':
-	print("Cazoo - 2022-04-11 - v.1.6.1")
+	print("Cazoo - 2022-04-30 - v.1.6.2")
 	if DEBUG or DEVDEBUG:
 		main()
 		core.pause_and_quit("Done with everything! Goodbye!")

@@ -676,6 +676,10 @@ def rig_other_stuff(pmx):
 	_patch_bone_array = lambda x,n: patch_bone_array(pmx, None, x, n, grp=16)
 	__rig_acc_joints(pmx, _patch_bone_array, _limit)
 
+### Annotation
+# Maybe rig Tongue: weighted to [cf_J_MouthCavity] << cf_J_MouthBase_rx < ty < cf_J_FaceLow_tz < Base < J FaceRoot < J_N < p_cf_head_bone < cf_s_head
+#>> But these exist: cf_s_head < cf_j_tang_01 < 02 < 03 < 04(< 05(< L+R), L+R), L+R -- Quite some below the mesh though
+
 ## [Step 06]
 def rig_rough_detangle(pmx):
 	print("--- Stage 'Detangle some chains'...")
@@ -693,6 +697,23 @@ def rig_rough_detangle(pmx):
 			n = re.search(r"joint(\d+)-\d+", pmx.rigidbodies[idx+1].name_jp)
 			if not n: return False
 			return int(m[1]) < int(n[1])
+		
+		## "left+1,2,3..." > "right+1,2,3"
+		lst = "left|right|front|back|head|body"
+		m = re.search(r"(?:"+lst+r")[LR]?(\d)$", rig.name_jp)
+		if m:
+			n = re.search(r"(?:"+lst+r")[LR]?(\d)$", pmx.rigidbodies[idx+1].name_jp)
+			if not n: return False
+			print(f"{m[0]} vs. {n[0]}")
+			return int(m[1]) > int(n[1])
+		
+		## "R1,R2,R3" > "L1,L2,L3"
+		m = re.search(r"[LR][TB]?(\d)$", rig.name_jp)
+		if m:
+			n = re.search(r"[LR][TB]?(\d)$", pmx.rigidbodies[idx+1].name_jp)
+			if not n: return False
+			return int(m[1]) > int(n[1])
+		
 		## Nothing matched
 		return False
 	######
@@ -997,10 +1018,11 @@ def split_rigid_chain(pmx, arr=None):
 		# Set A to RigidBody2
 		idx2 = find_rigid(pmx, rigid3.name_jp)
 		joint.rb1_idx = idx2
-		
+	
 	#[int(x.strip()) for x in arr.split(',')]
-	if arr is str: [__split_rigid_chain(int(x.strip())) for x in arr.split(',')]
-	else:          [__split_rigid_chain(int(x)) for x in arr]
+	if type(arr) is str:     [__split_rigid_chain(int(x.strip())) for x in arr.split(',')]
+	elif type(arr) is list:  [__split_rigid_chain(int(x)) for x in arr]
+	else: raise Exception(f"Unsupported type {type(arr)}")
 	return arr
 
 ########
