@@ -63,6 +63,7 @@ altname         = data.get("altName", "")
 useBrightColors = data.get("bright", False)
 isHair          = data.get("hair", False)
 verbose         = data.get("showinfo", False)
+alphafactor     = data.get("saturation", 1)
 if len(altname) == 0: altname = None
 #----------
 
@@ -134,7 +135,7 @@ maskB = extractChannel(mask, 0) ## Pink == Color 3
 maskG = extractChannel(mask, 1) ## Yellow == Color 2
 maskR = extractChannel(mask, 2) ## Red == Color 1... Last pic says that red might be G...
 
-#### Make colors stronger before being toned down again
+#### Make colors stronger before being toned down again (refuses to work)
 #hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 #hsv[:,:,1] = hsv[:,:,1] + 10
 #image = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
@@ -239,8 +240,15 @@ if True:#isHair:
 	if flagBlue:
 		if show: DisplayWithAspectRatio(opt, '[hair] Pre-Blue', final, 256)
 		bwBlue = imglib.convert_to_BW(maskB, False)
+		#cv2.imwrite("C:\\koikatsu_model\\blueRaw_pyCol.png", maskB)
 		maskB = imglib.converterScaled(opt, maskB, bwBlue, True).astype("uint8")
+		maskB = maskB.astype("float64")
+		maskB[:,:,3] *= (1+alphafactor)
+		maskB = maskB.astype("uint8")
+		if show: DisplayWithAspectRatio(opt, '[hair] Prepare Blue', maskB, 256)
+		#cv2.imwrite("C:\\koikatsu_model\\bluePrep_pyCol.png", maskB)
 		final = imglib.blend_segmented(x_Mode, final, maskB, 1)
+		#if show: DisplayWithAspectRatio(opt, '[hair] Post-blue', final, 256)
 else:#elif noMainTex:### Works for: [acs_m_accZ4601: German Cross], only two colors
 	## Will look ugly on gradient colors
 	final = imglib.combineWithBitmask(opt, maskR, maskG, bitmaskArr[0])

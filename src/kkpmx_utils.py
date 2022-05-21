@@ -185,7 +185,8 @@ def now(epoch=False): ## :: str(dt) == dt.isoformat(' ')
 def copy_file(src, dst): # https://stackoverflow.com/questions/123198
 	from shutil import copyfile, copy2
 	#copyfile(src, dst)
-	copy2(src, dst)
+	try:    copy2(src, dst)
+	except: print(f"[!!] Failed to copy '{src}' to '{dst}'")
 
 ################
 ### Numerics ###
@@ -200,6 +201,8 @@ def is_number(text, allow_bool=False):
 
 # Checks if [text] has the form 000,000,000,000 (ignoring spaces)
 def is_csv_number(text): return all([is_number(x.strip()) for x in text.split(',')])
+
+#def gen_is_in_range(arr): return lambda 
 
 def get_list_of_numbers(num, lim, msg):
 	if not is_number(num):
@@ -412,6 +415,19 @@ class Matrix():
 		text += f"[M31:{self.M31:14.10} M32:{self.M32:14.10} M33:{self.M33:14.10} M34:{self.M34:14.10}]\r\n"
 		text += f"[M41:{self.M41:14.10} M42:{self.M42:14.10} M43:{self.M43:14.10} M44:{self.M44:14.10}]"
 		return text + "]"
+
+######
+## DataPrinter
+######
+
+def __dataPrinter_List(arr):
+	print(":Len="+str(len(arr)))
+	def __Printer(elem, idx=0, indent="- ", lvl=0):
+		if type(elem) in [list, tuple]:
+			print("{}[{}]: {} as {}".format(indent*lvl, idx, len(elem), type(elem).__name__))
+			for (j,item) in enumerate(elem): __Printer(item,j,indent,lvl+1)
+		else: print("{}[{}]: {}".format(indent*lvl, idx, elem))
+	for idx,elem in enumerate(arr): __Printer(elem, idx)
 
 ######
 ## TypePrinter

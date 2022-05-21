@@ -92,8 +92,18 @@ Rigging Helpers for KK.
 ## [Step 01]
 def adjust_body_physics(pmx):
 	print("--- Stage 'Adjust Body Physics'...")
-	#mask = 65534 # == [1] is 2^16-1
 	mask = 65535 # == [1] is 2^16-1
+
+	if find_bone(pmx, "左胸操作", False):
+		chest_mask = 24560 ## 1 2 3 4 14 16
+		def tmp(name):
+			idx = find_rigid(pmx, name, False)
+			if idx != -1: pmx.rigidbodies[idx].nocollide_mask = chest_mask
+		tmp("左胸操作");     tmp("右胸操作")
+		tmp("左AH1");       tmp("右AH1")
+		tmp("左AH2");       tmp("右AH2")
+		tmp("左胸操作接続"); tmp("右胸操作接続")
+		tmp("左胸操作衝突"); tmp("右胸操作衝突")
 
 	## Butt collision
 	if find_bone(pmx, "cf_j_waist02", False):
@@ -250,7 +260,8 @@ def adjust_body_physics(pmx):
 		
 		pos = [0, posSh[1], 0]
 		size = [sizeSh[0], sizeSh[1]*2 + sizeNeck[0]*3, sizeSh[2]]
-		add_rigid(pmx, name_jp="RB_shoulders", pos=pos, size=size, bone_idx=find_bone(pmx, "首"), **commonPill)
+		rot = [0, 0, 90]
+		add_rigid(pmx, name_jp="RB_shoulders", pos=pos, size=size, rot=rot, bone_idx=find_bone(pmx, "首"), **commonPill)
 
 ## [Mode 01]
 def adjust_chest_physics(pmx):
@@ -714,6 +725,13 @@ def rig_rough_detangle(pmx):
 			if not n: return False
 			return int(m[1]) > int(n[1])
 		
+		## "2_L" > "1_R"
+		m = re.search(r"(\d+)_[LR]$", rig.name_jp)
+		if m:
+			n = re.search(r"(\d+)_[LR]$", pmx.rigidbodies[idx+1].name_jp)
+			if not n: return False
+			return int(m[1]) > int(n[1])
+		
 		## Nothing matched
 		return False
 	######
@@ -1024,6 +1042,15 @@ def split_rigid_chain(pmx, arr=None):
 	elif type(arr) is list:  [__split_rigid_chain(int(x)) for x in arr]
 	else: raise Exception(f"Unsupported type {type(arr)}")
 	return arr
+
+def shorter_skirt_rigids(pmx): pass
+	# Determine how much shorter it should be (allow % or total Y-height)
+	# Collect all Rigids
+	# Collect all Joints
+	# Collect all Bones(?)
+	# Shrink all Rigids
+	# Move all Joints
+	# Move the Bones(?)
 
 ########
 ## Riggers Util
@@ -1446,6 +1473,228 @@ def add_joint(pmx,
 	#if (rb2_idx == 0): print(f"{name_jp} is missing Rigid 2!")
 	pmx.joints.append(pmxstruct.PmxJoint(**args))
 	return len(pmx.joints) - 1
+
+##############
+
+def start_fancy_things(pmx, input_filename_pmx):
+	import kkpmx_core as kkcore
+	(pmx1, input_filename_pmx1) = (pmx, input_filename_pmx)
+	## Load 2nd model
+	(pmx2, input_filename_pmx2) = util.main_starter(None)
+	## Ask for Mode 1, Mode 2
+	choices = [("<< Mode 1 >>", do_mode_1), ("<< Mode 2 >>", do_mode_2), ("<< Invert >>", do_invert)]
+	mode = util.ask_choices("Select direction to calculate growth morph for", choices)
+	## Ask which is the small == Morph Target
+	choices = [("Add Morph to 2nd, becomes 1st at 100%", 1), ("Add Morph to 1st, becomes 2nd at 100%", 2)]
+	dirFlag = util.ask_choices("Select direction to calculate growth morph for", choices)
+	## Call Mode
+	if dirFlag == 1: mode(pmx1, pmx2, input_filename_pmx2)
+	else:            mode(pmx2, pmx1, input_filename_pmx1)
+	pass
+
+def do_mode_1(pmx, pmx2, input_filename_pmx):
+	import kkpmx_core as kkcore
+	(pmx1, input_filename_pmx2) = (pmx, input_filename_pmx)
+	##########
+	# do the bones stuff
+	morphBones = range(len(pmx1.bones))
+	vecDictRel = get_delta_map(pmx, pmx2, get_parent_map(pmx, morphBones), True)
+	
+	boneList = []
+	def add_morph_bone(bone_idx):
+		delta = vecDictRel[bone_idx].ToList()
+		kkcore.__append_bonemorph(boneList, bone_idx, delta, [0,0,0], None)
+	[add_morph_bone(idx) for idx in morphBones]
+	import nuthouse01_pmx_struct as pmxstruct
+	pmx2.morphs.append(pmxstruct.PmxMorph("BoneMorph", "BoneMorph", 4, 2, boneList))
+	flag = util.ask_yes_no("Do you want me to wait for the 3rd and execute Mode 2 afterwards?")
+	##########
+	# Ask if we should wait or doing it later(end)
+	kkcore.end(pmx2, input_filename_pmx2, "_vmorph_v1")
+	##-- Wait
+	if flag:
+	# Write the model
+	# Tell instructions
+	# Wait for input to continue
+		util.ask_yes_no("Press Enter or 'y' to continue", "y")
+	# Call do_mode_2
+		print("--------------")
+		do_mode_2(pmx1, pmx2, input_filename_pmx2)
+	##-- Do later
+	else:
+	# Write the model
+	# Tell instructions
+	# exit
+		pass
+#########
+	pass
+
+def do_mode_2(pmx, pmx2, input_filename_pmx):
+	import kkpmx_core as kkcore
+	(pmx1, input_filename_pmx2) = (pmx, input_filename_pmx)
+	# load the morphed pmx as pmx3
+	(pmx3, input_filename_pmx3) = util.main_starter(None)
+	
+	##############
+	morphList = []
+	def add_morph(idx: int, vert_idx: int, abs_idx=False): ## @vector = pos of @idx in pmx2 \\ @vert_idx in pmx1
+		big_vert = pmx3.verts[idx]
+		big_pos  = Vector3.FromList(big_vert.pos)
+		big_idx  = big_vert.weight[0]
+		big_bone = Vector3.FromList(pmx3.bones[big_idx].pos)
+		
+		sma_vert = pmx1.verts[vert_idx]# if abs_idx else vertices[vert_idx]
+		sma_pos  = Vector3.FromList(sma_vert.pos)
+		sma_idx  = sma_vert.weight[0]
+		sma_bone = Vector3.FromList(pmx1.bones[sma_idx].pos)
+
+		delta = (big_bone - big_pos) - (sma_bone - sma_pos)
+		kkcore.__append_vertexmorph(morphList, idx, delta.ToList(), None)
+	##############
+	
+	def match_uv(src, dst):
+		prec = 4
+		return round(src[0], prec) == round(dst[0], prec) and round(src[1], prec) == round(dst[1], prec)
+	wrong_vert = []
+	
+	# do the vertices stuff for all materials
+	for idx in range(len(pmx3.verts)):#vertices2:
+		vert = pmx3.verts[idx]
+		#vector = Vector3.FromList(vert.pos)
+		if match_uv(pmx1.verts[idx].uv, vert.uv):
+			add_morph(idx, idx, True)
+		else: wrong_vert.append(idx)#raise Exception(f"Vertices at {idx} are not equal")
+	
+	if len(wrong_vert) > 0: raise Exception(f"Found inequal Vertices at {wrong_vert}!")
+	
+	# write model
+	pmx2.morphs.append(pmxstruct.PmxMorph("VertexMorph", "VertexMorph", 4, 1, morphList))
+	finalizer(pmx2)
+	input_filename_pmx2 = re.sub(r"_vmorph_v1","_vmorph_v2",input_filename_pmx2)
+	kkcore.end(pmx2, input_filename_pmx2, "", ["Added GrowthMorph"])
+	# Ask if it also should do the inverted version
+	pass
+
+def do_invert(pmx, pmx2, input_filename_pmx):
+	"""
+	@pmx (== old @pmx2) contains an already completed GrowthMorph based on @pmx2 (== old @pmx1)
+	Now @pmx2 should get the same morph, but inverted
+	"""
+	import kkpmx_core as kkcore
+	(pmx_big, pmx_sma) = (pmx, pmx2)
+	if find_morph(pmx_big, "GrowthMorph") is None:
+		print("<< GrowthMorph not found >>")
+		return
+	def invert(x): return (-(Vector3.FromList(x))).ToList()
+	
+	## Invert BoneMorph
+	boneList = []
+	morph_b = pmx_big.morphs[find_morph(pmx_big, "BoneMorph")]
+	for bone in morph_b.items: kkcore.__append_bonemorph(boneList, bone.bone_idx, invert(bone.move), [0,0,0], None)
+	
+	## Invert VertexMorph
+	morphList = []
+	morph_v = pmx_big.morphs[find_morph(pmx_big, "VertexMorph")]
+	for vert in morph_v.items: kkcore.__append_vertexmorph(morphList, vert.vert_idx, invert(vert.move), None)
+	
+	## Create Morphs
+	pmx_sma.morphs.append(pmxstruct.PmxMorph("BoneMorph", "BoneMorph", 4, 2, boneList))
+	pmx_sma.morphs.append(pmxstruct.PmxMorph("VertexMorph", "VertexMorph", 4, 1, morphList))
+	finalizer(pmx_sma)
+	kkcore.end(pmx_sma, input_filename_pmx, "_vmorph_Invert", ["Added inverted GrowthMorph"])
+
+def finalizer(pmx):
+	group = [ ]
+	group.append(pmxstruct.PmxMorphItemGroup(find_morph(pmx, "BoneMorph"), value = 1))
+	group.append(pmxstruct.PmxMorphItemGroup(find_morph(pmx, "VertexMorph"), value = 1))
+	pmx.morphs.append(pmxstruct.PmxMorph("GrowthMorph", "GrowthMorph", 4, 0, group))
+	
+	## Repair some Physics
+	change_phy_mode(pmx, ["左AH1","左AH2","左胸操作接続","左胸操作衝突","右AH1","右AH2","右胸操作接続","右胸操作衝突"], 2)
+##########
+	pass
+
+
+def do_fancy_things(pmx, input_filename_pmx):
+	import kkpmx_core as kkcore
+	#Load Model Full    = pmx
+	#Load Model Partial = pmx2
+	#pmx2 = None
+	#input_filename_pmx2 = None
+	#def caller(_pmx, _input_filename_pmx):
+	#	pmx2 = _pmx
+	#	input_filename_pmx2 = _input_filename_pmx
+	(pmx2, input_filename_pmx2) = util.main_starter(None)
+
+	mat_idx = kkcore.ask_for_material(pmx, returnIdx=True)
+	faces = kkcore.from_material_get_faces(pmx, mat_idx, returnIdx=False)
+	vertices = kkcore.from_faces_get_vertices(pmx, faces, returnIdx=False)
+	vertIdxs = kkcore.from_faces_get_vertices(pmx, faces, returnIdx=True)
+	bones = kkcore.from_vertices_get_bones(pmx, vertIdxs, returnIdx=True)
+	
+	uv_map = [ v.uv for v in vertices ]
+	uv_enum = tuple(enumerate(uv_map))
+
+	mat_idx2 = kkcore.ask_for_material(pmx2, returnIdx=True)
+	faces2 = kkcore.from_material_get_faces(pmx2, mat_idx2, returnIdx=False)
+	vertices2 = kkcore.from_faces_get_vertices(pmx2, faces2, returnIdx=True)
+	bones2 = kkcore.from_vertices_get_bones(pmx, vertices2, returnIdx=True)
+	
+	from kkpmx_handle_overhang import get_bounding_box
+	print(get_bounding_box(pmx, mat_idx))
+	print(get_bounding_box(pmx2, mat_idx2))
+
+	morphList = []
+	
+	def match_uv(src, dst):
+		prec = 4
+		flag = round(src[0], prec) == round(dst[0], prec) and round(src[1], prec) == round(dst[1], prec)
+		return flag
+		if flag: return True
+		prec = 5
+		return round(src[0], prec) == round(dst[0], prec) or round(src[1], prec) == round(dst[1], prec)
+	morphBones = range(len(pmx.bones))#
+	vecDictRel = get_delta_map(pmx, pmx2, get_parent_map(pmx, morphBones), True)
+	
+	def add_morph(vector: Vector3, idx: int, vert_idx: int, abs_idx=False): ## @vector = pos of @idx in pmx2 \\ @vert_idx in pmx
+		big_vert = pmx2.verts[idx]
+		big_pos  = Vector3.FromList(big_vert.pos)
+		big_idx  = big_vert.weight[0]
+		big_bone = Vector3.FromList(pmx2.bones[big_idx].pos)
+		
+		sma_vert = pmx.verts[vert_idx] if abs_idx else vertices[vert_idx]
+		sma_pos  = Vector3.FromList(sma_vert.pos)
+		sma_idx  = sma_vert.weight[0]
+		sma_bone = Vector3.FromList(pmx.bones[sma_idx].pos)
+
+		delta = (big_bone - big_pos) - (sma_bone - sma_pos)
+		
+		kkcore.__append_vertexmorph(morphList, idx, delta.ToList(), None)
+		
+	if True:
+		boneList = []
+		def add_morph_bone(bone_idx):
+			delta = vecDictRel[bone_idx].ToList()
+			kkcore.__append_bonemorph(boneList, bone_idx, delta, [0,0,0], None)
+		[add_morph_bone(idx) for idx in morphBones]
+		import nuthouse01_pmx_struct as pmxstruct
+		pmx2.morphs.append(pmxstruct.PmxMorph("BoneMorph", "BoneMorph", 4, 2, boneList))
+
+	miss_list = []
+	####
+	for idx in vertices2:
+		vert = pmx2.verts[idx]
+		vector = Vector3.FromList(vert.pos)
+		if match_uv(pmx.verts[idx].uv, vert.uv):
+			add_morph(vector, idx, idx, True)
+			continue
+		raise Exception("Vertices are not equal")
+	
+	##### Finalize
+	import nuthouse01_pmx_struct as pmxstruct
+	pmx2.morphs.append(pmxstruct.PmxMorph("Test", "Test", 4, 1, morphList))
+	
+	kkcore.end(pmx2, input_filename_pmx2, "_vmorph")
 
 ###########
 if __name__ == '__main__': util.main_starter(run)

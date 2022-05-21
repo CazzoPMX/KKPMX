@@ -24,9 +24,10 @@ imgMask   = sys.argv[2] ## overtex.png
 data = {};
 if (argLen > 3): data = json.loads(sys.argv[3])
 nip          = data.get("nip", 1.0)        ## Scales texture a bit
-nipsize      = data.get("size", 0.6677417) ## Increases Factor for nip (== Areola Size)
+nipsize_def  = 0.6677417
+nipsize      = data.get("size", nipsize_def) ## Increases Factor for nip (== Areola Size)
+details      = data.get("showinfo", False)
 overcolor    = data.get("color",  [1, 0.7771759, 0.7261904, 1])
-details      = data.get("moreinfo", False)
 ###
 #-- tex1mask = 1
 # 0 = Org of [White] and [Red] are equal
@@ -50,19 +51,43 @@ alpha   = 64 / 255    ## For mask
 beta    = 1.0 - alpha ## For main
 show    = False       ## Do cv2.imshow
 
-### These cords work for a standard size of 4096 x 4096 -- Todo: (do not scale down to 64 anymore.)
-_scale = 16
-cX_L  = 195 - int(_scale/2)
-cX_R  = 382 - int(_scale/2)
-cY    = 285 - int(_scale/2)
-size  = 64  + _scale
-
 opt = imglib.makeOptions(locals())
 
 ### Read in pics
 raw_image = cv2.imread(imgMain, cv2.IMREAD_UNCHANGED)
 mask      = cv2.imread(imgMask, cv2.IMREAD_UNCHANGED)
 #DisplayWithAspectRatio(opt, 'Org', raw_image, 512+256)
+dim = raw_image.shape
+yPad = 1; xPad = 1
+if dim[0] != 2048: yPad = dim[0] / 2048
+if dim[1] != 2048: xPad = dim[1] / 2048
+
+### These cords work for a standard size of 2048 x 2048
+_scale = 16
+#cX_L  = int((195 - (_scale/2)) * xPad); cX_R  = int((382 - (_scale/2)) * xPad); cY    = int((285 - (_scale/2)) * yPad)
+size  = ((64 / nipsize_def) * nipsize) + _scale
+sizeX = size * xPad
+sizeY = size * yPad
+
+## UV of center: 0.1107986  0.1547173  \\  0.2024432  0.1547173
+iSize = raw_image.shape
+mSize = mask.shape
+#print(f"{iSize} -- {mSize}")
+#uvX_L = 0.1107986 * iSize[1]; uvY_L = 0.1547173 * iSize[0]
+#uvX_R = 0.2024432 * iSize[1]; uvY_R = 0.1547173 * iSize[0]
+##print(f"UV (raw): {uvX_L} x {uvY_L} \\ {uvX_R} x {uvY_R}")
+#uvX_L = (mSize[1]/2) - uvX_L; uvY_L = (mSize[0]/2) - uvY_L
+#uvX_R = (mSize[1]/2) - uvX_R; uvY_R = (mSize[0]/2) - uvY_R
+
+uvX_L = (0.1107986 * iSize[1]) - (sizeX / 2)
+uvX_R = (0.2024432 * iSize[1]) - (sizeX / 2)
+uvY_L = (0.1547173 * iSize[0]) - (sizeY / 2)
+uvY_R = (0.1547173 * iSize[0]) - (sizeY / 2)
+cX_L = abs(int(uvX_L))
+cX_R = abs(int(uvX_R))
+cY   = abs(int(uvY_L))
+
+#print(f"UV: {uvX_L} x {uvY_L} \\ {uvX_R} x {uvY_R}")
 
 ## Pull out the alpha for later
 if raw_image.shape[2] >= 4:
@@ -77,7 +102,7 @@ image = cv2.merge([image[:,:,0], image[:,:,1], image[:,:,2], imgAlpha])
 #DisplayWithAspectRatio(opt, 'Mask only', mask, 256)
 
 ## Resize Mask to target size ---> x__resize_mask
-maskRes = imglib.resize(mask, [size, size], inter=cv2.INTER_AREA)
+maskRes = imglib.resize(mask, [sizeY, sizeX], inter=cv2.INTER_AREA)
 
 ## Make sure Color is not float anymore
 overcolorInt = imglib.normalize_color(overcolor)
@@ -90,8 +115,9 @@ def modeTest(src, dst, name): return imglib.testOutModes(opt, src, dst, 256, nam
 #################################### Cut out segment (because org file is too big)
 def cutHelper(_image, _area, insert=None):
 	cY, cX = (_area[0],_area[1])
-	_aY = [int(cY), int(cY + size)]
-	_aX = [int(cX), int(cX + size)]
+	pad = size % 2
+	_aY = [int(cY), int((cY + pad + sizeY))]
+	_aX = [int(cX), int((cX + pad + sizeX))]
 	if insert is None:
 		return _image[_aY[0]:_aY[1], _aX[0]:_aX[1], :]
 	else:
@@ -113,6 +139,11 @@ DisplayWithAspectRatio(opt, "ImgSegR", img_segR, 256)
 ## Convert to float
 image_f   = conv(img_segR)
 imgBase_f = conv(maskRes)
+
+## Handle one-off errors
+if abs(image_f.shape[1] - imgBase_f.shape[1]) == 1 or abs(image_f.shape[1] - imgBase_f.shape[1]) == 1:
+	imgBase_f = imglib.resize(imgBase_f, image_f.shape[:2], inter=cv2.INTER_AREA)
+	maskRes   = imglib.resize(maskRes,   img_segR.shape[:2], inter=cv2.INTER_AREA)
 
 DisplayWithAspectRatio_f(opt, 'Source (float,cut)', image_f, 256) ## Skin
 DisplayWithAspectRatio_f(opt, 'Target (float)',   imgBase_f, 256) ## Texture
@@ -213,9 +244,12 @@ img_seg = add_maskR(img_seg)
 
 image = cutHelper(image, [cY, cX_L], img_seg)
 ######################
+#print(f'Parts: {cY} {cX_L} {cX_R} \\ {size}  {sizeX}  {sizeY}')
+#print(f'Size:: {cY-size*2}:{cY+size*2}, {cX_L-size}:{cX_R+size}')
+#print(f'SizeX: {cY-sizeY*2}:{cY+sizeY*2}, {cX_L-sizeX}:{cX_R+sizeX}')
+#print([int(max(0,cY-sizeY*2)),int(cY+sizeY*2), int(max(0,cX_L-sizeX)),int(cX_R+sizeX)])
 
-#print(f'{cY-size*2}:{cY+size*2}, {cX_L-size}:{cX_R+size}')
-DisplayWithAspectRatio(opt, 'Final', image[max(0,cY-size*2):cY+size*2, max(0,cX_L-size):cX_R+size, :], None, 512+256)
+DisplayWithAspectRatio(opt, 'Final', image[int(max(0,cY-sizeY*2)):int(cY+sizeY*2), int(max(0,cX_L-sizeX)):int(cX_R+sizeX), :], None, 512+256)
 if show: k = cv2.waitKey(0) & 0xFF
 
 ### Write out final image

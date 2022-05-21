@@ -149,7 +149,7 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 		mat_dict[mat] = kk_skip.match(name)
 	
 	arr = [ ]
-	arr.append(Comment("Generated with KKPMX v.1.4"))
+	arr.append(Comment("Generated with KKPMX v.1.7.0"))
 	arr.append(Comment("Colors are RGBA mapped to [0...1]; Alpha is added if missing"))
 	##	write Name
 	arr.append((out_name, "....")) ## in [json_ren]
@@ -179,13 +179,19 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 	parent_tree = { "_blank": [] }#generate_parent_tree(json_tree)
 	for (k,v) in json_tree.items():
 		#print(f"Key: {k} \\ Value: {v['token']}")
-		if ren_Render not in v: _parent = "_blank"
+		if ren_Render not in v:
+			#print(f"(k,v) =\n> {k}\n> {v}")
+			## Handle Copy-Material
+			if type(v) is str: _parent = list(json_tree[v][ren_Render].values())[0].get(ren_Parent, "_blank")
+			else: _parent = "_blank"
 		else: _parent = list(v[ren_Render].values())[0].get(ren_Parent, "_blank")
 		parent_tree.setdefault(_parent, [])
 		parent_tree[_parent].append(k)
 	#util.write_json(parent_tree, "_gen\#3Parents")
 	
-	if DEBUG: print(parent_tree["_blank"])
+	if DEBUG:
+		print("--- These materials contained no target and will be discarded")
+		print(parent_tree["_blank"])
 	
 	GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree)
 	GenerateJsonFile__Clothes(pmx, arr, json_tree, parent_tree)
@@ -223,6 +229,7 @@ def GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree):
 	##	>	cf_m_mayuge_00 -- Comment(": Type 3 (vertical short)")
 	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_mayuge_00", opt_Comment: Comment(idx="Eyebrows") })
 	#arr.append(("cf_m_mayuge_00*1", "cf_m_mayuge_00")) ## @todo: Add option to produce merged if no textures
+	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_noseline_00", opt_Comment: Comment(idx="Nose") })
 	
 	##	>	cf_m_eyeline_00_up
 	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_eyeline_00_up", opt_Comment: Comment(idx="Upper Eye-line") } )
@@ -398,7 +405,7 @@ cat_to_Title = {
 	#--- alias
 	ct_body       : "Body",
 	ct_hairB      : "Hair (Rear)",
-	ct_hairF      : "Bangs",
+	ct_hairF      : "Hair (Bangs)",
 	ct_hairS      : "Hair (Side)",
 	ct_hairO_01   : "Extensions",
 	ct_item       : "Accessory",
@@ -423,6 +430,10 @@ def write_entity(pmx, arr, json_tree, opt):
 #				"shadows": "On",			"target": "m_hood"
 #	},	},	},
 #	[[----]]
+#	-- If a material is used by multiple renders, the additional ones are additional keys in "render"
+#	-- If a render uses multiple materials (of the same name), the additional ones are added as
+#	"NAME": "NAME to COPY",
+#	[[----]]
 	"""
 	name   = opt
 	isDict = type(opt) == dict
@@ -445,6 +456,11 @@ def write_entity(pmx, arr, json_tree, opt):
 	#---#
 	token = re.sub(r"( \(Instance\))+", "", elem[0]) ## the full name that started with [name], without (instance)
 	mat = elem[1]
+	## Handle Copy-Material: mat will be string then -- Just add as is
+	if type(mat) is str:
+		arr.append((token, re.sub(r"\*\d+", "", token)))
+		return
+	
 	render = mat.get("render",{})
 	## @todo: print comment
 	
@@ -466,11 +482,9 @@ def write_entity(pmx, arr, json_tree, opt):
 		if v != df: targetBase[_name] = v
 		return True
 		
-	#### Generate Template
+	#### Generate Template (== the Material)
 	targetBase["available"] = opt.get(opt_texAvail, []) ## Build some map of {"t__Main": ["main_item", ...]} and do a filter over all included
 	targetBase["textures"] = opt.get(opt_texUse, [])
-	
-	if (t__Alpha in opt): targetBase[t__Alpha] = op.get(t__Alpha, "")
 	
 	for (k,v) in mat.items():
 		if k in ["render","token"]: continue
@@ -490,7 +504,8 @@ def write_entity(pmx, arr, json_tree, opt):
 	arr.append((token, targetBase, opt.get(opt_Comment)))
 	#else: arr.append((token, targetBase))
 
-	### Do smt about Comment(...)
+	# (?) ### Do smt about Comment(...)
+	### Generate the render entries that use that material
 	for (k,r) in render.items(): ## mat
 		key = r.get(ren_Target) ## Contains already *-suffix if any
 		val = { }
@@ -588,7 +603,7 @@ def collectSubTree(pmx, tree, _start):
 	"""
 	subTree = {}
 	def __treeWalker(idx):
-		if idx is None: return
+		if idx is None: return # works because declared own find_bone
 		#subTree[pmx.bones[idx].name_jp] = idx
 		name = pmx.bones[idx].name_jp
 		target = idx
@@ -673,17 +688,34 @@ def generate_material_tree(pmx, tree, render_tree: dict, json_mats: dict):
 	"""
 	#util.write_json(json_mats, "_gen\#2M00_json_mats", True)
 	
+	#print("------ render_tree")
+	#util.__typePrinter_Dict(render_tree)
+	#print("------ json_mats")
+	#util.__typePrinter_Dict(json_mats)
+	#print("------ ----")
+	
 #	### Create unique material names for all render elements
 	uniqueMats = []
 	#print(f"RenderTree:")
 	for ren in render_tree.items():
-		_mat = ren[1][ren_Material][0]
-		#print(f"-- {_mat} --> {ren}")
-		render_tree[ren[0]][ren_Target] = uniquefy_material(_mat, uniqueMats)
+		##== ('bone_idx', {'enabled': 'True', 'mat': ["", ...], 'parent': 'ca_slot00', 'receive': 'True', 'render': 'NAME in render_tree', 'shadows': 'On'})
+		try:
+			mats = ren[1][ren_Material]
+			_mat = mats[0]
+			#print(f"-- {_mat} --> {ren}")
+			render_tree[ren[0]][ren_Target] = uniquefy_material(_mat, uniqueMats)
 #	### Map existing render to existing materials
-		if _mat in json_mats:
-			json_mats[_mat].setdefault(ren_Render, {})
-			json_mats[_mat][ren_Render][ren[0]] = ren[1]
+			if _mat in json_mats:
+				json_mats[_mat].setdefault(ren_Render, {})
+				json_mats[_mat][ren_Render][ren[0]] = ren[1]
+			if len(mats) == 1: continue
+			for mat in mats[1:]:
+				# If the name is identical -- Shared Material in Unity
+				if mat == _mat: json_mats[uniquefy_material(mat, uniqueMats)] = _mat
+		except Exception as ex:
+			print(f"---[!!]: Skipped the following material:")
+			print(ren)
+			print(f"> Error-Reason: {ex}")
 	#util.write_json(render_tree, "_gen\#2M01_render_tree", True)
 	#util.write_json(json_mats, "_gen\#2M02_json_mats", True)
 	return json_mats

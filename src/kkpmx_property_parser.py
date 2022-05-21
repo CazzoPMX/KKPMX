@@ -182,7 +182,7 @@ def parseMatComments(pmx, input_file_name: str, write_model = True, moreinfo = F
 		if os.path.isabs(tex):
 			pmx.textures[idx] = os.path.relpath(tex, root)
 	
-	if write_model:
+	if write_model:# and False:
 		flag = opt.get("apply", None)
 		if flag is None: flag = (core.MY_GENERAL_INPUT_FUNC(lambda x: x in ['y','n'], "Apply changes ?") == 'y')
 		if flag:
@@ -235,9 +235,11 @@ def __parse_json_file(pmx, data: dict, root: str):
 			print("\nCould not find {}, skipping".format(mat_name)); continue
 		mat = pmx.materials[mat_idx]
 		attr = data[mat_name]
+		
+		if verbose: print("\n==== Processing " + mat.name_jp)
 		if len(attr) == 0: continue ## Catches {},[],"" #@todo_add "<< silent ignore of empty elements >>"
 		#if (mat.name_jp != "cf_m_hair_f_02*16"): continue
-		print("\n==== Processing " + mat.name_jp)
+		if not verbose: print("\n==== Processing " + mat.name_jp)
 		
 		# Copy Type
 		if type(attr) in [str, list]:
@@ -281,6 +283,7 @@ def __parse_json_file(pmx, data: dict, root: str):
 			#<< Because multi-part assets share a common texture, the unique-fyed name must be reduced for them.
 			name = re.sub(r"\*\d+","",name) #@todo_note "<< smt about '* not allowed in filename' >>"
 			## Transform supported textures into actual paths
+			if t__Alpha in attr and t__Alpha not in attr[TEXTURES]: del attr[t__Alpha] ## Remove if not supported
 			for tex in attr[TEXTURES]:
 				if tex not in texSuffix:
 					print("[NotImpl] Could not find texture key '{}'".format(tex))
@@ -439,6 +442,7 @@ def parse_eye(pmx, mat, attr): ## @open: rotation, offset, scale
 	## Color_Tex1+2, Color_Shadow, exppower, isHighLight, rotation
 	####
 	extend_colors(attr, [Color_Tex1, Color_Tex2, Color_Shadow], True)
+	process_common_attrs(pmx, mat, attr)
 	if t__overtex1 in attr or t__overtex2 in attr:
 		handle_eye_highlight(pmx, attr)
 		set_new_texture(pmx, mat, attr, [attr[t__Main], suffix_HL + ".png"])
@@ -469,10 +473,15 @@ def parse_alpha(pmx, mat, attr): ## @todo
 	# Color_1, Color_2, Color_3, Color_Line, Color_Shadow
 	# rimpower, rimV, ShadowExtend, SpeclarHeight
 	###
+	#[main_clothes_alpha]: t__Alpha, t__Another, t__Detail, t__Line, t__Main, t__NorMap
+	#  Color_Shadow, Color_Specular
+	#  alpha==SeeThrough-ness (1..0, inate 90%), alpha_a, alpha_b, AlphaMaskuv
+	###
 	extend_colors(attr, [Color_1, Color_2, Color_3, Color_Line, Color_Shadow])
 	process_common_attrs(pmx, mat, attr)
 	process_color_and_detail(pmx, mat, attr)
 	if Color_1 in attr: mat.diffRGB = attr[Color_1][:3]
+	mat.alpha = 0.8
 
 def parse_glass(pmx, mat, attr):
 	mat.specpower = 1.0
@@ -588,8 +597,8 @@ def convert_color_for_RayMMD(pmx, input_file_name):
 	for mat in pmx.materials:
 		attr = data.get(mat.name_jp, None)
 		if not attr: continue
-		if not Color in attr: continue
-		mat.diffRGB = attr[Color][:3]
+		if not Color_1 in attr: continue
+		mat.diffRGB = attr[Color_1][:3]
 	return kklib.end(pmx, input_file_name, "_toon")
 
 #### Regular
@@ -636,6 +645,7 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 		if not meta.get(MT_ENABLED, False):
 			mat.alpha = 0
 			mat.flaglist[4] = False
+			mat.comment = re.sub("(\r\n)?\[:Disable:\]",  "", mat.comment) + "\r\n[:Disable:]"
 		#### Add Slot into Comment
 		if MT_SLOT in meta:
 			comment = meta[MT_SLOT]
@@ -646,14 +656,15 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 			if re.match("ca_slot\d+", par):    comment += "\r\n[:AccId:] " + re.match("ca_slot(\d+)", par)[1]
 			### Add Top sub slots as extra line
 			if re.match("ct_top_parts_", par): comment += "\r\n[:TopId:] " + par
+			### Give some navigation for primmats
+			if mat.name_jp.startswith("mf_m_primmaterial"): comment += "\r\n[:PrOrg:] " + meta[MT_RENDER]
 			
 			if not mat.comment or len(mat.comment) == 0:
 				mat.comment = comment
 			else:
 				## Make sure that old comments are removed before readding
-				mat.comment = re.sub("(\r\n)?[:Slot:] \w+",  "", mat.comment)
-				mat.comment = re.sub("\r\n[:AccId:] \d+", "", mat.comment)
-				mat.comment = re.sub("\r\n[:TopId:] \w+", "", mat.comment)
+				mat.comment = re.sub("(\r\n)?\[:Slot:\] \w+",  "", mat.comment)
+				mat.comment = re.sub("\r\n\[(:AccId:|:TopId:|:PrOrg:)\] \w+", "", mat.comment)
 				mat.comment += "\r\n" + comment
 
 def process_color_and_detail(pmx, mat, attr):
@@ -663,6 +674,7 @@ def process_color_and_detail(pmx, mat, attr):
 	executedOnce = False
 	## main_opaque has no color
 	if t__Color in attr and Color_1 not in attr:
+		#if t__Detail in attr: attr.setdefault(t__Main, attr[t__Detail]) else: attr.setdefault(t__Main, None)
 		attr.setdefault(t__Main, "")
 		if (getFN(attr[t__Main]).startswith("mf_m_primmaterial")):
 			mat.flaglist[4] = False ## Disable Edge as well
@@ -834,6 +846,7 @@ def handle_acc_color(pmx, attr):
 	data = {"mode": "Additive", "altName" : attr.get("altName","")}
 	if attr[GROUP] == "hair": data["hair"] = True
 	data[state_info] = global_state[state_info]
+	data["saturation"] = attr.get("saturation", 1)
 	arg6 = quoteJson(data)
 	
 	## Build reuse id, apply [Alpha] in case it exists (since it should only be reused if same alpha)
@@ -877,6 +890,7 @@ def handle_acc_detail(pmx, attr): ## Has @todo_add \\ @open: All the props affec
 	arg3 = quoteJson(data)
 	arg4 = ""
 	if NotFound(attr, t__Alpha, True) == False: arg4 = quote(attr[t__Alpha])
+	
 	## Ignore alpha for cloths
 	if attr[SHADER] == "cloth": arg4 = ""
 	
@@ -971,7 +985,8 @@ def fix_material_names(pmx, data):
 		if mat_name in [NAME, BASE, OPTIONS]: continue
 		if re.search("(@ca_slot\d+|#-\d+)$", mat_name): continue
 		matJsn.append(mat_name)
-	matSkip = ["Bonelyfans", "c_m_shadowcast", "cf_m_tooth", "cf_m_noseline"]
+	matSkip = ["Bonelyfans", "c_m_shadowcast", "cf_m_tooth", "cf_m_sirome"]
+	## sirome has no Render \\ teeth are stupid
 	for mat in pmx.materials:
 		name = re.sub("(@ca_slot\d+|#-\d+|\*\d+)?$", "", mat.name_jp)
 		#print(f"{mat.name_jp} -> {name}")
@@ -1158,7 +1173,10 @@ shader_dict = {
 	"main_clothes_alpha": "alpha",
 	"main_clothes_opaque": "cloth",
 	"main_clothes_item": "item",
-	#### 
+	"main_clothes_emblem": "color", #shader_dict["main_emblem"],
+	 ## Color, overcolor1, overcolor2, overcolor3
+	"IBL_Shader_alpha": "color",
+	"IBL_Shader_cutoff": "color",
 	}
 
 
