@@ -108,16 +108,18 @@ The model should now work properly in MMD, but may perform weird with most TDA D
 To compile the project yourself, you need to install the following dependencies:
 
  - Tool-Chain
-    - The tool was compiled and tested with Python 3.8+.
-    - To use 'kkpmx_property_parse.py', you need to install ['cv2', 'numpy', 'blend_modes']
+    - The tool was compiled and tested with Python 3.8+. (currently using 3.10)
+    - To use 'kkpmx_property_parse.py', you need to install ['numpy', 'opencv-python', 'blend_modes']
     - To use 'kkpmx_handle_overhang.py', you need to install ['numpy', 'scipy', 'sympy']
-    - Download [nuthouse01]'s tool (pre v6.0) and extract it somewhere
-    - Copy the contents of KKPMX's 'src' folder into '[nuthouse01]/python', overwrite if necessary. The changes in question are:
+    - If scipy causes issues, install it manually from https://www.lfd.uci.edu/~gohlke/pythonlibs/#scipy
+    - I added all necessary files myself, but in case you are interested, they are based on [nuthouse01]'s tool (pre v6.0)
+       - If you do it yourself, copy the contents of KKPMX's 'src' folder into '[nuthouse01]/python', overwrite if necessary. The changes in question are:
        - [morph_scale.py] `get_idx_in_pmxsublist()`: Extra argument to suppress 'Not found' warning to verify valid inputs when asking for materials.
        - [nuthouse01_core.py] `prompt_user_filename()`: Ignore "" around File-Paths to allow drag-drop of files into the CommandWindow.
        - [file_sort_textures.py] `main()`: Isolated initialization to allow calling with existing PMX instance.
        - [model_overall_cleanup.py] `main()`: Isolated initialization to allow calling with existing PMX instance.
        - [_alphamorph_correct.py] `template, template_minusone()`: Don't zero out morph colors.
+       - [_dispframe_fix.py.py] `dispframe_fix()`: Add additional morphs to a new 'moremorphs' display so that user-defined morphs are removed last when capping the list.
  - KK Mod
     - The Mod has been compiled and tested with .NET 3.5 (same as KK)
     - All necessary packages can be installed by "Restore Packages".
@@ -265,8 +267,15 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  - To override a specific texture with an irregular name, just add the Texture Name directly into the Material.
 >  - Example: Add `["MainTex": "C:\full\path\to\texture.png",]` (without brackets, and using the correct path) to set a specific Main Texture (for cases like using a cloth slot multiple times (otherwise they would reuse the first one), which requires manually adding it to `[generateJSON]` to begin with)
 >  
->  Options (for Automization):
->  - apply: bool -- True to not wait for results and write directly to model. Prompts if `[None]`
+>  `[Issues]`:
+>  - When using KKS, the face texture may contain blank space where the blush is supposed to be. For the time being, please merge the blush and face texture yourself in that case.
+>  
+>  `[Options]` (for Automization):
+>  - `[apply]`: bool -- True to not wait for results and write directly to model. Prompts if `[None]`
+>  
+>  `[Options]` (manually):
+>  - Use Texture Cache (default: Yes)´-- Reuse Textures that share the same generation parameters. If, for some reason, you do not want that it can be turned off with this. Other than the increased amount of pictures, this shouldn't behave any different (if it does, please tell me)
+>  - Asks to skip pictures (default: No) -- You can skip regenerating the pictures if all files already exist as expected (otherwise it will list them as missing as usual)
 
 ### (4) Isolate protruding surfaces
 
@@ -284,8 +293,8 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  - Full scan (== full box of target against full box of base)
 >  The smaller it is, the less calculations are performed and it will complete faster.
 >  
->  Output: PMX file '`[modelname]`_cutScan.pmx'
->  - As opposed to usual, will count up instead of appending if '_cutScan' is already part of the filename
+>  `[Output]`: PMX file '`[modelname]`_cutScan.pmx'
+>  - As opposed to usual, it will always count up instead of appending if '_cutScan' is already part of the filename
 
 ### (5) All-in-one converter
 
@@ -448,4 +457,4 @@ Most modes will always create a new file and append a suffix (see [Output]).
 
 >  Utilizes the emotion morphs extracted from KK to construct TDA morphs.
 >  
->  Output: name + "_emote"
+>  `[Output]`: name + "_emote"

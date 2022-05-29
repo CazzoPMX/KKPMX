@@ -199,9 +199,10 @@ def find_all_morphs(_morphs, prefix=None, infix=None, suffix=None, value=None, i
 	OUT(value==None): List[str]
 	OUT(value!=None): List[Tuple[str, float]]
 	"""
+	verbose = state.get("moreinfo", True)
 	## Get all morphs
 	morphs = copy.copy(_morphs)
-	print(f"\nFind all morphs called <{prefix}:{infix}:{suffix}>")
+	if verbose: print(f"\nFind all morphs called <{prefix}:{infix}:{suffix}>")
 	## Reduce by prefixes, if any
 	if prefix is not None: ## Only match at start
 		pat = [x[3] for x in prefixes if x[0] == prefix]
@@ -227,7 +228,7 @@ def find_all_morphs(_morphs, prefix=None, infix=None, suffix=None, value=None, i
 		if isVocal: _suffix = infix + _suffix
 		r = re.compile(f"{_suffix}$")
 		morphs = [m for m in morphs if r.search(m)]
-	print(f">> " + str(morphs))
+	if verbose: print(f">> " + str(morphs))
 	if len(morphs) == 0: return []
 	if value is not None: return [(m, value) for m in morphs]
 	return morphs
@@ -235,9 +236,9 @@ def find_all_morphs(_morphs, prefix=None, infix=None, suffix=None, value=None, i
 ###########################
 def emotionalize(pmx, input_file_name: str, write_model = True, moreinfo = False):
 	"""
-	Utilizes the emotion morphs extracted from KK to construct TDA morphs.
+Utilizes the emotion morphs extracted from KK to construct TDA morphs.
 
-Output: name + "_emote"
+[Output]: name + "_emote"
 	"""
 	state["moreinfo"] = moreinfo or DEBUG
 	####
@@ -355,7 +356,7 @@ def add_TDA(pmx):
 #	addOrReplaceBrow("上", "Eyebrow up",  find_all_morphs(morphs, "mayuge", "_komaru", None, 1) )
 	addOrReplaceBrow("下", "Eyebrow down",  [find_one_morph(morphs, "mayuge.mayu00_def_cl", 1.0)])
 	#############
-	addOrReplaceOther("怒り", "Angry (closed)", [
+	addOrReplaceOther("怒り", "Angry", [
 		find_one_morph(morphs, "eye_face.f00_ikari_op", 0.5),
 		find_one_morph(morphs, "eye_nose.nl00_ikari_op", 0.5),
 		find_one_morph(morphs, "eye_siroL.sL00_ikari_op", 0.5),
@@ -368,13 +369,14 @@ def add_TDA(pmx):
 	
 	names = [
 		"あ","い","う","え","お","あ２","ん",# Talking
-		"まばたき","笑い","ウィンク","ウィンク右","ウィンク２","ｳｨﾝｸ２右","じと目" # Eyes
-		"▲","ω","怒り","口角上げ","口角下げ", # Mouth
+		"まばたき","笑い","ウィンク","ウィンク右","ウィンク２","ｳｨﾝｸ２右","じと目", # Eyes
+		"▲","ω","口角上げ","口角下げ","怒り", # Mouth
 		"真面目","困る","下", # Mayuge
 		]
-	frames = [find_morph(pmx, name, False) for name in names]
+	print("\n-- Add Vocals to combined group 'TrackVoice'...")
+	frames = [find_morph(pmx, name, True) for name in names]
 	frames = [[1,idx] for idx in frames if idx != -1]
-	name = "Track Voice"
+	name = "TrackVoice"
 	idx = find_disp(pmx, name, False)
 	if idx != -1: pmx.frames[idx].items = frames
 	else: pmx.frames.append(pmxstruct.PmxFrame(name, name, False, frames))

@@ -130,6 +130,15 @@ def dispframe_fix(pmx: pmxstruct.Pmx, moreinfo=False):
 	# remove all morphs that are group 0
 	for d,frame in enumerate(pmx.frames):  # for each display group,
 		i = 0
+		##---- CUSTOM
+		#if moreinfo: core.MY_PRINT_FUNC("Processing Display %s " % frame.name_jp)
+		msg =  "Processing Display " + frame.name_jp
+		os_hidden = hidden_morphs_removed
+		os_duplicate = duplicate_entries_removed
+		os_dispMorph = len(displayed_morphs)
+		os_dispBones = len(displayed_bones)
+		##---->>
+		
 		while i < len(frame.items):  # for each item in that display group,
 			item = frame.items[i]
 			if item[0]:  # if it is a morph
@@ -156,13 +165,21 @@ def dispframe_fix(pmx: pmxstruct.Pmx, moreinfo=False):
 				else:
 					displayed_bones.add(item[1])
 					i += 1
+		##---- CUSTOM
+		msg += " > "
+		msg += str(hidden_morphs_removed     - os_hidden   ) + " hidden, "
+		msg += str(duplicate_entries_removed - os_duplicate) + " duplicate, "
+		msg += str(len(displayed_morphs)     - os_dispMorph) + " new morphs, "
+		msg += str(len(displayed_bones)      - os_dispBones) + " new bones"
+		if moreinfo: core.MY_PRINT_FUNC(msg)
+		##---->>
 	
 	if hidden_morphs_removed:
 		core.MY_PRINT_FUNC("removed %d hidden morphs (cause of crashes)" % hidden_morphs_removed)
 		# core.MY_PRINT_FUNC("!!! Warning: do not add 'hidden' morphs to the display group! MMD will crash!")
 	if duplicate_entries_removed and moreinfo:
 		core.MY_PRINT_FUNC("removed %d duplicate bones or morphs" % duplicate_entries_removed)
-		
+	
 	# have identified which bones/morphs are displayed: now identify which ones are NOT
 	undisplayed_bones = []
 	for d,bone in enumerate(pmx.bones):
@@ -185,18 +202,22 @@ def dispframe_fix(pmx: pmxstruct.Pmx, moreinfo=False):
 		if d in displayed_morphs: continue
 		# if this morph is in a valid panel, add it to the list
 		if 1 <= morph.panel <= 4: undisplayed_morphs.append(d)
+	
 	if undisplayed_morphs:
 		if moreinfo:
 			core.MY_PRINT_FUNC("added %d undisplayed morphs to Facials group" % len(undisplayed_morphs))
 		newframelist = [[1, x] for x in undisplayed_morphs]
 		# find morphs group and only add to it
 		# should ALWAYS be at index 1 but whatever might as well be extra safe
-		idx = core.my_list_search(pmx.frames, lambda x: (x.name_jp == "表情" and x.is_special))
+		#EX#idx = core.my_list_search(pmx.frames, lambda x: (x.name_jp == "表情" and x.is_special))
+		idx = core.my_list_search(pmx.frames, lambda x: (x.name_jp == "moremorphs")) ## CUSTOM
 		if idx is not None:
 			# concatenate to end of item list
 			pmx.frames[idx].items += newframelist
 		else:
-			core.MY_PRINT_FUNC("ERROR: unable to find semistandard 'expressions' display frame")
+			#EX#core.MY_PRINT_FUNC("ERROR: unable to find semistandard 'expressions' display frame")
+			pmx.frames.append(pmxstruct.PmxFrame(name_jp="moremorphs", name_en="moremorphs", is_special=False, items=newframelist))##CUSTOM
+		
 	
 	# check if there are too many morphs among all groups... if so, trim and remake "displayed morphs"
 	total_num_morphs = 0
@@ -231,7 +252,7 @@ def dispframe_fix(pmx: pmxstruct.Pmx, moreinfo=False):
 			i += 1
 	if empty_groups_removed and moreinfo:
 		core.MY_PRINT_FUNC("removed %d empty groups" % empty_groups_removed)
-		
+	
 	overall = num_morphs_over_limit + fix_center + empty_groups_removed + len(undisplayed_bones) + len(undisplayed_morphs) + duplicate_entries_removed + hidden_morphs_removed + fix_root
 	if overall == 0:
 		core.MY_PRINT_FUNC("No changes are required")

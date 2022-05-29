@@ -9,9 +9,9 @@ import gc
 
 def makeOptions(_opt):
 	return {
-		"alpha": _opt.get("alpha", 64 / 255),
+		"alpha": _opt.get("alpha", 1),#64 / 255),
 		"show":  _opt.get("show", False),
-		"mode":  _opt.get("mode", "Additive"),
+		"mode":  _opt.get("mode", "Addition"),
 		"scale": _opt.get("scale", 1),
 	}
 
@@ -41,11 +41,12 @@ def DisplayWithAspectRatio(opt, title, _img, width=None, height=None, inter=cv2.
 		return
 	if width is None:
 		r = height / float(h)
+		#print(f">[{_img.shape}]>[{img.shape}] {w} * {r} = {w * r}")
 		dim = (int(w * r), height)
 	else:
 		r = width / float(w)
 		dim = (width, int(h * r))
-
+	#print(f"dim: {dim}({width} x {height}), r={r}, img: {img is None}")
 	cv2.imshow(title, cv2.resize(img, dim, interpolation=inter))
 
 ######
@@ -99,6 +100,7 @@ def resize(imgSource, imgTarget, inter=cv2.INTER_AREA):
     return imgSource
 
 def normalize_color(color): ## from: body_overtex1
+	""" Make sure that the Color Array is scaled to 255, all int, and has a length of 4 """
 	if type(color).__name__ == 'ndarray': color = color.tolist()
 	if any([x > 1 for x in color]):
 		if len(color) == 3: color.append(255)
@@ -143,6 +145,7 @@ def get_blend_mode(blend_mode):
 		"mul": blend_modes.multiply,
 		"diff": blend_modes.difference,
 		"GExtract": blend_modes.grain_extract,
+		"dodge": blend_modes.dodge,
 	}
 	if blend_mode not in blendDict: raise Exception("Unknown blend_mode " + blend_mode)
 	return blendDict[blend_mode]
@@ -469,12 +472,14 @@ def smooth_black(_img):
 ######
 
 def convert_to_BW(image, full=True): ## OpenCV default is BGR
+	""" Convert BGR to Gray, then enlarge it again """
 	convCh = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 	if not full: return convCh
+	if image.shape[2] < 4: return cv2.merge([convCh, convCh, convCh])
 	return cv2.merge([convCh, convCh, convCh, image[:,:,3]])
 
 #""" Add image to itself as Alpha """
-def apply_alpha_BW(opt, img): return converterScaled(opt, img, convert_to_BW(img, False), True).astype("uint8")
+def apply_alpha_BW(opt, img): return converterScaled(opt, img, convert_to_BW(img, False), True)
 
 def invert(image):
 	return cv2.merge([255 - image[:,:,0], 255 - image[:,:,1], 255 - image[:,:,2], image[:,:,3]])
@@ -497,6 +502,11 @@ def getBitmask(image, show=False, tag="", binary=False):
 
 def negate(image):   return (image + 256) * (-1) + 512
 def negate_f(image): return (image + 1) * (-1) + 2
+
+##[Small -- Color]
+def invertCol(arr):
+	_arr = normalize_color(arr)
+	return [255 - _arr[0], 255 - _arr[1], 255 - _arr[2], _arr[3]]
 
 def BGR_to_HSV(arr): return cv2.cvtColor(np.uint8([[arr[:3]]]), cv2.COLOR_BGR2HSV)[0,0,:]
 def arrCol(arr, _col): return cv2.cvtColor(np.uint8([[arr[:3]]]), _col)[0,0,:]
@@ -548,7 +558,7 @@ def change_hue(_img, _val): ## Using default order of BGR
 ######
 ## Tester
 ######
-def testOutModes_wrap(main, mask, msg = "<< Using Wrapper >>", _opt=None): ## To use [testOutModes] in ad-hoc way
+def testOutModes_wrap(main, mask, _opt=None, msg = "<< Using Wrapper >>"): ## To use [testOutModes] in ad-hoc way
 	show = True
 	opt = _opt if _opt is not None else makeOptions(locals())
 	_main = converterScaled(opt, main, None, True)

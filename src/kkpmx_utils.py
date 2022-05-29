@@ -136,12 +136,13 @@ def sort_dict(_dict, deep=True, _type=None):
 		tmp[i[0]] = i[1]
 	return tmp
 
-def ask_yes_no(message, default=None):
+def ask_yes_no(message, default=None, extra=None):
 	"""
 	if default is None: return input == 'y'
 	if default is  'y': if input is empty: return True
 	any other default : if input is empty: return False
 	"""
+	if extra is not None: print("\n> [" + extra + "]")
 	if default is None: return core.MY_GENERAL_INPUT_FUNC(lambda x: x in ['y','n'], message + " [y/n]?") == 'y'
 	txt = "[y]/n" if default == "y" else "y/[n]"
 	value = core.MY_GENERAL_INPUT_FUNC(lambda x: x in ['y','n',None,""], message + f" ({txt})?")
@@ -261,6 +262,15 @@ def find_disp (pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.fra
 def find_morph(pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.morphs,e,idx)
 def find_rigid(pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.rigidbodies,e,idx)
 find_bone.__doc__ = find_mat.__doc__ = find_disp.__doc__ = find_morph.__doc__ = find_rigid.__doc__ = find_info
+### Technically could also be just -- core.my_list_search(arr, lambda x: (x.name_jp == "name_jp" ... ))
+
+def add_to_facials(pmx, name):
+	#pmx.frames.append(pmxstruct.PmxFrame(name_jp="moremorphs", name_en="moremorphs", is_special=False, items=newframelist))
+	idx = find_disp(pmx, "表情", False)
+	if idx != -1:
+		target = name
+		if type(target).__name__ == "str": target = find_morph(pmx, name, False)
+		if target != -1: pmx.frames[idx].items += [[1, target]]
 
 ######
 ## Math Types for Rigging

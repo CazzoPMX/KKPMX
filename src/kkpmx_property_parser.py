@@ -60,9 +60,10 @@ NAME     = "name"
 BASE     = "base"
 OPTIONS  = "options"
 #---
-OPT_ENG  = "use_english"
-OPT_HAIR = "process_hair"
-OPT_IMG  = "skip_images"
+OPT_ENG   = "use_english"
+OPT_HAIR  = "process_hair"
+OPT_IMG   = "skip_images"
+OPT_CACHE = "ignore_hair_inheritance"
 #---
 GROUP    = "group"    ### Determines the texture type to use. Will fallback to [shader] if missing.
 TEXTURES = "textures" ### Maybe call it "used_textures"
@@ -124,13 +125,20 @@ Additional notes:
 -- To override a specific texture with an irregular name, just add the Texture Name directly into the Material.
 -- Example: Add ["MainTex": "C:\\full\\path\\to\\texture.png",] (without brackets, and using the correct path) to set a specific Main Texture (for cases like using a cloth slot multiple times (otherwise they would reuse the first one), which requires manually adding it to [generateJSON] to begin with)
 
-Options (for Automization):
-- apply: bool -- True to not wait for results and write directly to model. Prompts if [None]
+[Issues]:
+- When using KKS, the face texture may contain blank space where the blush is supposed to be. For the time being, please merge the blush and face texture yourself in that case.
+
+[Options] (for Automization):
+- [apply]: bool -- True to not wait for results and write directly to model. Prompts if [None]
+
+[Options] (manually):
+- Use Texture Cache (default: Yes)´-- Reuse Textures that share the same generation parameters. If, for some reason, you do not want that it can be turned off with this. Other than the increased amount of pictures, this shouldn't behave any different (if it does, please tell me)
+- Asks to skip pictures (default: No) -- You can skip regenerating the pictures if all files already exist as expected (otherwise it will list them as missing as usual)
 
 """
 DEBUG = util.DEBUG or False
 
-## Todos: Root Path \\ Figure out how to apply fixes for ColorMask (Additive Merge)
+## Todos: Root Path
 
 #############
 
@@ -152,6 +160,9 @@ msgs = { 'miss': [], 'no_action': [], 'no_files': [] }
 msgsPre = "-- "
 global_state = { }
 state_info = "showinfo"
+verbose = lambda: global_state.get(state_info, True)
+
+
 
 ################
 
@@ -198,7 +209,7 @@ def __parse_json_file(pmx, data: dict, root: str):
 	@param data [dict] The parsed JSON object
 	@param root [str] The root path of the pmx file
 	"""
-	verbose = global_state[state_info]
+	#verbose = global_state[state_info]
 	##### == Processing JSON Dict
 	attrDict = { }
 	base = data.get(BASE, None) #@todo_note "BASE can be used to provide a relative base path for texture references"
@@ -221,9 +232,9 @@ def __parse_json_file(pmx, data: dict, root: str):
 	ask_to_rename_extra(base)
 	fix_material_names(pmx, data)
 	hair_tabu = []
-	global_state[OPT_HAIR] = {}
-	
-	global_state[OPT_IMG] = util.ask_yes_no("Skip images", "n")
+	global_state[OPT_HAIR]  = {}
+	global_state[OPT_CACHE] = util.ask_yes_no("Enable Texture Cache", "y", "Reuse Textures that use the same parameters. [See above for more info] ")
+	global_state[OPT_IMG]   = util.ask_yes_no("Skip images", "n")
 	
 	for mat_name in data.keys():
 		if mat_name in [NAME, BASE, OPTIONS]: continue
@@ -301,8 +312,8 @@ def __parse_json_file(pmx, data: dict, root: str):
 		# Field: Add hair flag and keep track of duplicates
 		if (attr[GROUP] == "hair"):
 			attr[OPT_HAIR] = options[OPT_HAIR] and (attr[INHERIT] not in hair_tabu)
-			hair_tabu.append(attr[INHERIT])
-		
+			## Don't keep track if reuse is disabled
+			if global_state[OPT_CACHE]: hair_tabu.append(attr[INHERIT])
 		#---
 		if verbose: print(">--> Found {} attributes to process".format(len(attr)))
 		attr[ROOT] = root
@@ -319,6 +330,8 @@ def __parse_json_file(pmx, data: dict, root: str):
 		else:
 			msgs['no_action'].append(msgsPre + mat.name_jp)
 			parseDict["item"](pmx, mat, attr)#; exit()
+		## Clear texture cache after every run when reuse is disabled
+		#if not global_state[OPT_CACHE]: global_state[ARGSTR] = {}
 	#######
 	### Display summary for quick glance that something did not work
 	arr = []
@@ -428,12 +441,18 @@ def parse_acc(pmx, mat, attr):
 	# rimpower, rimV, ShadowExtend, SpeclarHeight
 	###
 	extend_colors(attr, [Color_1, Color_2, Color_3, Color_Shadow, Color_Specular])
-	process_common_attrs(pmx, mat, attr)
-	process_color_and_detail(pmx, mat, attr)
-	if t__Line in attr: process_line_mask(pmx, mat, attr)
 	
 	if mat.name_jp.startswith("cf_m_tang") and Color_1 in attr:
 		mat.diffRGB = attr[Color_1][:3]
+		mat.ambRGB  = attr[Color_1][:3]
+		## This color provides optimal shading in KK, but we don't want a shader for that.
+		if attr[Color_Shadow] == [0.75, 0.9586206, 1, 1]: del attr[Color_Shadow]
+	
+	process_common_attrs(pmx, mat, attr)
+	process_color_and_detail(pmx, mat, attr)
+	if t__Line in attr: process_line_mask(pmx, mat, attr)
+	########
+	pass ###
 
 def parse_eye(pmx, mat, attr): ## @open: rotation, offset, scale
 	print(":: Running 'eye' parser")
@@ -459,7 +478,8 @@ def parse_hair(pmx, mat, attr): ## @open: t__Color, t__Detail, t__HairGloss, Col
 	if attr[OPT_HAIR]: process_color_and_detail(pmx, mat, attr)
 	elif attr[INHERIT] in global_state[OPT_HAIR]:
 		attr[t__Reuse] = global_state[OPT_HAIR][attr[INHERIT]]
-		print(f"> Reusing texture {attr[t__Reuse]}")
+		if verbose: print(f"> Reusing texture(hair) of {attr[INHERIT]}: {attr[t__Reuse]}")
+		else: print(f"> Reusing texture {attr[t__Reuse]}")
 		set_new_texture(pmx, mat, attr, [attr[t__Reuse], ".png"])
 		
 	if Color_1 in attr:
@@ -843,14 +863,15 @@ def handle_acc_color(pmx, attr):
 	arg4 = '"[]"' if attr[Color_2] == None else quoteColor(attr[Color_2])
 	arg5 = '"[]"' if attr[Color_3] == None else quoteColor(attr[Color_3])
 	
-	data = {"mode": "Additive", "altName" : attr.get("altName","")}
-	if attr[GROUP] == "hair": data["hair"] = True
-	data[state_info] = global_state[state_info]
-	data["saturation"] = attr.get("saturation", 1)
+	data = { }
+	data["altName"]    = attr.get("altName", "")    # Save with diff. name
+	if attr[GROUP] == "hair": data["hair"] = True   # Set flag if Hair
+	data[state_info]   = global_state[state_info]   # Verbosity flag
+	data["saturation"] = attr.get("saturation", 1)  # Allows adjustments to Hair-Tip saturation
 	arg6 = quoteJson(data)
 	
 	## Build reuse id, apply [Alpha] in case it exists (since it should only be reused if same alpha)
-	argStr = "color"+arg1+arg2+arg3+arg4+arg5 + attr.get(t__Alpha, "")
+	argStr = "color"+arg1+arg2+arg3+arg4+arg5+arg6 + attr.get(t__Alpha, "")
 	
 	attr[ARGSTR] = argStr
 	tmp = global_state[ARGSTR].get(argStr, None)
@@ -869,11 +890,11 @@ def handle_acc_detail(pmx, attr): ## Has @todo_add \\ @open: All the props affec
 	if t__MainCol in attr:
 		mode = "darken" ## Try: "mul" "diff" "nor"
 		main = attr[t__MainCol]
-	elif attr[GROUP] == 'cloth':
-		mode = "darken"
+	else:
 		main = attr[t__Main]
-	else: main = attr[t__Main]
-	if MODE in attr: mode = attr[MODE]
+		if attr[GROUP] == 'cloth': mode = "darken"
+		elif attr[GROUP] in ['body','face']: mode = "screen"
+	if MODE in attr: mode = attr[MODE] ## << Can be set in generateJSON if you want to.
 	####
 	#if not os.path.exists(main):
 	#	print(f">--> [MissingFile(Detail)]: {main}")
@@ -883,10 +904,11 @@ def handle_acc_detail(pmx, attr): ## Has @todo_add \\ @open: All the props affec
 	arg2 = quote(attr[t__Detail])
 	
 	data = { }
-	data["moreinfo"] = global_state[state_info] ## argv3 -> details
-	data["is_main"]  = attr[t__Main] is not None ## argv4 -> mainSize
-	data["mode"]     = mode                     ## argv5 -> mode
-	if attr[SHADER] == "body": data["is_body"] = True ## argv6 -> is_body
+	data["moreinfo"] = global_state[state_info]
+	data["is_main"]  = attr[t__Main] is not None
+	data["mode"]     = mode
+	if attr[SHADER] == "body": data["is_body"] = True
+	if attr[SHADER] == "face": data["is_face"] = True
 	arg3 = quoteJson(data)
 	arg4 = ""
 	if NotFound(attr, t__Alpha, True) == False: arg4 = quote(attr[t__Alpha])
@@ -1014,7 +1036,7 @@ def quoteColor(value):
 	return '"' + str(tmp).strip('"').strip("'") + '"'
 def quoteJson(value):
 	tmp = json.dumps(value)
-	if global_state.get(state_info, True): tmp = re.sub(r'"', r'\\"', tmp)
+	if global_state.get(state_info, True): tmp = re.sub(r'"', r'\\"', tmp.strip('"'))
 	return '"' + tmp + '"'
 
 def extend_colors(attr, col_arr, dodefault = False):
@@ -1142,8 +1164,10 @@ shader_dict = {
 	"toon_glasses_lod0": "glass", ## cf_m_namida_00, c_m_gomu
 	### Small
 	"toon_eyew_lod0": "color", ## t__Main ++ Color, shadowcolor \\ mayuge, sirome
+	"main_eyew": "color",      ##[KKS] for mayuge, eyeline
 	"toon_eye_lod0": "eye",    ## t__Main, t__expression, t__overtex1, t__overtex2 ++ **
 	"toon_nose_lod0": "color", ## t__Main ++ Color
+	"main_nose": "color",      ##[KKS] for nose
 	"main_emblem": "color",    ## t__Main ++ shadowcolor
 	"main_color": "color",     ## Color
 	#"main_emblem_clothes": "color", ## t__Alpha, t__Main, Color, alphamaskuv ## Unused
@@ -1177,6 +1201,8 @@ shader_dict = {
 	 ## Color, overcolor1, overcolor2, overcolor3
 	"IBL_Shader_alpha": "color",
 	"IBL_Shader_cutoff": "color",
+	##
+	"hair_main_sun_front": "hair", ##[hair] + Color2onoff, Color3onoff: flag to disable [Root] / [Tip]
 	}
 
 

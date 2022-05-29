@@ -1,9 +1,16 @@
 
-# Known Issues
+# Known Issues / Questions
 
 
 
 
+
+## Previously asked questions
+
+
+Recollection of certain answers given as part of an issue.
+
+ - [I need help with [Mode 04], can you help me out?](https://github.com/CazzoPMX/KKPMX/issues/4#issuecomment-1122760640)
 
 ## Troubleshooting
 
@@ -11,12 +18,20 @@
 This section contains a list of known issues, and how to solve them.
 
 
-### KK issues
+### KK and PMXEditor issues
 
 
 | General issues with Export | |
 | --- | --- |
 | Button does not appear | If you installed the DLL with KKManager, sometimes(?) the DLL is placed into [<Folder of KK>\BepInEx]. In that case, move the DLL into [<Folder of KK>\BepInEx\plugins] and restart KK. |
+| Incomplete exports | Custom Head Shapes (especially if they do not use all 'common elements', e.g. no or renamed eyebrows, tongue etc.) can cause the Exporter to fail in the Editor. It seems to work when exporting from CharaStudio though. |
+| Incomplete exports (Studio) | However, with Exporter enabled(TBD), the Studio is sometimes(?) unable to work with AdvancedBones, so they will stay unmodified. |
+| Nothing is exported | Could be because something goes wrong and the mod is unable to create the folder at [C:\koikatsu_model]. Please create the folder yourself and try again. |
+
+| Working with PMXEditor | |
+| --- | --- |
+| All morphs are empty after I applied Bounce!  | Originally being Japanese, PMXEditor only works with English decimal separators; if your Regional Language settings happen to use '1.5' instead of '1,5',<br/>the only solution is to change the Decimalseparator used by your system (usually found in the Formats tab under 'Region and Language')<br/>This will not change how the separator is typed by the numpad, though. |
+| CSV imports / export don't work! | Same problem as above |
 
 ### MMD issues
 
@@ -26,10 +41,12 @@ This section contains a list of known issues, and how to solve them.
 | [Display-Frames] contain '-1' entries | Export-Issue fixed by (1-Cleanup) |
 | VertexMorphs link to non-existing indices | Export-Issue fixed by (1-Cleanup) |
 | Joints missing one or both Rigids |     |
+| The model tries to show (in total) more than 250 morphs. |     |
+| Project refuses to load but Model is fine. | Try opening the project by dragging the *.pmm onto the MikuMikuDance.exe directly. |
 
 | MMD crashes randomly | |
 | --- | --- |
-| Sometimes caused by Physics caclulation. |     |
+| Sometimes caused by Physics calculation. | Set MMD to 'No calculation' or 'Trace' before loading so that the error can be identified |
 
 | Other | |
 | --- | --- |
@@ -42,8 +59,6 @@ This section contains a list of known issues, and how to solve them.
 | Some Textures have wrong colors | If texture color is supplied through the texture itself, the default color usually stays, which is then applied as 'expected' through Color & DetailMask. Delete the masks which cause the problems and run Mode:3 (Property Parser) again (or repair the filepaths manually yourself) AND/OR set the colors correctly in KK. |
 | Eyes have wrong offset | Depending on weird internals, the 'idle' position of the eyes without blinking or following can be such that the Render-State exports that with -0.1 resp. 0.1. Just replace them in 'cf_m_hitomi_00#-<<number>>'.Offset with 0.0 (or at least equal on both 'hitomi' entries, if they are bigger.). Same for scale |
 | Skirt being weird after rigging mode | Sometimes the numbers are exported weirdly, and cause one specific line of skirt rigging to be inverted. Just put a '-' infront of the [Rot.X] value of all 5 and it should be fine again. |
-| Incomplete exports | Custom Head Shapes (especially if they do not use all 'common elements', e.g. no or renamed eyebrows, tongue etc.) can cause the Exporter to fail in the Editor. It seems to work when exporting from CharaStudio though. |
-| Incomplete exports (Studio) | However, with Exporter enabled, the Studio is unable to work with AdvancedBones, so they will stay unmodified. |
 
 ## Open Issues
 
@@ -52,3 +67,4 @@ Things that are worked on or haven't been fixed yet.
 
  - Extra textures for face are ignored. -- overtex2 stays optional
  - Knee looks broken when kneeling too much.
+ - AlphaMask on Clothes.

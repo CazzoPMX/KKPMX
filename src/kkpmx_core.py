@@ -424,6 +424,7 @@ Output: PMX File '[filename]_cleaned.pmx'
 		#[0, find_bone(pmx, "上半身", False)],             #	12.23842 - Slightly above navel
 		[0, find_bone(pmx, "cf_j_hips", False)],        #	12.18513 - Navel
 		#[0, find_bone(pmx, "下半身", False)],             #	12.13186 - Slightly above navel
+		[0, find_bone(pmx, "cf_J_MouthCavity", False)],   #	- Track Mouth
 		### navel -- 11.96193 < cf_d_sk_top (12.0253)
 	]
 	
@@ -462,9 +463,6 @@ Output: PMX File '[filename]_cleaned.pmx'
 	
 	addIfNot("体(上)", ["cf_s_spine03", "cf_s_spine02", "cf_s_spine01"]) ## spine to Upper Body
 	addIfNot("体(下)", ["腰", "cf_j_waist02"]) ## waist to Lower Body
-	
-	
-	
 	
 	### Clean up invalid dispframes
 	for disp in pmx.frames:
@@ -537,7 +535,7 @@ There are some additional steps that cannot be done by a script; They will be me
 			## run parseMatComments
 			#>> <<< ask for base path
 			_opt = {"apply": True if all_yes else None}
-			path = PropParser.parseMatComments(pmx, input_filename_pmx, write_model, opt=_opt)
+			path = PropParser.parseMatComments(pmx, input_filename_pmx, write_model, moreinfo=moreinfo, opt=_opt)
 			if write_model and path != input_filename_pmx: util.copy_file(path, input_filename_pmx)
 	#-------------#
 	section("Rigging")
@@ -592,7 +590,7 @@ There are some additional steps that cannot be done by a script; They will be me
 	print("Warning: Depending on the model size and the chosen bounding box, this can take some time.")
 	if util.ask_yes_no("Execute bleed-through scanner(y) or doing it later(n)"):
 		print(f"The following changes will be stored in a separate PMX file, so you can terminate at any point by pressing CTRL+C.")
-		runOverhang(pmx, input_filename_pmx)
+		runOverhang(pmx, input_filename_pmx, moreinfo=moreinfo)
 	## Tell to perform [bounce] (with steps)
 	print("Do not forget to apply the additional fixes as explained above.")
 	print("""
@@ -1577,7 +1575,7 @@ def get_name_or_default(pmxArr, idx, default="", noField=False):
 		except: pass
 	return default
 
-def ask_for_material(pmx, extra = None, default = "cf_m_body", returnIdx = False):
+def ask_for_material(pmx, extra = None, default = "cf_m_body", returnIdx = False, rec=None):
 	"""
 	extra :: Append some text to the Input message
 	default :: Name of texture to use if no input is provided.
@@ -1590,6 +1588,12 @@ def ask_for_material(pmx, extra = None, default = "cf_m_body", returnIdx = False
 	msg = "Enter material idx or name"
 	if _valid_def: msg += f" (empty for '{default}')"
 	if extra != None: msg += ' ' + extra
+	if rec is not None:
+		m = find_morph(pmx, rec, False)
+		if m != -1:
+			arr = [x.mat_idx for x in pmx.morphs[m].items]
+			arr = [str((i, pmx.materials[i].name_jp)) for i in arr if i != -1]
+			msg += f"\nIf needed, '{rec}' contains these materials:\n> " + "\n> ".join(arr)
 	def __valid_check(txt):
 		if txt == None or len(txt) == 0: return _valid_def
 		try: pmx.materials[txt]
@@ -1719,18 +1723,20 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 	return None
 
 if __name__ == '__main__':
-	print("Cazoo - 2022-05-21 - v.1.7.0")
-	if DEBUG or DEVDEBUG:
-		main()
-		core.pause_and_quit("Done with everything! Goodbye!")
-	else:
-		try:
+	print("Cazoo - 2022-05-29 - v.1.8.0")
+	try:
+		if DEBUG or DEVDEBUG:
 			main()
 			core.pause_and_quit("Done with everything! Goodbye!")
-		except (KeyboardInterrupt, SystemExit):
-			# this is normal and expected, do nothing and die normally
-			pass
-		except Exception as ee:
-			# if an unexpected error occurs, catch it and print it and call pause_and_quit so the window stays open for a bit
-			print(ee)
-			core.pause_and_quit("ERROR: something truly strange and unexpected has occurred, sorry!")
+		else:
+			try:
+				main()
+				core.pause_and_quit("Done with everything! Goodbye!")
+			except (KeyboardInterrupt, SystemExit):
+				print()# this is normal and expected, do nothing and die normally
+				pass
+			#except Exception as ee:
+			#	# if an unexpected error occurs, catch it and print it and call pause_and_quit so the window stays open for a bit
+			#	print(ee)
+			#	core.pause_and_quit("ERROR: something truly strange and unexpected has occurred, sorry!")
+	except (KeyboardInterrupt): print()
