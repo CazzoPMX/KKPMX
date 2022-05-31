@@ -12,10 +12,17 @@ except ImportError as eee:
 DisplayWithAspectRatio   = imglib.DisplayWithAspectRatio
 DisplayWithAspectRatio_f = imglib.DisplayWithAspectRatio_f
 
-args = sys.argv[1:]
+args = sys.argv[1:]; args2 = args
+
+try: json.loads(args[1])
+except: args2 = [ args[0],	args[1] + args[2] + args[3], 	args[4], args[5], args[6], args[7]	]
+def TryLoadJson(idx, _tuple, _array):
+	try: return imglib.TryLoadJson(args[idx], _tuple, _array)
+	except: return imglib.TryLoadJson(args2[idx], _tuple, _array)
+
 #-------------
 pathMain  = args[0]
-data      = json.loads(args[1])
+data      = TryLoadJson(1, True)
 verbose   = data["showinfo"]
 hlPower   = data["highlight"]
 def saveEval(tag, _def): return _def if (re.match(r"\([\d,\.\- ]+\)", tag) is None) else eval(tag)
@@ -32,7 +39,7 @@ if hlOne:
 	if len(pathHL) == 0: hlOne = False
 	#else: hlOne = os.path.exists(pathHL)
 	if hlOne:
-		hldata   = json.loads(args[3])
+		hldata   = TryLoadJson(3, False, True)
 		hlColor  = hldata["color"]
 		try: hlAlpha    = int(hldata["alpha"])
 		except: hlAlpha = 1
@@ -41,7 +48,7 @@ if hlTwo:
 	if len(pathHL2) == 0: hlTwo = False
 	#else: hlTwo = os.path.exists(pathHL2)
 	if hlTwo:
-		hldata   = json.loads(args[5])
+		hldata   = TryLoadJson(5, False, True)
 		hlColor2 = hldata["color"]
 		try: hlAlpha2    = int(hldata["alpha"])
 		except: hlAlpha2 = 1

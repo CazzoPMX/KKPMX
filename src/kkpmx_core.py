@@ -1733,8 +1733,8 @@ if __name__ == '__main__':
 				main()
 				core.pause_and_quit("Done with everything! Goodbye!")
 			except (KeyboardInterrupt, SystemExit):
-				print()# this is normal and expected, do nothing and die normally
-				pass
+				# this is normal and expected, do nothing and die normally
+				print()
 			#except Exception as ee:
 			#	# if an unexpected error occurs, catch it and print it and call pause_and_quit so the window stays open for a bit
 			#	print(ee)

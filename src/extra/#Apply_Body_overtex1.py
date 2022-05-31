@@ -22,7 +22,7 @@ imgMain   = sys.argv[1] ## MainTex.png
 imgMask   = sys.argv[2] ## overtex.png
 #-------------
 data = {};
-if (argLen > 3): data = json.loads(sys.argv[3])
+if (argLen > 3): data = imglib.TryLoadJson(sys.argv[3], False, True)
 nip          = data.get("nip", 1.0)        ## Scales texture a bit
 nipsize_def  = 0.6677417
 nipsize      = data.get("size", nipsize_def) ## Increases Factor for nip (== Areola Size)

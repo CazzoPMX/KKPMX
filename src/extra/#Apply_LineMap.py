@@ -21,7 +21,7 @@ imgMain = sys.argv[1] ## MainTex.png
 imgMask = sys.argv[2] ## LineMask.png
 #-------------
 data    = {}
-if (len(sys.argv) > 3): data = json.loads(sys.argv[3])
+if (len(sys.argv) > 3): data = imglib.TryLoadJson(sys.argv[3])
 verbose  = data.get("showinfo", False)
 mainSize = data.get("mainSize", True)
 mode     = data.get("mode", "overlay")

@@ -12,7 +12,6 @@ except ImportError as eee:
 
 
 todos="""
--- Make results better (currently just the full image is toned down)
 -- Find a use for the third layer (probably as *.fx in combination with NormalMask)
 """
 
@@ -26,7 +25,7 @@ imgMain = sys.argv[1] ## MainTex.png
 imgMask = sys.argv[2] ## DetailMask.png
 #-------------
 data = {}
-if (argLen > 3): data = json.loads(sys.argv[3])
+if (argLen > 3): data = imglib.TryLoadJson(sys.argv[3])
 mode            = data.get("mode", "overlay")
 details         = data.get("moreinfo", False)
 mainSize        = data.get("is_main", False)  # Is true when working with a MainTex, otherwise it generated from a ColorMask

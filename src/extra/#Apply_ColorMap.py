@@ -43,7 +43,7 @@ if argLen > 5:
 	colB_3Pink   = json.loads(sys.argv[5]) ##[isHair: Hair Tip]
 #-------------
 data = {}
-if (argLen > 6): data = json.loads(sys.argv[6])
+if (argLen > 6): data = imglib.TryLoadJson(sys.argv[6])
 mode            = data.get("mode", None)
 altname         = data.get("altName", "")
 isHair          = data.get("hair", False)

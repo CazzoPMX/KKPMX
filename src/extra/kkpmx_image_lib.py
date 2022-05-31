@@ -15,6 +15,31 @@ def makeOptions(_opt):
 		"scale": _opt.get("scale", 1),
 	}
 
+def TryLoadJson(val,_tuple=False, _array=False):
+	import re,json
+	try:
+		return json.loads(val)
+	except:
+		val2 = re.sub(r'\\"', r'"', val)
+		try:
+			return json.loads(val2)
+		except:
+			print(f"> Receive broken JSON::" + val)
+			val = re.sub(r"(\w+): ([^,{}]+)", r'"\1": "\2"', val)
+			## Replace empty things
+			val = re.sub(r'"""', r'<##>', val)
+			val = re.sub(r'"[]"', r'<#@#>', val)
+			print(f">  Fix broken JSON1:" + val)
+			
+			if _tuple: val = re.sub(r'"(\(-?\d+(?:\.\d+)?)"(, *-?\d+(?:\.\d+)?\))', r'"\1\2"', val)
+			if _array: val = re.sub(r'"(\[-?\d+(?:\.\d+)?)"((?:, *-?\d+(?:\.\d+)?)+\])', r'\1\2', val)
+			val = re.sub(r': "(-?\d+(\.\d+)?|[Tt]rue||[Ff]alse)"', r': \1', val)
+			## Revert empty things
+			val = re.sub(r'<##>', r'""', val)
+			val = re.sub(r'<#@#>', r'[]', val)
+			print(f">  Fix broken JSON2:" + val)
+			return json.loads(val)
+
 ######
 ## Display
 ######

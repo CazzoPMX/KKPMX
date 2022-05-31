@@ -331,7 +331,7 @@ def __parse_json_file(pmx, data: dict, root: str):
 			msgs['no_action'].append(msgsPre + mat.name_jp)
 			parseDict["item"](pmx, mat, attr)#; exit()
 		## Clear texture cache after every run when reuse is disabled
-		#if not global_state[OPT_CACHE]: global_state[ARGSTR] = {}
+		if not global_state[OPT_CACHE]: global_state[ARGSTR] = {}
 	#######
 	### Display summary for quick glance that something did not work
 	arr = []
@@ -964,7 +964,10 @@ def handle_acc_alpha(pmx, attr): ## Has @todo_add \\ @open: All the props affect
 
 def call_img_scripts(args, target, isJson = []):
 	if global_state.get(OPT_IMG, False): return
-	if DEBUG: os.system(' '.join(args))
+	if DEBUG:
+		try:
+			os.system(' '.join(args))
+		except Exception as eee: print(eee)
 	else:
 		from unittest.mock import patch
 		import runpy, sys
@@ -1036,7 +1039,7 @@ def quoteColor(value):
 	return '"' + str(tmp).strip('"').strip("'") + '"'
 def quoteJson(value):
 	tmp = json.dumps(value)
-	if global_state.get(state_info, True): tmp = re.sub(r'"', r'\\"', tmp.strip('"'))
+	if global_state.get(state_info, True): tmp = re.sub(r'"', r'\\"', tmp)
 	return '"' + tmp + '"'
 
 def extend_colors(attr, col_arr, dodefault = False):
