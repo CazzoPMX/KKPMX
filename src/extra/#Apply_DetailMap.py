@@ -32,7 +32,7 @@ mainSize        = data.get("is_main", False)  # Is true when working with a Main
 is_body         = data.get("is_body", False)  # Flag when doing Body
 is_face         = data.get("is_face", False)  # Flag when doing Face
 alpha           = data.get("alpha", 64 / 256) #<< add to docu (!)
-fix_body        = data.get("fix_body", True)  # Remove a heart-shaped crest on the chest area
+fix_body        = data.get("fix_body", True) # Remove a heart-shaped crest on the chest area
 #-------------
 _mask = None;imgAlpha = ""
 if (argLen > 4): imgAlpha = sys.argv[4]
@@ -119,7 +119,7 @@ if has_alpha and not has_detail: ## << Only apply Alpha-Mask
 
 
 #-----------------------
-def extractChannel_X(src, chIdx):
+def extractChannel(src, chIdx):
 	### Extract channels and invert them
 	maskCh = 255 - src[:,:,chIdx]
 	###[Col] ... or not. Tried at end again, and yes, no invert
@@ -137,14 +137,6 @@ def extractChannel_X(src, chIdx):
 	maskChX = cv2.merge([maskCh, maskCh, maskCh])
 	
 	return maskChX
-#-----
-
-if False:## Is Inverted -- If any, only "is_body" anyway....
-	fix_value = 0
-	extractChannel = extractChannel_col
-else: ## is not -- everything is adjusted to this
-	extractChannel = extractChannel_X
-	fix_value = 255
 #-----
 cv2.destroyAllWindows()
 maskB = extractChannel(mask, 0) ## NormalMask.Y (?)
@@ -166,6 +158,7 @@ DisplayWithAspectRatio(opt, 'maskB', maskB, 512)
 if is_body and fix_body:
 	#### Remove an ANNOYING alpha:0 heart shaped crest on chest
 	## Coords: x:256,y:220 --> 128,124 
+	fix_value = 0
 	imgFix = np.ones((128,128,3), dtype='uint8') * fix_value
 	maskB[220:220+128, 256:256+128, :] = imgFix
 	DisplayWithAspectRatio(opt, 'Fixed maskB', maskB, 512)

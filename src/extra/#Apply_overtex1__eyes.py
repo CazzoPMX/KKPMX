@@ -16,7 +16,7 @@ args = sys.argv[1:]; args2 = args
 
 try: json.loads(args[1])
 except: args2 = [ args[0],	args[1] + args[2] + args[3], 	args[4], args[5], args[6], args[7]	]
-def TryLoadJson(idx, _tuple, _array):
+def TryLoadJson(idx, _tuple=False, _array=False):
 	try: return imglib.TryLoadJson(args[idx], _tuple, _array)
 	except: return imglib.TryLoadJson(args2[idx], _tuple, _array)
 
