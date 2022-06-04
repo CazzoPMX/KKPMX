@@ -204,7 +204,6 @@ def is_number(text, allow_bool=False):
 def is_csv_number(text): return all([is_number(x.strip()) for x in text.split(',')])
 
 #def gen_is_in_range(arr): return lambda 
-
 def get_list_of_numbers(num, lim, msg):
 	if not is_number(num):
 		print("num is not a number"); return []
@@ -219,6 +218,16 @@ def get_list_of_numbers(num, lim, msg):
 		print(f"Invalid values (allowed are {lim[0]} - {lim[1]})")
 	while(len(arr) < num): arr.push(0)
 	return arr[:num]
+
+def cut_to_range(_arrLen, _min, _max):
+	ret = [0, _arrLen-1]
+	## Check min: Too small = 0 \\ too big = len
+	#== 0 <= _min <= len
+	ret[0] = min(max(ret[0], _min), ret[1])
+	## Check max: Too big = max \\ Below min: use min
+	#== _min <= _max <= len
+	ret[1] = min(max(ret[0], _max), ret[1])
+	return tuple(ret)
 
 
 import unicodedata

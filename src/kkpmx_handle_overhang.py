@@ -90,8 +90,7 @@ def run(pmx, input_filename_pmx, moreinfo=False):
 	else:
 		options = { "affectPMX": True }
 		__results = __run(pmx, new_bounds=bounds, moreinfo=moreinfo, options=options)
-	if __results:
-		return __endCut(pmx, input_filename_pmx, log_line=__results)
+	if __results: return __endCut(pmx, input_filename_pmx, __results)
 run.__doc__ = infotext
 ############
 def run_kk_defaults(pmx, input_filename_pmx):
@@ -109,7 +108,7 @@ def run_kk_defaults(pmx, input_filename_pmx):
 	print(">-- Use the same name/idx as for [body] (or leave empty) to skip the 2nd run (e.g. you plan to hide the inside anyway)")
 	inside = kklib.ask_for_material(pmx, extra="-- Bra / Inside", default = body.name_jp, returnIdx = False, rec="ct_bra")
 	has_inside = inside.name_jp != body.name_jp
-	if verbose and not has_inside: print(f"[*] Skipping Inside Material")
+	if not has_inside: print(f"[*] Skipping Inside Material")
 	print("")
 	
 	### Ask for Outer Index (or none)
@@ -124,7 +123,7 @@ def run_kk_defaults(pmx, input_filename_pmx):
 	
 	msg = ["== Cut Mode [0] ==", f"using Base:{body.name_jp}" + (f", Inner:{inside.name_jp}" if has_inside else "") + f", Outside:{outside.name_jp}"]
 	log_line += msg
-	if verbose: print("[*] " + msg[1])
+	print("[*] " + msg[1])
 	print("")
 	
 	## Do shoulders as well? --> Needs Shirt (also fix Emblem bc bleed through)
@@ -252,7 +251,8 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, opt
 	from kkpmx_utils import find_mat#, find_morph, find_bone
 	#from kkpmx_core import __append_itemmorph_add, __append_itemmorph_mul, __append_itemmorph_sub
 	import kkpmx_core as kklib
-	opt["moreinfo"] = verbose or moreinfo or DEBUG
+	opt["moreinfo"] = opt["moreinfo"] or moreinfo or DEBUG
+	
 	affectPMX = options.get("affectPMX", True)
 	##################################
 	import numpy as np
@@ -270,6 +270,7 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, opt
 	mat_idx   = find_mat(pmx, base_mat.name_jp)
 	old_faces = from_material_get_faces(pmx, mat_idx, False, moreinfo=False) ## Never print the line here
 	old_verts = from_faces_get_vertices(pmx, old_faces, False, moreinfo=moreinfo)
+	if DEBUG: print(f"[D]>: Faces: {len(old_faces)} \\ Vertex: {len(old_verts)}")
 	old_idx_verts  = from_faces_get_vertices(pmx, old_faces, True, moreinfo=False)
 	bounds = get_bounding_box(pmx, base_mat, old_verts, moreinfo=moreinfo)
 	# Array in case I change it to allow multiple
@@ -340,7 +341,7 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, opt
 	#verts = new_verts#list(filter(filterer, new_verts))
 
 	print(f">Searching for peaking vertices of '{new_mat.name_jp}' going through the surface of '{base_mat.name_jp}'")
-	if verbose: print(f">> Stats: moreinfo={moreinfo}, affectPMX={affectPMX}")
+	if DEBUG: print(f">> Stats: moreinfo={moreinfo}, affectPMX={affectPMX}")
 
 	print("\n----[Stage] Split the materials at the Z-Axis ")
 	##** Split at Z Axis (X+ vs X-) :: Fixes X-Axis so that only one axis[Z] can be anything
@@ -350,7 +351,8 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, opt
 	old_neg = list(filter(filterNeg, old_verts))
 	new_pos = list(filter(filterPos, new_verts))
 	new_neg = list(filter(filterNeg, new_verts))
-
+	if DEBUG: print(f"[D]> Old: {len(old_pos)}+{len(old_neg)}, New: {len(new_pos)}+{len(new_neg)}")
+	
 	##** Rebuild mapping back
 	def remapper(list_of_verts):
 		"""
@@ -380,6 +382,16 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, opt
 	that_dist = [[],[]]
 	that_dist[0], that_list_pos = nearest_neighbors_scipy_KTree(old_pos, new_pos)
 	that_dist[1], that_list_neg = nearest_neighbors_scipy_KTree(old_neg, new_neg)
+	
+	flag__usePos = len(that_list_pos) > 0
+	flag__useNeg = len(that_list_neg) > 0
+	## Stop if both are empty
+	if not(flag__usePos or flag__useNeg):
+		print(">> Unable to find any overlap between these two materials. Terminated scan.")
+		return [f"-- No overlap found between '{new_mat.name_jp}' and '{base_mat.name_jp}'"]
+	elif not(flag__usePos and flag__useNeg): ## Report if either is empty
+		__tmp = "Left/Positive" if flag__useNeg else "Right/Negative"
+		print(f">> {__tmp} side contains no overlap, so it will be ignored")
 	
 	###############
 
@@ -413,7 +425,7 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, opt
 	print("----[Stage] Find the faces that cut through the surface, or are connected to such.")
 	if DEBUG: print("--[Note]: These Numbers represent the vector distance between the choosen vertices.")
 	print("--[Note]: The status-% is only a full number if the hits are evenly dividable.")
-	print("--[Note]: Read as: (Progress)% Left/Right Side: TimeStamp -- found: X vertices of 'tested'.")
+	print("--[Note]: Read as: (Progress)% Left/Right Side: TimeStamp -- found: X vertices in 'tested'.")
 	__results = []
 	that_verts_list = []
 	parts = 10
@@ -432,7 +444,7 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, opt
 			cnt += 1
 			if cnt % breaker == 0:
 				dt = str(datetime.datetime.now())
-				print("---- {:7.2%} ({} side): ---- {} -- found: {} of {}".format((cnt / __breaker) / parts, signText, dt, len(that_verts_list) - left_size, cnt))
+				print("---- {:7.2%} ({} side): ---- {} -- found: {} in {}".format((cnt / __breaker) / parts, signText, dt, len(that_verts_list) - left_size, cnt))
 			if not filterer(pmx.verts[idx_verts[idx]]): continue
 			#print(vert['dist'])
 			if vert['dist'] > 0.15: continue
@@ -446,7 +458,9 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, opt
 				#print(">>>> VertIdx={}".format(idx_verts[idx]))
 				that_verts_list.append(idx_verts[idx])
 
-	parsingMap(0); left_size = len(that_verts_list); parsingMap(1)
+	if flag__usePos: parsingMap(0);
+	left_size = len(that_verts_list);
+	if flag__useNeg: parsingMap(1);
 	
 	__results.append("-- Found {} of {} vertices peaking through the surface ".format(len(that_verts_list), len(new_verts)))
 
@@ -504,7 +518,7 @@ def move_verts_to_new_material(pmx, old_mat, that_verts_list, __results, options
 	elif type(ask) != bool: value = int(ask)
 	
 	if verbose: print(f"Ask: {old_ask}, IsNumber: {util.is_number(old_ask)}, Value: {value}")
-	if verbose: print(f">> Provided is Valid: {valid_value(old_ask)} -> ask: {ask}")
+	if DEBUG: print(f">> Provided is Valid: {valid_value(old_ask)} -> ask: {ask}")
 	
 	is_new_mat = True
 	if ask == True:
@@ -697,8 +711,13 @@ def add_to_morph_show(pmx, name, add_idx, __results):
 ## https://stackoverflow.com/questions/48312205/find-the-k-nearest-neighbours-of-a-point-in-3d-space-with-python-numpy?noredirect=1&lq=1
 ## https://stackoverflow.com/questions/54114728/finding-nearest-neighbor-for-python-numpy-ndarray-in-3d-space
 def nearest_neighbors_scipy_KTree(__data, __sample, doPrint=False):
+	"""
+	Both arguments are 'List[PmxVertex]'
+	Return: Tuple[np.ndarray[np.float64], np.ndarray[numpy.int64]]
+	"""
 	import numpy as np
 	from scipy.spatial import KDTree
+	if len(__data) == 0 or len(__sample) == 0: return ([], [])
 	
 	limit = 5
 	data = list(map(lambda v: v.pos, __data))     ## Base

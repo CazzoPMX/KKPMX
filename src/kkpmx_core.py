@@ -1694,6 +1694,8 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 	:param input_filename_pmx [str] : The working directory + PMX File name
 	:param suffix             [str] : Infix to insert for unique-fication
 	:param log_line           [str] : (default: None) If not None, will be appended to [editlog.log]
+	
+	Returns: The file path of the new file, or None if not changed.
 	"""
 	# write out
 	has_model = pmx is not None
@@ -1722,8 +1724,9 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 		return output_filename_pmx
 	return None
 
+
 if __name__ == '__main__':
-	print("Cazoo - 2022-05-31 - v.1.8.2")
+	print("Cazoo - 2022-06-04 - v.1.8.3")
 	try:
 		if DEBUG or DEVDEBUG:
 			main()

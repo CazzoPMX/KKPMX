@@ -20,6 +20,7 @@ DEBUG = util.DEBUG or False
 global_state = { }                   # Store argument info
 OPT__HAIR = "hair"
 OPT__NODUPES = "no_dupes"
+def verbose(): return global_state.get("moreinfo", False)
 
 def run(pmx, input_filename_pmx, moreinfo=False, write_model=True, _opt={}):
 	"""
@@ -695,6 +696,7 @@ def rig_other_stuff(pmx):
 def rig_rough_detangle(pmx):
 	print("--- Stage 'Detangle some chains'...")
 	print("> aka perform [Mode: 3] for some obvious cases")
+	# Remark: The first three of any given ca_slot are already [green] through generation
 	## Get all rigging starting with ca_slot
 	def collect(item):
 		idx = item[0]
@@ -702,35 +704,40 @@ def rig_rough_detangle(pmx):
 		if not rig.name_jp.startswith("ca_slot"): return False
 		if idx == len(pmx.rigidbodies) - 1: return False
 		
+		def matcher(_m, _n = None, isLess = False):
+			if _n is None: _n = _m
+			m = re.search(_m, rig.name_jp)
+			if m:
+				n = re.search(_n, pmx.rigidbodies[idx+1].name_jp)
+				if not n: return False
+				if isLess: return int(m[1]) < int(n[1])
+				return int(m[1]) > int(n[1])
+			return None
+		
 		## "ca_slot05_0:joint1-3" > "ca_slot05_0:joint2-1"
-		m = re.search(r"joint(\d+)-(\d+)", rig.name_jp)
-		if m:
-			n = re.search(r"joint(\d+)-\d+", pmx.rigidbodies[idx+1].name_jp)
-			if not n: return False
-			return int(m[1]) < int(n[1])
+		ret = matcher(r"joint(\d+)-\d+", None, True);
+		if ret is not None: return ret
+		
+		## Always if with "_end$"
+		mm = re.search(r"\d+_end$", rig.name_jp)
+		if mm: return True
 		
 		## "left+1,2,3..." > "right+1,2,3"
 		lst = "left|right|front|back|head|body"
-		m = re.search(r"(?:"+lst+r")[LR]?(\d)$", rig.name_jp)
-		if m:
-			n = re.search(r"(?:"+lst+r")[LR]?(\d)$", pmx.rigidbodies[idx+1].name_jp)
-			if not n: return False
-			print(f"{m[0]} vs. {n[0]}")
-			return int(m[1]) > int(n[1])
+		ret = matcher(r"(?:"+lst+r")[LR]?(\d)$");
+		if ret is not None: return ret
 		
-		## "R1,R2,R3" > "L1,L2,L3"
-		m = re.search(r"[LR][TB]?(\d)$", rig.name_jp)
-		if m:
-			n = re.search(r"[LR][TB]?(\d)$", pmx.rigidbodies[idx+1].name_jp)
-			if not n: return False
-			return int(m[1]) > int(n[1])
+		## "R1,R2,R3" > "L1,L2,L3", with optional "Top / Bottom"
+		ret = matcher(r"[LR][TB]?(\d+)$");
+		if ret is not None: return ret
 		
 		## "2_L" > "1_R"
-		m = re.search(r"(\d+)_[LR]$", rig.name_jp)
-		if m:
-			n = re.search(r"(\d+)_[LR]$", pmx.rigidbodies[idx+1].name_jp)
-			if not n: return False
-			return int(m[1]) > int(n[1])
+		ret = matcher(r"(\d+)_[LR]$");
+		if ret is not None: return ret
+		
+		## Check if next is "_core$" << from "mat_sshair2"
+		mm = re.search(r"_core$", pmx.rigidbodies[idx+1].name_jp)
+		if mm: return True
 		
 		## Nothing matched
 		return False
@@ -848,7 +855,7 @@ def split_merged_materials(pmx, input_filename_pmx): #-- Find and split merged M
 	Important: This must be run before [nuthouse01 cleanup], as that removes all unused bones (== all whose children have no vertices connected)
 	"""
 	print("--- Stage 'split_merged_materials'...")
-	verbose = global_state.get("moreinfo", False)
+	_verbose = global_state.get("moreinfo", False)
 	#### Get parental map of all bones
 	par_map = get_parent_map(pmx, range(len(pmx.bones)))
 	slots = [i for (i,b) in enumerate(pmx.bones) if b.name_jp.startswith("ca_slot")]
@@ -869,10 +876,10 @@ def split_merged_materials(pmx, input_filename_pmx): #-- Find and split merged M
 		if name in name_map: name_map[name].append(slot)
 		else: name_map[name] = [slot]
 	
-	if verbose: print("----")
+	if _verbose: print("----")
 	
 	###-- Test with more than two cases of one such thing
-	if verbose:
+	if _verbose:
 		print("-- Found these Material clusters -- () = total length of name chain")
 		[print(f"{name[:50]:50}({len(name):3}): {name_map[name]}") for name in name_map]
 
@@ -929,7 +936,7 @@ def split_merged_materials(pmx, input_filename_pmx): #-- Find and split merged M
 		tabu[name].append(_next)
 		#fixed.append([key for key in slot_map.keys() if idx in slot_map[key]][0])
 	##--
-	if verbose: print("----")
+	if _verbose: print("----")
 	######
 	#### Fix all other materials (those which are weighted to the same bones)
 	seen = set()
@@ -996,46 +1003,53 @@ def split_rigid_chain(pmx, arr=None):
 		rigid.rot = [0, 0, 0]
 		# Set Rigid.Size to [0.1 -0.1]
 		rigid.size = [0.1, -0.1, 0]
-		# Set RigidBody1.Type to Green
-		rigid2.phys_mode = 0
 		
 		# Store Bone.LinkTo as BoneLink
 		tail = bone.tail
 		if bone.tail_usebonelink == False:
-			print(f"{bone.tail} was already without link")
+			if verbose(): print(f"{idx} is already an end (Bone {rigid.bone_idx} had no link)")
 			return
+		
+		# Set RigidBody1.Type to Green
+		old = rigid2.phys_mode
+		rigid2.phys_mode = 0
 		# Set Bone.LinkTo as [Offset: 0 0 -0.1]
 		bone.tail_usebonelink = False
 		bone.tail = [0, 0, -0.1]
 		
 		# Find Rigid linked to BoneLink (RigidBody2)
 		rigid3 = None
-		for r in pmx.rigidbodies[idx-30:idx]:
+		span = util.cut_to_range(len(pmx.rigidbodies), idx-30, idx+30)
+		for r in pmx.rigidbodies[span[0]:span[1]]:
 			if r.bone_idx == tail:
 				rigid3 = r
 				break
 		if rigid3 == None:
-			print(f"Could not find any rigid linked to bone {tail}, cannot verify joints")
+			print(f"{idx}: Could not find any rigid linked to bone {tail}, cannot verify joints")
+			if DEBUG: print(f"> rbd={idx} with bone={rigid.bone_idx} linked to {tail}")
 			return
+		idx3 = find_rigid(pmx, rigid3.name_jp)
+		## If we found one, set that instead, and revert the previous.
+		rigid2.phys_mode = old
+		rigid3.phys_mode = 0
 		
 		# Find Joint that connects Rigid & RigidBody1
-		prefix = re.sub("(ca_slot\d+).*", "$1", rigid.name_jp)
+		prefix = re.search("(ca_slot\d+)", rigid.name_jp)[1]
 		if prefix in slot_map: joints = slot_map[prefix]
 		else:
 			joints = [x for x in pmx.joints if x.name_jp.startswith(prefix)]
 			slot_map[prefix] = joints
 		joint = None
 		for j in joints:
-			if j.rb1_idx == idx and j.rb2_idx == idx+1:
+			if j.rb1_idx == idx and j.rb2_idx == idx3:
 				joint = j
 				break
 		if joint == None:
-			print(f"Could not find any joint linking the two bodies. Skipping Joints")
+			if verbose(): print(f"{idx}: Not connected by joint with {idx3}, so no need to change any.")
 			return
 		
 		# Set A to RigidBody2
-		idx2 = find_rigid(pmx, rigid3.name_jp)
-		joint.rb1_idx = idx2
+		joint.rb1_idx = idx3
 	
 	#[int(x.strip()) for x in arr.split(',')]
 	if type(arr) is str:     [__split_rigid_chain(int(x.strip())) for x in arr.split(',')]

@@ -149,7 +149,7 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 		mat_dict[mat] = kk_skip.match(name)
 	
 	arr = [ ]
-	arr.append(Comment("Generated with KKPMX v.1.7.0"))
+	arr.append(Comment("Generated with KKPMX v.1.8.3"))
 	arr.append(Comment("Colors are RGBA mapped to [0...1]; Alpha is added if missing"))
 	##	write Name
 	arr.append((out_name, "....")) ## in [json_ren]
