@@ -30,7 +30,7 @@ This section contains a list of known issues, and how to solve them.
 
 | Working with PMXEditor | |
 | --- | --- |
-| All morphs are empty after I applied Bounce!  | Originally being Japanese, PMXEditor only works with English decimal separators; if your Regional Language settings happen to use '1.5' instead of '1,5',<br/>the only solution is to change the Decimalseparator used by your system (usually found in the Formats tab under 'Region and Language')<br/>This will not change how the separator is typed by the numpad, though. |
+| All morphs are empty after I applied Bounce!  | Originally being Japanese, PMXEditor only works with English decimal separators; if your Regional Language settings happen to use '1,5' instead of '1.5',<br/>the only solution is to change the Decimalseparator used by your system (usually found in the Formats tab under 'Region and Language')<br/>This will not change how the separator is typed by the numpad, though. |
 | CSV imports / export don't work! | Same problem as above |
 
 ### MMD issues
