@@ -5,6 +5,9 @@
 
 
 
+If you know of any tips or tricks on what would be useful in the script (like, specific physics, or 'I use X often, could you add it as pattern'), just tell me and I see what I can do.
+
+
 ## Previously asked questions
 
 
@@ -59,6 +62,8 @@ This section contains a list of known issues, and how to solve them.
 | Some Textures have wrong colors | If texture color is supplied through the texture itself, the default color usually stays, which is then applied as 'expected' through Color & DetailMask. Delete the masks which cause the problems and run Mode:3 (Property Parser) again (or repair the filepaths manually yourself) AND/OR set the colors correctly in KK. |
 | Eyes have wrong offset | Depending on weird internals, the 'idle' position of the eyes without blinking or following can be such that the Render-State exports that with -0.1 resp. 0.1. Just replace them in 'cf_m_hitomi_00#-<<number>>'.Offset with 0.0 (or at least equal on both 'hitomi' entries, if they are bigger.). Same for scale |
 | Skirt being weird after rigging mode | Sometimes the numbers are exported weirdly, and cause one specific line of skirt rigging to be inverted. Just put a '-' infront of the [Rot.X] value of all 5 and it should be fine again. |
+| [KKS] See-through face | It seems KKS uses transparency where the blush stickers are applied. For the time being, please use any layer-based image editor to manually merge the face texture on top of overtex2. |
+| Hair texture mismatch | I 'think' it happens when a model uses any accessory multiple times (which hair often does) but not all use the same texture masks (== Color,Detail,Alpha).<br/>This can be solved by adding an explicit Texture override as described in 'Customize.md' and then running the PropertyParser again. |
 
 ## Open Issues
 
@@ -67,4 +72,6 @@ Things that are worked on or haven't been fixed yet.
 
  - Extra textures for face are ignored. -- overtex2 stays optional
  - Knee looks broken when kneeling too much.
+    - It seems that in most motions, this can be fixed by 'not moving the leg too far', as it is simply an IK-Limit issue. Haven't figured out the correct numbers yet though
  - AlphaMask on Clothes.
+ - Find a better solution for when a model uses an asset multiple times but they are not sharing the same texture. (without generating a million files)

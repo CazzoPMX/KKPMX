@@ -50,40 +50,41 @@ Some less obvious things when working with Console applications
 ## FAQ
 
 [Issues.md](Issues.md)
+[Customize.md](Customize.md)
 
 ## Recommended chain of actions
 
- 1. [until < 1.6.1] PMXExport has a weird quirk that messes up the Editor when started the first time after starting Koikatsu.<br/>
+ 0. [until < 1.6.1] PMXExport has a weird quirk that messes up the Editor when started the first time after starting Koikatsu.<br/>
 Return to the Title Screen and re-enter the Editor to fix it.
- 2. Load the desired character and costume.
- 3. Change Pose, Expression, Clothing State, or Accessory Visibility as necessary.
+ 0. Load the desired character and costume.
+ 0. Change Pose, Expression, Clothing State, or Accessory Visibility as necessary.
     - Recommended: Pose='T-Pose' (one to the left), Blinking=Off, Looking at='Top' (Slider on 0%), Mouth=Neutral.<br/>
 Alternatively (instead of 'Looking at') you can focus on yourself py pressing '5' and 'R' and then slightly moving the model straight upwards<br/>
 Any Eye and/or Mouth Position works, as long as the Eyes stay open and the mouth closed (aka Smiling, Sleepy, ...)
     - While the Tool-Chain is indifferent of whatever pose is used, it might produce funny results in MMD.
     - The same goes for facial expressions, which are further morphed by MMD-Sequences.
- 4. Click on [Export] in the upper left corner -- It may take a short moment depending on size.
+ 0. Click on [Export] in the upper left corner -- It may take a short moment depending on size.
     - Will add a folder containing the *.pmx + main textures into `C:\koikatsu_model`, named with a random 4-digit number.
        - See the next subsection for how to use the model immediately.
- 5. ~~Click on the 'Info' Tab (Heart) and then on [Generate JSON Data].~~
+ 0. ~~Click on the 'Info' Tab (Heart) and then on [Generate JSON Data].~~
     >[1.5.1+] Merged this into PmxExport, so it is now created with [Export]
-    - Will add a file called `{CharName}.json` into the same folder.
- 6. ~~[Old] This step is (almost) entirely optional, but improves the quality of the textures a lot and requires the [MaterialEditor].<br/>
+    - Will also add a file called `{CharName}.json` into the same folder, containing technical details for the *.exe.
+ 0. ~~[Old] This step is (almost) entirely optional, but improves the quality of the textures a lot and requires the [MaterialEditor].<br/>
 The goal is to go through every asset (Body, Clothes, Accessory) and export the auxiliary textures (in most cases, ColorMask & DetailMask)<br/>
 See the [Help]-Section of [Scan Plugin File] for more details of which are currently supported.~~
     >[1.3.1+] Older versions of [PmxExport] only export the Main-Textures.  
     >I added an updated version which also exports all 'extra' textures into a folder called 'extra'
     >So there is no need to manually export the textures anymore.
     - See the [Help]-Section of [Scan Plugin File] for how to use a different name / path.
-    - Note: Some assets lack a Main-Texture (like the default Fox-Tail). In such cases, the ColorMask (if any) will instead be used as base texture.
- 7. Start KKPMX_core.exe, select option [(5) All-in-one converter] and follow the steps.
+    - Note: Some assets lack a Main-Texture (like the default Fox-Tail). In such cases, the ColorMask (if any) will be used instead as base texture.
+ 0. Start KKPMX_core.exe, select option [(5) All-in-one converter] and follow the steps.
     - [Notes for Step(2)]: Recommended choices are: 2 (No) \ 2 (only top-level) \ 1 (Yes)
 
 The model should be (almost) ready, but some last adjustments have to be done manually.
 
- 8. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
- 9. Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
- 10. When making heavy use of morph sliders, adjust the order of the materials to prevent them getting invisible (inner sorted above outer).
+ 0. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
+ 0. Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
+ 0. When making heavy use of morph sliders, adjust the order of the materials to prevent them getting invisible (inner sorted above outer).
 
 ## tl;dr: Minimum steps to make the exported model work immediately
 
