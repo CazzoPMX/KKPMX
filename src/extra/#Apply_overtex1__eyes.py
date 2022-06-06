@@ -41,7 +41,7 @@ if hlOne:
 	if hlOne:
 		hldata   = TryLoadJson(3, False, True)
 		hlColor  = hldata["color"]
-		try: hlAlpha    = int(hldata["alpha"])
+		try: hlAlpha    = float(hldata["alpha"])
 		except: hlAlpha = 1
 if hlTwo:
 	pathHL2  = args[4]
@@ -50,13 +50,13 @@ if hlTwo:
 	if hlTwo:
 		hldata   = TryLoadJson(5, False, True)
 		hlColor2 = hldata["color"]
-		try: hlAlpha2    = int(hldata["alpha"])
+		try: hlAlpha2    = float(hldata["alpha"])
 		except: hlAlpha2 = 1
 #-------------
-#if hlOne == False and hlTwo == False: exit()
-#-------------
 if verbose: print(("\n=== Running overtex1(Eyes) Script with arguments:" + "\n-- %s" * len(args)) % tuple(args))
-
+#-------------
+if hlOne == False and hlTwo == False: print("> No valid Highlights defined -- Only apply scale & offset")
+#-------------
 image     = cv2.imread(pathMain, cv2.IMREAD_UNCHANGED)
 if hlOne:
 	highlight = imglib.resize(cv2.imread(pathHL, cv2.IMREAD_UNCHANGED), image)
