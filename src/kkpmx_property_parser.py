@@ -162,8 +162,6 @@ global_state = { }
 state_info = "showinfo"
 verbose = lambda: global_state.get(state_info, True)
 
-
-
 ################
 
 def parseMatComments(pmx, input_file_name: str, write_model = True, moreinfo = False, opt = {}):
@@ -294,21 +292,24 @@ def __parse_json_file(pmx, data: dict, root: str):
 			#<< Because multi-part assets share a common texture, the unique-fyed name must be reduced for them.
 			name = re.sub(r"\*\d+","",name) #@todo_note "<< smt about '* not allowed in filename' >>"
 			## Transform supported textures into actual paths
-			if t__Alpha in attr and t__Alpha not in attr[TEXTURES]: del attr[t__Alpha] ## Remove if not supported
-			for tex in attr[TEXTURES]:
-				if tex not in texSuffix:
-					print("[NotImpl] Could not find texture key '{}'".format(tex))
+			
+			for tex in set(texDict.values()):
+				if tex not in attr[TEXTURES]:
+					if tex in attr: del attr[tex] ## Remove if not supported
 					continue
-				## If a texture is added with an explicit path already, don't add the default
-				if texDict[tex] in attr:
+				_tex = attr.get(tex, None)
+				##-- Keep custom paths
+				if _tex is not None:
 					print(f"Found {tex} override in attr with value {attr.get(texDict[tex], '<>')}");
-					continue ## @todo_add "All TEXTURES can be hardcoded with explicit paths (+ << %PMX% >>) and override defaults"
+					continue ## @todo_note "All TEXTURES can be hardcoded with explicit paths (+ << %PMX% >>) and override defaults"
 				
 				## @todo_note: "if 'MainTex' is used but does not exist in BASE, use the one registered in the PmxMaterial, if any"
+				##-- This generates default paths for the supported textures
 				attr[texDict[tex]] = os.path.join(base, name + texSuffix[tex])
 				if tex == t__Main and base_mat.tex_idx > -1:
 					if not os.path.exists(attr[texDict[tex]]):
 						attr[texDict[tex]] = os.path.join(root, pmx.textures[base_mat.tex_idx])
+				
 		# Field: Add hair flag and keep track of duplicates
 		if (attr[GROUP] == "hair"):
 			attr[OPT_HAIR] = options[OPT_HAIR] and (attr[INHERIT] not in hair_tabu)

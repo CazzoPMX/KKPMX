@@ -5,7 +5,7 @@
 
 
 
-All values must be either a dict {}, an array [], a number, or enclosed in "". The columns are 'Name': 'DataType' -- 'Description'
+All values must be either a dict {}, an array [], a number, or enclosed in "". The columns are `'Name': 'DataType' -- 'Description'`
 
 
 ## General terms
@@ -15,11 +15,11 @@ All values must be either a dict {}, an array [], a number, or enclosed in "". T
  - `Parent slot (Body / Clothes)`: string -- '\#' \+ internal instance id of in-game object.
  - `Parent slot (Accessories)`: string -- '\@' \+ 'ca_slot' \+ Zero-based slot index.
  - `Asset`: Game object -- Refers to a fully defined game object (e.g. a piece of clothing, an accessory, etc.).
-   - `Render`: Physical mesh -- When opening the MaterialEditor, one of the entries labeled 'Renderer'.
-   - `Material`: Shader engine -- When opening the MaterialEditor, one of the entries labeled 'Material'.
-     - `Shader`: Internal processor -- When opening the MaterialEditor, the dropdown labeled 'Shader'. Determines available textures & parameters.
-     - `Texture`: Shader input -- When opening the MaterialEditor, one of the rows containing the 'Export' and 'Import' buttons.
-     - `Parameter`: Shader attribute -- When opening the MaterialEditor, one of the configurable values below the textures.
+   - `Render`: Physical mesh -- When opening the MaterialEditor (ME), one of the entries labeled 'Renderer'.
+   - `Material`: Shader engine -- When opening the ME, one of the entries labeled 'Material'.
+     - `Shader`: Internal processor -- When opening the ME, the dropdown labeled 'Shader'. Determines available textures & parameters.
+     - `Texture`: Shader input -- When opening the ME, one of the rows containing the 'Export' and 'Import' buttons.
+     - `Parameter`: Shader attribute -- When opening the ME, one of the configurable values below the textures.
      - `Property`: Meta attribute -- Refers to non-parameter attributes added by the mod for processing.
  - `%PMX%`: Placeholder -- Represents the directory path of the \*.pmx file. Will be replaced by the script when reading the file.
 
@@ -43,8 +43,8 @@ One Material entry consists of...
    - `textures`: array -- The textures actually used by the script.
    - `shader`: string -- The processing mode to use inside the script. Look them up in the script for an overview.
    - `<List of Parameters>`: &lt;varies> -- The Parameters as found in the corresponding entry within the raw \*.json file.
-   - `<Texture overrides>`: string -- The entries of `[textures]` can be explicitly defined to provide custom texture paths, as opposed to auto-generated ones. Use two `[\\]` instead of one..
-       - Example: `"AlphaMask": "%PMX%\\MyAlphaTexture.png",` will use that AlphaMask instead of the generated default, which would be `"AlphaMask": "%PMX%\\extra\\"+NAME_M+"_AlphaMask.png",`.
+   - `<Texture overrides>`: string -- The entries of `[textures]` can be explicitly defined to provide custom texture paths, as opposed to auto-generated ones. Use two slashes `[\\]` instead of one..
+       - Example: `"AlphaMask": "%PMX%\\MyAlphaTexture.png",` will use that AlphaMask instead of the generated default, which would be `"AlphaMask": "%PMX%\\extra\\" + NAME_M + "_AlphaMask.png",`.
    - `template`: bool -- 'true' tells the parser that this is not a fully defined material (aka is used for 'inherit').
  - `<NAME_R>`: dict -- The associated Render. Can appear multiple times if the Asset contains as such (called \*1, \*2, ... then).
    - `meta`: dict -- Groups meta properties.

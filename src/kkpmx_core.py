@@ -1726,7 +1726,7 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 
 
 if __name__ == '__main__':
-	print("Cazoo - 2022-06-04 - v.1.8.3")
+	print("Cazoo - 2022-06-06 - v.1.8.4")
 	try:
 		if DEBUG or DEVDEBUG:
 			main()

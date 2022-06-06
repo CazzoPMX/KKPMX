@@ -149,9 +149,11 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 		mat_dict[mat] = kk_skip.match(name)
 	
 	arr = [ ]
-	arr.append(Comment("Generated with KKPMX v.1.8.3"))
+	arr.append(Comment("Generated with KKPMX v.1.8.4"))
 	arr.append(Comment("Colors are RGBA mapped to [0...1]; Alpha is added if missing"))
+	arr.append(Comment("Explaination can be found in 'Customize.md' on github"))
 	##	write Name
+	arrPos = len(arr)
 	arr.append((out_name, "....")) ## in [json_ren]
 	##	Write options: Maybe ask for each option ?
 	opt = {
@@ -159,7 +161,6 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 		##to use script(cleanup script): default True ## << makes materials unique
 		##to use script(add morphs):     default True
 		out_optBase: "%PMX%/extra",##ask for base path ++ rename all "exported textures" in said folder
-		"expl_Hair": "## Set this to false to skip generating Hair Textures",
 		out_optHair: True,
 	}
 	arr.append((out_opt, opt))
@@ -170,7 +171,7 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 		return False
 	if raw_meta in json_ren:
 		if raw_name in json_ren[raw_meta]:
-			arr[2] = (out_name, json_ren[raw_meta][raw_name])
+			arr[arrPos] = (out_name, json_ren[raw_meta][raw_name])
 		if raw_eye in json_ren[raw_meta]:
 			global_dict[raw_eye] = json_ren[raw_meta][raw_eye] in ["True", "true"]
 	render_tree = generate_render_tree(pmx, tree, json_ren[raw_ren])
