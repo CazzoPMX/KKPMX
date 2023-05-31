@@ -15,7 +15,7 @@ I made it to allow others exploring the possibility of using KK as alternative t
  - You already use the Export Mod yourself but realize that a good model takes a lot of effort to just get the basics done.
 ![Comparisons](img/Comparisons.png)
 
-Comparing 'Bare minimum', '5min of manual edits', 'running the script'
+Comparing 'Bare minimum', '5min of manual edits', 'running the script' (old pic from 2022-06, needs update)
 
 
 ## Legal (from nuthouse01)
