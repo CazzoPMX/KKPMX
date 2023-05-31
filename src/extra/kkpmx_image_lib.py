@@ -1,5 +1,5 @@
 # Cazoo - 2021-05-20
-# This code is free to use and re-distribute, but I cannot be held responsible for damages that it may or may not cause.
+# This code is free to use, but I cannot be held responsible for damages that it may or may not cause.
 #####################
 import sys
 import cv2
@@ -396,17 +396,20 @@ def getColorImg(opt, _mask, _colArr, tag="", useKKOrder=False): ## from [overtex
 	"""
 	if opt["show"]: print(_colArr)
 	_colArr = normalize_color(_colArr)
-	if len(_mask.shape) > 2: _mask = _mask[:,:,-1]
+	if len(_mask.shape) > 2:
+		hasAlpha = True
+		_mask = _mask[:,:,-1]
 	
 	## Create an image of this color
-	colImg0 = np.ones(_mask.shape, dtype="uint8") * _colArr[0]
-	colImg1 = np.ones(_mask.shape, dtype="uint8") * _colArr[1]
-	colImg2 = np.ones(_mask.shape, dtype="uint8") * _colArr[2]
-	colImg3 = _mask
+	colImg0 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[0]
+	colImg1 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[1]
+	colImg2 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[2]
+	if hasAlpha: colImg3 = _mask
 	
 	## Apparently the KK-RGB is as BGR, so do that
-	if useKKOrder: colImg = cv2.merge([colImg2, colImg1, colImg0, colImg3])
-	else:          colImg = cv2.merge([colImg0, colImg1, colImg2, colImg3])
+	if useKKOrder: colImg = cv2.merge([colImg2, colImg1, colImg0])
+	else:          colImg = cv2.merge([colImg0, colImg1, colImg2])
+	if hasAlpha:   colImg = cv2.merge([colImg,  colImg3])
 	DisplayWithAspectRatio(opt, 'ColorImg'+tag,     colImg.astype("uint8"), 256)
 
 	return colImg
@@ -491,6 +494,58 @@ def smooth_black(_img):
 	# Bitwise-AND mask and original image
 	return cv2.bitwise_and(_img, _img, mask=mask)
 
+def roll_by_offset(_img, tex_offset, _opt): ## Expects [tex_offset] to be (X, Y)
+	_show = _opt.get("show", False)
+	_more= _opt.get("details", False)
+	from math import ceil
+	## modulo by 1, as it rolls over on every full number.
+	(orgImg_W, orgImg_H) = (_img.shape[1], _img.shape[0])
+	(offset_X, offset_Y) = (tex_offset[0] % 1, tex_offset[1] % 1)
+	
+	if _more: print(f"Offset imgXY({orgImg_W}, {orgImg_H}) by XY({offset_X}, {offset_Y})")
+	
+	rolled = np.roll(_img, (int(orgImg_W * offset_X), int(orgImg_H * offset_Y)), axis=(0, 1))
+	DisplayWithAspectRatio(_opt, 'Rolled', rolled, 512)
+	if _show: k = cv2.waitKey(0) & 0xFF
+	return rolled
+	
+
+def repeat_rescale(_img, tex_scale, _opt): ## Expects [tex_scale] to be (X, Y)
+	_show = _opt.get("show", False)
+	_more = _opt.get("details", False)
+	#x_opt = { "show": True }
+	# if bigger than 1: (do steps each for both)
+	#	Round up to next int
+	#	Repeat image times that in DIR
+	#	Cut off DIR * (scale % 1) from the image
+	#	Resize back to original.
+	from math import ceil
+	axY = 0
+	axX = 1
+	orgShape = _img.shape[:2]
+	(scale_X, scale_Y) = (tex_scale[0], tex_scale[1])
+	if _show: print((tex_scale[0], tex_scale[1]))
+	elif _more: print(f"Rescale imgXY({orgShape[axY]}, {orgShape[axY]}) by XY({scale_X}, {scale_Y})")
+	
+	## Tile to ceil(scale)
+	# -- Repeat n-times Vert \\ n-times Hor \\ 1
+	tiled = np.tile(_img, (ceil(scale_Y), ceil(scale_X), 1))
+	DisplayWithAspectRatio(_opt, 'S1-Tiled', tiled, 512)
+	
+	if _show: print(f"X: {orgShape[axX]} * {scale_X} = {orgShape[axX] * scale_X}")
+	if _show: print(f"Y: {orgShape[axY]} * {scale_Y} = {orgShape[axY] * scale_Y}")
+	
+	## Truncate shape to int(orgShape * scale)
+	trunc = [ int(orgShape[axY] * scale_Y), int(orgShape[axX] * scale_X) ]
+	trunced = tiled[:trunc[axY], :trunc[axX], :]
+	if _show: print(f"{tiled.shape} uses [Y={trunc[axY]}, X={trunc[axX]}] to get {trunced.shape}")
+	DisplayWithAspectRatio(_opt, 'S2-Trunced', trunced, 512)
+	
+	## Resize to orgShape
+	mask = cv2.resize(trunced, orgShape, interpolation=cv2.INTER_NEAREST)
+	DisplayWithAspectRatio(_opt, 'S3-Rescaled', mask, 512)
+	if _show: k = cv2.waitKey(0) & 0xFF
+	return mask
 
 ######
 ## Small
@@ -507,7 +562,9 @@ def convert_to_BW(image, full=True): ## OpenCV default is BGR
 def apply_alpha_BW(opt, img): return converterScaled(opt, img, convert_to_BW(img, False), True)
 
 def invert(image):
-	return cv2.merge([255 - image[:,:,0], 255 - image[:,:,1], 255 - image[:,:,2], image[:,:,3]])
+	if (image.shape[2] > 3):
+		return cv2.merge([255 - image[:,:,0], 255 - image[:,:,1], 255 - image[:,:,2], image[:,:,3]])
+	return cv2.merge([255 - image[:,:,0], 255 - image[:,:,1], 255 - image[:,:,2]])
 
 def invert_f(image):
 	return cv2.merge([1 - image[:,:,0], 1 - image[:,:,1], 1 - image[:,:,2], image[:,:,3]])
@@ -534,16 +591,16 @@ def invertCol(arr):
 	return [255 - _arr[0], 255 - _arr[1], 255 - _arr[2], _arr[3]]
 
 def BGR_to_HSV(arr): return cv2.cvtColor(np.uint8([[arr[:3]]]), cv2.COLOR_BGR2HSV)[0,0,:]
+def HSV_to_BGR(arr): return cv2.cvtColor(np.uint8([[arr[:3]]]), cv2.COLOR_HSV2BGR)[0,0,:]
+
 def arrCol(arr, _col): return cv2.cvtColor(np.uint8([[arr[:3]]]), _col)[0,0,:]
-def RGB_to_real_HSV(arr):
-	cv2_HSV = arrCol(arr, cv2.COLOR_RGB2HSV)
+def HSV_to_real_HSV(cv2_HSV):
 	cv2_HSV[0] *= 2        ## 180 -> 360
 	cv2_HSV[1] *= (1/2.55) ## 255 -> 100
 	cv2_HSV[2] *= (1/2.55) ## 255 -> 100
 	return cv2_HSV
 
 def printFlags(): print([i for i in dir(cv2) if i.startswith('COLOR_')])
-
 
 def my_RGB_to_HSV(_col):
 	(R, G, B) = _col[:3]
@@ -573,12 +630,60 @@ def my_RGB_to_HSV(_col):
 	val *= 100;
 	return [hue, sat, val]
 
-
 def change_hue(_img, _val): ## Using default order of BGR
 	img_hsv = cv2.cvtColor(_img, cv2.COLOR_BGR2HSV)
 	img_hsv[:,:,0] = _val
 	img_BBB = cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR)
 	return np.dstack([img_BBB[:,:,:3], _img[:,:,3]])
+
+def __color_is_BW(_arr):
+	print(f"[IN]:== {_arr} --> {HSV_to_real_HSV(BGR_to_HSV(_arr))}")
+	result = __color_is_BW(_arr)
+	print(f"[OUT]:= {result}")
+	return result
+
+def color_is_BW(_arr): ## https://www.rapidtables.com/convert/color/hsv-to-rgb.html
+	_arr = _arr[:3]
+	if _arr == [255,255,255]: return BWTypes.WHITE
+	if _arr == [  0,  0,  0]: return BWTypes.BLACK
+	_hsv = HSV_to_real_HSV(BGR_to_HSV(_arr))
+	# If Saturation(1) is 0 (== center), Hue is irrelevant
+	if _hsv[1] == 0: return BWTypes.WHITE if _hsv[2] >= 50 else BWTypes.BLACK
+	# Else if we are close to it, Bright colors should get covered as well
+	if _hsv[1] <= 20 and _hsv[2] >= 95: return BWTypes.WHITE
+	#if _hsv[1] <= 15 and _hsv[2] >= 80: return BWTypes.WHITE ## bc of Chappy Hair
+	# Dark colors are always dark regardless of Saturation
+	if _hsv[2] <= 10: return BWTypes.BLACK
+	if _hsv[2] <= 40: return BWTypes.DARK   ## Example: 90 81 70 >> 208 22 35 (dark Brown), but 59 is already ok
+	if _hsv[2] >= 95:
+		if _hsv[0] == 240 and _hsv[1] == 25:## Lazy...
+			return BWTypes.BRIGHT ## Example: 240 25 100 onto 84 32 85 (Pink<as Green> onto MintGreen)
+	# Last, try some number magic
+	_arrDen = [_arr[0] / 255, _arr[1] / 255, _arr[2] / 255]
+	if sum(_arrDen) > (3/255):
+		#if _arrDen[0] > 0.95 and _arrDen[1] > 0.95 and _arrDen[2] > 0.95: return true
+		if sum(_arrDen) >= 2.60: return BWTypes.WHITE
+		if sum(_arrDen) <= 0.40: return BWTypes.BLACK
+	return BWTypes.NORM
+#########
+# [237 x3] --> [0 0 92]: Semi-bright Green, but not full white
+
+###--- Lazy check because not bothering to fix anything right now
+def lazy_color_check(_colArr, tag, orgInv):
+	def arrCmp(x, y): return x[0] == y[0] and x[1] == y[1] and x[2] == y[2]
+	#if tag is not BWTypes.NORM: return orgInv
+	_arr = HSV_to_real_HSV(BGR_to_HSV(_colArr))
+	if arrCmp(_arr, [240, 25, 100]): return False ## Pink [255, 190, 190] << Onto MintGreen it becomes Orange otherwise
+	#if arrCmp(_arr, [84, 32, 55]): return orgInv ## DGreen[ 95, 142, 123] << should be inverted but but otherwise fine
+	return orgInv
+
+from enum import Enum
+class BWTypes(Enum):
+	BLACK = "Black"
+	DARK = "Dark"
+	NORM = "Normal"
+	BRIGHT = "Bright"
+	WHITE = "White"
 
 ######
 ## Tester

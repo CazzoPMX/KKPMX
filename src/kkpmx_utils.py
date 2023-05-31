@@ -1,5 +1,5 @@
 # Cazoo - 2021-05-13
-# This code is free to use and re-distribute, but I cannot be held responsible for damages that it may or may not cause.
+# This code is free to use, but I cannot be held responsible for damages that it may or may not cause.
 #####################
 ### sys
 import json
@@ -8,7 +8,7 @@ import re
 import copy
 from typing import List, Tuple
 
-### Library
+### Library -- Don't import any KKPMX files to avoid recursion
 import nuthouse01_core as core
 #import nuthouse01_pmx_parser as pmxlib
 #import nuthouse01_pmx_struct as pmxstruct
@@ -17,8 +17,16 @@ import morph_scale
 
 ## Global Debug Flag
 DEBUG=False
+FILEDEBUG=False
+## 
+global_state = { }
+HAS_UNITY = "UNITY"
+OPT_WORKDIR = "WORKINGDIR"
+ALL_YES = "all_yes"
 
-def main_starter(callback):
+VERSION_TAG = "2.0.0"
+
+def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
 	Quickstarter for running from console
 	if 'callback' is null, returns a tuple of (pmx, input_filename_pmx)
@@ -30,7 +38,7 @@ def main_starter(callback):
 	"""
 	import nuthouse01_pmx_parser as pmxlib
 	# prompt PMX name
-	core.MY_PRINT_FUNC("Please enter name of PMX input file:")
+	core.MY_PRINT_FUNC(message + ":")
 	input_filename_pmx = core.MY_FILEPROMPT_FUNC(".pmx").strip('"')
 	pmx = pmxlib.read_pmx(input_filename_pmx, moreinfo=True)
 	if callback == None: return (pmx, input_filename_pmx)
@@ -63,7 +71,7 @@ def load_json_file(path=None, extra=None):
 			if str(e).find("Invalid \escape") == -1:
 				print(e)
 				return None
-			print(e)
+			#print(e)
 			# Find the offending character index:
 			idx_to_replace = int(str(e).split(' ')[-1].replace(')', ''))
 			
@@ -136,12 +144,15 @@ def sort_dict(_dict, deep=True, _type=None):
 		tmp[i[0]] = i[1]
 	return tmp
 
-def ask_yes_no(message, default=None, extra=None):
+def ask_yes_no(message, default=None, extra=None, check=None):
 	"""
-	if default is None: return input == 'y'
+	return check if not None
+	print extra if not None
+	if default is None: return "{input} [y/n]?" == 'y'
 	if default is  'y': if input is empty: return True
 	any other default : if input is empty: return False
 	"""
+	if check is not None: return check
 	if extra is not None: print("\n> [" + extra + "]")
 	if default is None: return core.MY_GENERAL_INPUT_FUNC(lambda x: x in ['y','n'], message + " [y/n]?") == 'y'
 	txt = "[y]/n" if default == "y" else "y/[n]"
@@ -172,6 +183,23 @@ def ask_choices(message: str, choices: List[Tuple[str, object]], check=None):
 	idx = core.MY_SIMPLECHOICE_FUNC(range(len(choices)), [(str(i)+": "+str(choices[i][0])) for i in range(len(choices))])
 	return choices[idx][1]
 
+def ask_number(message: str, min_val=None, max_val=None, default=None):
+	if DEBUG and min_val is not None and max_val is not None:
+		if type(min_val) != type(max_val): raise Exception("Numbers are not same type!")
+	
+	def is_valid(x):
+		if not is_number(x): return False
+		return is_in_range(float(x), min_val, max_val)
+	if not is_number(default):
+		val = core.MY_GENERAL_INPUT_FUNC(is_valid, f"{message} [{min_val}..{max_val}]: ")
+	else:
+		msg = f"{message} [{min_val}..{max_val}](Default: {default}): "
+		val = core.MY_GENERAL_INPUT_FUNC(lambda x: x in [None,""] or is_valid(x), msg)
+		if val in [None, ""]: return default
+	return float(val)
+## if asking for list of numbers as "x,x" or "[x,x]" or "[[x,x],[x,x]]", check rigging
+
+
 def now(epoch=False): ## :: str(dt) == dt.isoformat(' ')
 	"""
 	Returns the current time as ISO Timestamp
@@ -186,8 +214,28 @@ def now(epoch=False): ## :: str(dt) == dt.isoformat(' ')
 def copy_file(src, dst): # https://stackoverflow.com/questions/123198
 	from shutil import copyfile, copy2
 	#copyfile(src, dst)
+	if src == dst: return
 	try:    copy2(src, dst)
-	except: print(f"[!!] Failed to copy '{src}' to '{dst}'")
+	except:
+		if not os.path.exists(src):
+			print(f"[!!] <FileNotFound> Failed to copy '{src}' to '{dst}'")
+		else: print(f"[!!] Failed to copy '{src}' to '{dst}'")
+
+###############
+### Globals ###
+###############
+
+def is_univrm(): return global_state.get(HAS_UNITY, False)
+def set_globals(workingdir):
+	global_state[OPT_WORKDIR] = ""
+	if not workingdir: return
+	path = os.path.split(workingdir)[0]
+	global_state[OPT_WORKDIR] = path
+	path = os.path.join(path, "UNITY_MARKER");
+	if (os.path.exists(path)): global_state[HAS_UNITY] = True
+def is_allYes(): return global_state.get(ALL_YES, False)
+
+# Maybe a printDEBUG(txt): if DEBUG: print(txt)
 
 ################
 ### Numerics ###
@@ -202,8 +250,28 @@ def is_number(text, allow_bool=False):
 
 # Checks if [text] has the form 000,000,000,000 (ignoring spaces)
 def is_csv_number(text): return all([is_number(x.strip()) for x in text.split(',')])
+def is_csv_array(text, allow_float=False):
+	arr = None
+	try:
+		arr = json.dumps(json.loads(text))
+	except Exception as e:
+		print(e)
+		return False
+	if allow_float: return re.search("^[\[\]\d,\. ]+$", arr)
+	return re.search("^[\[\]\d, ]+$", arr)
 
-#def gen_is_in_range(arr): return lambda 
+def is_valid_index(val, arr): return is_number(val) and val >= 0 and val < len(arr)
+def is_in_range(val, min_val=None, max_val=None): return limit_to_range(val, min_val, max_val) == val
+def limit_to_range(val, min_val=None, max_val=None):
+	if val is None: return None
+	#if not is_number(min_val): min_val=None
+	#if not is_number(max_val): max_val=None
+	if max_val is None:
+		if min_val is None: return val
+		return max(min_val, val)
+	elif min_val is None: return min(max_val, val)
+	return min(max(min_val, val), max_val)
+
 def get_list_of_numbers(num, lim, msg):
 	if not is_number(num):
 		print("num is not a number"); return []
@@ -219,7 +287,7 @@ def get_list_of_numbers(num, lim, msg):
 	while(len(arr) < num): arr.push(0)
 	return arr[:num]
 
-def cut_to_range(_arrLen, _min, _max):
+def get_span_within_range(_arrLen, _min, _max):
 	ret = [0, _arrLen-1]
 	## Check min: Too small = 0 \\ too big = len
 	#== 0 <= _min <= len
@@ -229,6 +297,23 @@ def cut_to_range(_arrLen, _min, _max):
 	ret[1] = min(max(ret[0], _max), ret[1])
 	return tuple(ret)
 
+def flatten(arr): return [a for ar in arr for a in ar]
+def normalize(arr, val): return [a % val for a in arr]
+def chunk(lst, n): return [lst[i:i + n] for i in range(0, len(lst), n)]
+def pairwise(lst): return zip(*[iter(lst)]*2)
+def arrSub(x, y): return (Vector3.FromList(x) - (Vector3.FromList(y))).ToList()
+def arrMul(x, y): return (Vector3.__rmul__(Vector3.FromList(x), scale=y)).ToList()
+def arrAvg(x, y, asInt=False):
+	vX = Vector3.FromList(x); vY = Vector3.FromList(y)
+	arr = (Vector3.__rmul__(vX + vY, 0.5)).ToList()
+	if asInt: arr = [int(arr[0]), int(arr[1]), int(arr[2])]
+	return arr
+def arrInvert(x): return (-(Vector3.FromList(x))).ToList()
+def arrCmp(x, y): return Vector3.FromList(x) == Vector3.FromList(y)
+
+#############
+### Texts ###
+#############
 
 import unicodedata
 import re
@@ -250,17 +335,31 @@ def slugify(value, allow_unicode=False):
     value = re.sub(r'[^\w\s-]', '', value.lower())
     return re.sub(r'[-\s]+', '-', value).strip('-_')
 
+def contains(src, what, ignore=True): return re.search(what, src, re.I if ignore else 0) is not None
 
+##-- Convert a list into a Regex-Pattern
+def matchList(arr, isFix=False):
+	if not arr or len(arr) == 0: raise Exception("Not allowed with empty")
+	if isFix: re.compile(r'\b(' + r'|'.join(arr) + r')\b', flags=re.I)
+	return re.compile(r'|'.join(arr), flags=re.I)
+
+##-- Translate a name if it needs to be translated, and return accordingly
+def translate_name(name_jp, name_en):
+	import _translation_tools as tlTools
+	if not(name_en is None or name_en == ""):   return name_en
+	if not tlTools.needs_translate(name_jp):    return name_jp
+	return tlTools.local_translate(name_jp)
 
 ######
 ## Finders
 ######
 
-find_info = """ [pmx] instance -- Entity Name -- Flag to print error if not found (default True) """
+find_info = """ [pmx] instance -- Entity Name -- Flag to print error if not found (default True) -- idx to start at (default 0)"""
 
 def __find_in_pmxsublist(name, arr, e, idx):
 	if not is_number(idx) or idx < 0: idx = 0
 	if idx >= len(arr): return -1
+	idx = int(idx)
 	if idx > 0: arr = arr[idx : -1]
 	result = morph_scale.get_idx_in_pmxsublist(name, arr, e)
 	return -1 if result in [-1, None] else result + idx
@@ -270,8 +369,131 @@ def find_mat  (pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.mat
 def find_disp (pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.frames,e,idx)
 def find_morph(pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.morphs,e,idx)
 def find_rigid(pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.rigidbodies,e,idx)
-find_bone.__doc__ = find_mat.__doc__ = find_disp.__doc__ = find_morph.__doc__ = find_rigid.__doc__ = find_info
+def find_joint(pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.joints,e,idx)
+find_bone.__doc__ = find_mat.__doc__ = find_disp.__doc__ = find_morph.__doc__ = find_rigid.__doc__ = find_joint.__doc__ = find_info
 ### Technically could also be just -- core.my_list_search(arr, lambda x: (x.name_jp == "name_jp" ... ))
+def find_all_in_sublist(name, arr, returnIdx=True):
+	result = []
+	idx = -1
+	for item in arr:
+		idx += 1
+		_name = f"{item.name_jp};{item.name_en}"
+		if not contains(_name, name): continue
+		result.append(idx if returnIdx else item)
+	return result
+
+######
+## Common (4:Bones)
+#####
+
+def find_or_return_bone(pmx, nameOrIdx, errFlag=True):
+	""" if [nameOrIdx] is a string, return result of [find_bone], otherwise return directly. """
+	if type(nameOrIdx) == type(""):
+		return find_bone(pmx, nameOrIdx, errFlag)
+	return nameOrIdx
+
+def rename_bone(pmx, org, newJP, newEN):
+	tmp = find_bone(pmx, org, False)
+	if tmp != -1:
+		if newJP is not None: pmx.bones[tmp].name_jp = newJP
+		if newEN is not None: pmx.bones[tmp].name_en = newEN
+	return tmp
+
+def bind_bone(pmx, _arr, last_link=False): ##-- TODO_Test(again): [rigging]
+	from copy import deepcopy
+	arr = deepcopy(_arr)
+	### Enclose in [] to make a bone optional
+	test = [type(x) == type([]) for x in arr]
+	if any(test):
+		_arr = []
+		for i,x in enumerate(arr):
+			if not test[i]: _arr.append(x)
+			elif find_or_return_bone(pmx, x[0], False) != -1: _arr.append(x[0])
+		arr = _arr
+	
+	while len(arr) > 1:
+		parent = find_or_return_bone(pmx, arr[0], False)
+		child = find_or_return_bone(pmx, arr[1], False)
+		#print(f"Linking {arr[0]:10}={parent:3} to {arr[1]:10}={child:3}")
+		if parent != -1 and child != -1:
+			pmx.bones[parent].tail_usebonelink = True
+			pmx.bones[parent].tail = child
+		arr.pop(0)
+	if last_link:
+		pmx.bones[arr[-1]].tail_usebonelink = False
+		pmx.bones[arr[-1]].tail = [0, 0, -0.1]
+
+#:in [core]
+#	Find all bones starting with NAME and return all their children as indices
+#	Return all indices of the children of NAME
+#:in [rigging]
+#	get_parent_map
+#	get_children_map
+
+######
+## Common (3:Materials)
+#####
+
+def updateComment(_comment:str, _token, _value=None, _replace=False):
+	"""
+	Wraps [_token] into f"[:{_token}:]", then calls updateCommentRaw
+	"""
+	return updateCommentRaw(_comment, f"[:{_token}:]", _value, _replace)
+def updateCommentRaw(_comment:str, _token, _value=None, _replace=False):
+	"""
+	_token will be regex escaped before search; _value is appended as-is (with ' ' inbetween)
+	Returns the comment without a previous occurence of [_token] and the new one at the start
+	:[_replace]: -- Update in-place if it exists instead of removing and prepending
+	"""
+	_str = f"{_token}" # ensures it is at least an empty string if None
+	if _value is not None: _str += ' ' + str(_value)
+	if not _comment: _comment = ""
+	if len(_comment.strip()) == 0: return _str
+	if _replace:
+		if readFromCommentRaw(_comment, _token, exists=True):
+			return re.sub(re.escape(_token) + r".*", f"{_str}", _comment)
+	else: _comment = re.sub(r"(\r?\n)?" + re.escape(_token) + r".*", "", _comment)
+	return "\r\n".join([_str, _comment])
+
+def readFromComment(_comment:str, _term:str, exists:bool = False):
+	return readFromCommentRaw(_comment, r'\[:' + f"{_term}" + r':\]', exists)
+def readFromCommentRaw(_comment:str, _term:str, exists:bool = False):
+	try:
+		if exists:
+			return re.search(_term, _comment) is not None
+		m = re.search(_term + r' (\w+)', _comment)
+		if not m: return None
+		return m[1]
+	except:
+		print(f"[!] Error while searching '{_term}' in '{_comment}'")
+		return None
+
+def find_all_mats_by_name(pmx, name, withName=False):
+	result = []
+	for mat in pmx.materials:
+		_name = f"{mat.name_jp};{mat.name_en}"
+		if not contains(_name, name): continue
+		_comment = mat.comment
+		if not _comment: _comment = ""
+		m = re.search("\[:AccId:\] (\d+)", _comment)
+		if not m: continue
+		if withName:
+			result.append([f"ca_slot{m[1]}", mat.name_jp])
+		else: result.append(f"ca_slot{m[1]}")
+	return result
+
+def find_bodyname(pmx): return "cf_m_body" if find_mat(pmx, "cm_m_body", False) == -1 else "cm_m_body"
+def find_bodypar(pmx): return "p_cf_body_00" if find_mat(pmx, "cm_m_body", False) == -1 else "p_cm_body_00"
+
+def is_bodyMat(mat):
+	return re.search("ct_head", mat.comment) or \
+		mat.name_jp in ["cf_m_face_00", "cf_m_body", "cm_m_body", "cf_m_mm"]
+
+def is_primmat(mat): return mat.name_jp.startswith("mf_m_primmaterial")
+
+######
+## Common (6:Display)
+#####
 
 def add_to_facials(pmx, name):
 	#pmx.frames.append(pmxstruct.PmxFrame(name_jp="moremorphs", name_en="moremorphs", is_special=False, items=newframelist))
@@ -281,9 +503,31 @@ def add_to_facials(pmx, name):
 		if type(target).__name__ == "str": target = find_morph(pmx, name, False)
 		if target != -1: pmx.frames[idx].items += [[1, target]]
 
+
+######
+## Common (1:Vertices)
+#####
+
+#-- Split List of Vertices into Left and Right --> morphs.generateWink (by find_morph)
+
+######
+## Constants
+######
+from enum import Enum
+class MatTypes(Enum):
+	ANY = "Any"       # Anything else
+	BODY = "Body"     # Designated if Skin or in ct_head
+	HAIR = "Hair"     # GameObjects with KKHairComponent
+	CLOTH = "Cloths"  # GameObjects with KKClothComponent
+	ACCS = "Acc"      # GameObjects with KKAccComponent
+	BODYACC = "BodyAcc" # Weighted directly to Body Armature (example: Navel-Piercing)
+
 ######
 ## Math Types for Rigging
 ######
+
+# https://en.wikipedia.org/wiki/Fast_inverse_square_root
+import math
 
 class Vector3():
 	def __init__(self, X: float, Y: float, Z: float):
@@ -318,7 +562,7 @@ class Vector3():
 	def Length(self):
 		import math
 		return math.sqrt(self.X*self.X + self.Y*self.Y + self.Z*self.Z)
-	def Normalize(self):
+	def Normalize(self): ## In-place, return self instead of void
 		num: float = self.Length()
 		#print("[>] Norm Len " +str(num))
 		if (num != 0.0):
@@ -341,6 +585,22 @@ class Vector3():
 		result.Y   = (x * z2) - (x2 * z)
 		result.Z   = (x2 * y2) - (x * y)
 		return result
+	@staticmethod
+	def Dot(left, right): ## return float of Vector3 x Vector3
+		return float(float(left.Y) * float(right.Y) + float(left.X) * float(right.X) + float(left.Z) * float(right.Z));
+	
+	@staticmethod
+	def TransformNormal(normal, transformation): ## Vector3 x Matrix --> Vector3
+		result: Vector3 = Vector3.Zero()
+		y: float = normal.Y;
+		x: float = normal.X;
+		z: float = normal.Z;
+		result.X = float(float(transformation.M11) * float(x) + float(transformation.M21) * float(y) + float(transformation.M31) * float(z));
+		result.Y = float(float(transformation.M12) * float(x) + float(transformation.M22) * float(y) + float(transformation.M32) * float(z));
+		result.Z = float(float(transformation.M13) * float(x) + float(transformation.M23) * float(y) + float(transformation.M33) * float(z));
+		return result;
+	
+	###------ Operators
 	
 	def __add__(value, scale:float):
 		#print(f"__add__ with {value} \\ {scale}")
@@ -400,6 +660,100 @@ class Vector3():
 		text += f"[{self.X:12.8}, {self.Y:12.8}, {self.Z:12.8}]"
 		return text
 
+class Quaternion():
+	def __init__(self, X: float, Y: float, Z: float, W: float):
+		self.X = X
+		self.Y = Y
+		self.Z = Z
+		self.W = W
+	def __init__(self, src: Vector3, W: float):
+		self.X = src.X
+		self.Y = src.Y
+		self.Z = src.Z
+		self.W = W
+	@staticmethod
+	def Zero(): return Quaternion(0.0, 0.0, 0.0, 0.0)
+	@staticmethod
+	def FromList(arr): return Quaternion(arr[0], arr[1], arr[2], arr[3])
+	def ToList(self): return [self.X, self.Y, self.Z, self.W]
+	
+	##------- SlimDX::SlimDX.Quaternion
+	@staticmethod
+	def Conjugate(quaternion): #--> new Quaternion
+		result: Quaternion = Quaternion.Zero;
+		result.X = 0.0 - quaternion.X;
+		result.Y = 0.0 - quaternion.Y;
+		result.Z = 0.0 - quaternion.Z;
+		result.W = quaternion.W;
+		return result;
+
+	@staticmethod
+	def RotationAxis(axis: Vector3, angle: float): ##--> new Quaternion
+		result: Quaternion = Quaternion.Zero;
+		axis = axis.Normalize(); #== Vector3.Normalize(ref axis, out axis);
+		num: float = angle * 0.5;
+		num2: double = num;
+		num3: float = float(math.sin(num2));
+		w: float = float(math.cos(num2));
+		result.X = float(float(axis.X) * float(num3));
+		result.Y = float(float(axis.Y) * float(num3));
+		result.Z = float(float(axis.Z) * float(num3));
+		result.W = w;
+		return result;
+
+	def __mul__(left, right): ## Modulate
+		result: Quaternion = Quaternion.Zero()
+		#(x,y,z,w) = left;
+		#(x2,y2,z2,w2) = right;
+		x = left.X;		y = left.Y;		z = left.Z;		w = left.W;
+		x2 = right.X;		y2 = right.Y;		z2 = right.Z;		w2 = right.W;
+		result.X = float(float(x2) * float(w) + float(w2) * float(x) + float(y2) * float(z) - float(z2) * float(y));
+		result.Y = float(float(y2) * float(w) + float(w2) * float(y) + float(z2) * float(x) - float(x2) * float(z));
+		result.Z = float(float(z2) * float(w) + float(w2) * float(z) + float(x2) * float(y) - float(y2) * float(x));
+		result.W = float(float(w2) * float(w) - (float(y2) * float(y) + float(x2) * float(x) + float(z2) * float(z)));
+		return result;
+	
+	##------- PEPlugin::PEPlugin.SDX.Q
+	@staticmethod
+	def Dir(dstFront, dstUp, srcFront, srcUp):
+		q: Quaternion = Quaternion.Zero
+		return q.FromDirection(dstFront, dstUp, srcFront, srcUp)
+
+	def FromDirection(self, dstFront: Vector3, dstUp: Vector3, srcFront: Vector3, srcUp: Vector3):
+		srcFront = srcFront.Normalize();
+		dstFront = dstFront.Normalize();
+		srcUp = srcUp.Normalize();
+		dstUp = dstUp.Normalize();
+		axis: Vector3 = Vector3.Cross(srcFront, dstFront);
+		num: float = Vector3.Dot(srcFront, dstFront);
+		num = ((-1.0) if (num < -1.0) else num);
+		num = (1.0 if (num > 1.0) else num);
+		angle: float = float(math.acos(num));
+		quaternion: Quaternion = Quaternion.RotationAxis(axis, angle);
+		quaternion2: Quaternion = Quaternion.Conjugate(quaternion);
+		quaternion3: Quaternion = Quaternion(srcUp, 0.0);
+		quaternion4: Quaternion = quaternion2 * quaternion3 * quaternion;
+		left: Vector3 = Vector3(quaternion4.X, quaternion4.Y, quaternion4.Z);
+		left = left.Normalize();
+		right: Vector3 = Vector3.Cross(dstUp, dstFront);
+		right = right.Normalize();
+		dstUp = Vector3.Cross(dstFront, right);
+		dstUp = dstUp.Normalize();
+		right2: Vector3 = Vector3.Cross(left, dstFront);
+		right2 = right2.Normalize();
+		left = Vector3.Cross(dstFront, right2);
+		left = left.Normalize();
+		num = Vector3.Dot(left, dstUp);
+		num = ((-1.0) if (num < -1.0) else num);
+		num = (1.0 if (num > 1.0) else num);
+		angle = float(math.acos(num));
+		## Org: this.m_q is Storage for SDX Wrapper
+		m_q = None
+		if (angle < 1E-05): m_q = quaternion
+		else: m_q = quaternion * Quaternion.RotationAxis(Vector3.Cross(left, dstUp), angle);
+		## Edit: return m_q instead of implicit cast
+		return m_q
+
 class Matrix():
 	def __init__(self):
 		self.M11 = 0.0
@@ -434,6 +788,43 @@ class Matrix():
 		text += f"[M31:{self.M31:14.10} M32:{self.M32:14.10} M33:{self.M33:14.10} M34:{self.M34:14.10}]\r\n"
 		text += f"[M41:{self.M41:14.10} M42:{self.M42:14.10} M43:{self.M43:14.10} M44:{self.M44:14.10}]"
 		return text + "]"
+	@staticmethod
+	def RotationQuaternion(rotation: Quaternion): # SimDX.Matrix
+		result: Matrix = Matrix();
+		x: float = rotation.X;
+		num: double = x;
+		num2: float = float(num * num);
+		y: float = rotation.Y;
+		num3: double = y;
+		num4: float = float(num3 * num3);
+		z: float = rotation.Z;
+		num5: double = z;
+		num6: float = float(num5 * num5);
+		num7: float = float(float(y) * float(x));
+		w: float = rotation.W;
+		num8: float = float(float(w) * float(z));
+		num9: float = float(float(z) * float(x));
+		num10: float = float(float(w) * float(y));
+		num11: float = float(float(z) * float(y));
+		num12: float = float(float(w) * float(x));
+		result.M11 = float(1.0 - (float(num6) + float(num4)) * 2.0);
+		result.M12 = float((float(num8) + float(num7)) * 2.0);
+		result.M13 = float((float(num9) - float(num10)) * 2.0);
+		result.M14 = 0.0;
+		result.M21 = float((float(num7) - float(num8)) * 2.0);
+		result.M22 = float(1.0 - (float(num6) + float(num2)) * 2.0);
+		result.M23 = float((float(num12) + float(num11)) * 2.0);
+		result.M24 = 0.0;
+		result.M31 = float((float(num10) + float(num9)) * 2.0);
+		result.M32 = float((float(num11) - float(num12)) * 2.0);
+		result.M33 = float(1.0 - (float(num4) + float(num2)) * 2.0);
+		result.M34 = 0.0;
+		result.M41 = 0.0;
+		result.M42 = 0.0;
+		result.M43 = 0.0;
+		result.M44 = 1.0;
+		return result;
+
 
 ######
 ## DataPrinter
@@ -489,11 +880,17 @@ def __typePrinter_test():
 	__typePrinter(range(0,2))       # ==               <int, int>		__getitem__, __hash__, __iter__, __len__
 	__typePrinter(map(func,b))      # ==          iter <**, T>			             __hash__, __iter__, __next__
 	__typePrinter(filter(func,b))   # ==          iter <**, T>			             __hash__, __iter__, __next__
-	__typePrinter(iter(a))          # == readonly iter <T>				             __hash__, __iter__, __next__, __length_hint__
-	__typePrinter(iter(d))          # == readonly iter <T>				             __hash__, __iter__, __next__, __length_hint__
-	__typePrinter(iter(d.values())) # == readonly iter <T>				             __hash__, __iter__, __next__, __length_hint__
-	#>> list_iterator, dict_keyiterator, dict_keys([<<contents>>])
+	__typePrinter(iter(a)           ,enum="List.Iter")          # == readonly iter <T>				             __hash__, __iter__, __next__, __length_hint__
 	__typePrinter(zip(a,b))         # == ... \\ no __getitem__			             __hash__, __iter__, __next__
+	print("== Test dictionary ==")
+	#>> <view object>: live update for changes, support __len__, __getitem__, __iter__, __reversed__, *.mapping
+	__typePrinter(d.keys()          ,enum="Dict.Keys")        # == <view object> --  + <set> because unique & hashable
+	__typePrinter(d.values()        ,enum="Dict.Vals")        # == <view object> -- values on their own are never checked to be <set>-like
+	__typePrinter(d.items()         ,enum="Dict.Items")       # == <view object> -- can be <set> if all values are hashable such that (k,v) is unique
+	__typePrinter(iter(d.keys())    ,enum="Iter.Dict.Keys")   # == readonly iter <T>
+	__typePrinter(iter(d.values())  ,enum="Iter.Dict.Vals")   # == readonly iter <T>
+	__typePrinter(iter(d.items())   ,enum="Iter.Dict.Items")  # == readonly iter <T>
+	#>> list_iterator, dict_keyiterator, dict_keys([<<contents>>])
 	#---
 	#### re.compile("") --> <re.Pattern object .... >
 	#### re.match("")   --> <re.Match object; span=({res.span}), match='{res.group(0)}>
@@ -507,6 +904,7 @@ def __typePrinter_test():
 	__test__types_py()
 	
 	print("====== TypePrinter Test [END] ======")
+	raise Exception("Don't call this in shipped builds")
 
 def __test__types_py(): #>> Special build-ins (types.py)
 	print("=== :: Test special build-in :: ===")
@@ -556,9 +954,15 @@ def __test__types_py(): #>> Special build-ins (types.py)
 		tb = None; del tb
 	#-#####
 
-def __typePrinterLoc(arg):
+def __typePrinterLoc(arg, full=False):
 	""" Shorthand for printing all elements of locals() or globals() """
-	for elem in arg: __typePrinter(arg[elem], name=elem)
+	for elem in arg: __typePrinter(arg[elem], name=elem, full=full)
+
+def __typePrinterDir(arg, full=False):
+	for elem in dir(arg): print(elem); break
+	#x = vars(arg)
+	""" Shorthand for printing all elements of locals() or globals() """
+	for elem in dir(arg): __typePrinter(getattr(arg, elem), name=elem, full=full)
 
 def __typePrinter_List(arg):
 	""" Shorthand for printing all elements of a list """
@@ -569,12 +973,12 @@ def __typePrinter_Dict(arg, shallow=False):
 	print(f":: {type(arg)} of length {len(arg)}")
 	for (k,v) in arg.items(): __typePrinter(v, enum=k, shallow=shallow)
 
-def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False):
+def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False,full=False):
 	"""
 	:param arg     [any]          : The object to print
 	:param prefix  [str]  = ""    : The prefix to use for each printed line
 	:param name    [str]  = None  : if given, print a heading
-	:param test    [str]  = None  : if given, set prefix = ":: Test {test:10} :: "
+	:param test    [str]  = None  : if given, set prefix = ":: Test {test:10} :: " & imply shallow
 	:param enum    [str]  = None  : if given, set prefix = ":: {enum:15} :: "
 	:param shallow [bool] = False : if True, treat containers as empty
 	
@@ -585,7 +989,7 @@ def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False):
 	def defines(obj, func): return func in dir(obj)
 	if name is not None: print("::{}::".format(name))
 	if test is not None: prefix = ":: Test {:10} :: ".format(test)
-	if enum is not None: prefix = ":: {:15} :: ".format(enum)
+	if enum is not None: prefix = ":: {:15} ::".format(enum)
 	tmp = type(arg)
 	try: # missing: __code__, <class 'module'>
 		#if defines(arg,'__add__') is False: print(dir(arg))
@@ -595,11 +999,12 @@ def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False):
 			print("{} {}".format(prefix, arg))
 			return ## instead of "<class 'function'>"
 		elif (tmp.__name__ == "Match"): ## result from re.match or re.search
-			print('<Match: %r, groups=%r>' % (match.group(), match.groups()))
+			print(prefix + '<Match: %r, groups=%r>' % (arg.group(), arg.groups()))
 			return ## instead of "<re.Match object; span=(2, 3), match='c'>"
 		#### String is a Sequence of String
 		elif (tmp.__name__ == "str"): ## Avoids infinite recursion
 			print("{} {}: len={}".format(prefix, tmp, len(arg)))
+			if full: print("\"" + arg + "\"")
 			return
 		elif (tmp.__name__ == "type"): ## Avoids ['type' object is not iterable]
 			print("{} <type '{}'>".format(prefix, arg.__name__))
@@ -613,24 +1018,26 @@ def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False):
 			print("{} {}: hint={}".format(prefix, tmp, arg.__length_hint__()))
 		else:
 			print("{} {}".format(prefix, tmp))
+			if full: print(arg)
 		######
 		if shallow: return
-		if [test, enum] != [None,None]: prefix = ":: {:15} :: ".format("")
+		if [test, enum] != [None,None]: prefix = ":: {:15} ::- ".format("")
 		#### Sequence types restricted to 'int'
 		if (tmp in [bytearray, bytes, range, slice]): return
+		if test is not None: return
 		#### Sequence types with any type
 		elif (tmp in [list, tuple]) or (tmp.__name__ == 'ndarray'):
-			__typePrinter(arg[0], prefix+"0>")
-			if len(arg) == 2: __typePrinter(arg[1], prefix+"1>")
+			__typePrinter(arg[0], prefix+"0>", full=full)
+			if len(arg) == 2: __typePrinter(arg[1], prefix+"1>", full=full)
 		#### All other Container types
 		elif defines(arg, '__iter__'):
 			if defines(arg, '__next__'): ## if already an iterator, avoid changing the object
 				x = next(copy.deepcopy(arg))
 			else: x = next(iter(arg))
 			if defines(arg, '__getitem__'):
-				__typePrinter(x, prefix+"Key>")
-				__typePrinter(arg[x], prefix+"Val>")
-			else: __typePrinter(x, prefix+"it>")
+				__typePrinter(x, prefix+"Key>", full=full)
+				__typePrinter(arg[x], prefix+"Val>", full=full)
+			else: __typePrinter(x, prefix+"it>", full=full)
 		
 		#if defines(arg,'__add__') is False: print(dir(arg))
 	except Exception as e:

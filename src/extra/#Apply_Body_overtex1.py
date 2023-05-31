@@ -46,6 +46,8 @@ args = sys.argv[1:]
 if details: print((f"\n=== Running overtex1(Body) Script with arguments:" + "\n-- %s" * len(args)) % tuple(args))
 else: print(f"\n=== Running overtex1(Body) Script")
 
+if (nipsize < 0.01): print (f"[Warning]: Nipsize is very small or negative({nipsize}), may cause weird effects")
+
 ### Apply Transparency of 30% ( = 64 of 255)
 alpha   = 64 / 255    ## For mask
 beta    = 1.0 - alpha ## For main
@@ -72,6 +74,11 @@ sizeY = size * yPad
 ## UV of center: 0.1107986  0.1547173  \\  0.2024432  0.1547173
 iSize = raw_image.shape
 mSize = mask.shape
+
+if show:
+	print(f"Params: ((64 / {nipsize_def}) * {nipsize}) + {_scale}")
+	print(f"Dims: {dim} --> {xPad} x {yPad}, size={size} ({sizeX} x {sizeY})")
+
 #print(f"{iSize} -- {mSize}")
 #uvX_L = 0.1107986 * iSize[1]; uvY_L = 0.1547173 * iSize[0]
 #uvX_R = 0.2024432 * iSize[1]; uvY_R = 0.1547173 * iSize[0]
@@ -126,6 +133,8 @@ def cutHelper(_image, _area, insert=None):
 
 img_segR  = cutHelper(image, [cY, cX_R], None)
 DisplayWithAspectRatio(opt, "ImgSegR", img_segR, 256)
+if show:
+	print(f"Sizes: {[cY, cX_R]} --> {img_segR.shape}")
 ####################################
 
 ### Do DisplayWithAspectRatio:
@@ -147,6 +156,8 @@ if abs(image_f.shape[1] - imgBase_f.shape[1]) == 1 or abs(image_f.shape[1] - img
 
 DisplayWithAspectRatio_f(opt, 'Source (float,cut)', image_f, 256) ## Skin
 DisplayWithAspectRatio_f(opt, 'Target (float)',   imgBase_f, 256) ## Texture
+if show:
+	print(f"> Source: {image_f.shape} vs. {imgBase_f.shape}")
 
 imglib.testOutModes(opt, image_f, imgBase_f, 256, "Both Float", True, _alpha=1)
 
@@ -191,9 +202,6 @@ DisplayWithAspectRatio(opt, "colImg", colImg, 256)
 ## img_segR \\ image_f ## maskRes \\ imgBase_f
 #-- COLOR_BGR2HSV, COLOR_RGB2HSV, COLOR_HSV2BGR
 col_hsv = imglib.arrCol(overcolorInt, cv2.COLOR_RGB2HSV)
-#print(overcolorInt);print(col_hsv);print(imglib.RGB_to_real_HSV(overcolorInt))
-
-
 img_hsv = cv2.cvtColor(maskRes, cv2.COLOR_BGR2HSV)
 ## Apply mix of color vs. tex1mask in percent
 img_hsv[:,:,0] = col_hsv[0]
@@ -251,6 +259,7 @@ image = cutHelper(image, [cY, cX_L], img_seg)
 
 DisplayWithAspectRatio(opt, 'Final', image[int(max(0,cY-sizeY*2)):int(cY+sizeY*2), int(max(0,cX_L-sizeX)):int(cX_R+sizeX), :], None, 512+256)
 if show: k = cv2.waitKey(0) & 0xFF
+cv2.destroyAllWindows()
 
 ### Write out final image
 outName = imgMain[:-4] + "_pyOT1.png"

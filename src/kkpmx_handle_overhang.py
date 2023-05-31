@@ -1,5 +1,5 @@
 # Cazoo - 2021-05-08
-# This code is free to use and re-distribute, but I cannot be held responsible for damages that it may or may not cause.
+# This code is free to use, but I cannot be held responsible for damages that it may or may not cause.
 #####################
 import re     ## re.sub
 import os     ## 
@@ -35,17 +35,28 @@ The smaller it is, the less calculations are performed and it will complete fast
 
 [Output]: PMX file '[modelname]_cutScan.pmx'
 -- As opposed to usual, it will always count up instead of appending if '_cutScan' is already part of the filename
+
+[Logging]: Stores which mode, materials, and bounding box was used.
+
 '''
 
-DEBUG=False      # Local debug
-opt = { }        # Store argument info
-verbose = lambda: opt["moreinfo"]
+DEBUG = False          # Local debug
+global_opt = { }       # Store argument info ## TODO: Switch to global_state of util
+OPT_MORE = "moreinfo"
+OPT_YES  = "all_yes"
+def _verbose(): return global_opt.get("moreinfo", True)
+local_state = {}
+mirMat = "mirrorMat"
+mirDst = "mirrorMorph"
+mirCan = "enableMirror" # Exists to avoid surprises in case the methods are called in some other way
+def _mirror(): return local_state.get(mirCan, False)
 
-def run(pmx, input_filename_pmx, moreinfo=False):
+def run(pmx, input_filename_pmx, moreinfo=False, _opt = {}):
 	from kkpmx_core import end
 	import kkpmx_utils as util
 	import json
-	opt["moreinfo"] = moreinfo or util.DEBUG or DEBUG
+	global_opt["moreinfo"] = moreinfo or DEBUG or util.DEBUG
+	global_opt[OPT_YES] = _opt.get("all_yes", False)
 	
 	message = """Choose:
 -- [0] Use best-guess defaults from KK :: this will ask for 2-3 idx/names and perform 1-2 runs
@@ -87,13 +98,22 @@ def run(pmx, input_filename_pmx, moreinfo=False):
 	else: bounds = { "minY": 0 }
 	if value == "1":
 		__results = cut_out_box_from_material(pmx, bounds)
+		if (bounds.get("minX", 0) != 0 or bounds.get("max", 0) != 0):
+			print("")
+			if util.ask_yes_no("Mirror Cut-out on X-Axis", "n"):
+				local_state[mirCan] = True
+				tmp = bounds.get("minX", 0)
+				bounds["minX"] = - bounds.get("maxX", 0)
+				bounds["maxX"] = - tmp
+				__results += cut_out_box_from_material(pmx, bounds)
+				local_state[mirCan] = False
 	else:
 		options = { "affectPMX": True }
 		__results = __run(pmx, new_bounds=bounds, moreinfo=moreinfo, options=options)
 	if __results: return __endCut(pmx, input_filename_pmx, __results)
 run.__doc__ = infotext
 ############
-def run_kk_defaults(pmx, input_filename_pmx):
+def run_kk_defaults(pmx, input_filename_pmx, _opt = {}):
 	import kkpmx_core as kklib
 	import kkpmx_utils as util
 	print("")
@@ -140,9 +160,11 @@ def run_kk_defaults(pmx, input_filename_pmx):
 			tmp = pmx.bones[bone_idx].pos[idx]
 			bounds[key] = (bounds.get(key,0)+tmp)/2
 	
-	CH__DETAIL = 0; CH__BOX_SMALL = 1; CH__BOX_BIG = 3; CH__NO = 4; CH__BOX_MEDIUM=2
+	CH__DETAIL = 0; CH__BOX_SMALL = 1; CH__BOX_BIG = 3; CH__NO = 4; CH__BOX_MEDIUM=2; CH__BOX_MINI=5;
 	choices = [
 		("Detailed           -- Restrict around Chest then do full scan within", CH__DETAIL),
+		#("Rough Box (nano)  -- Tips only", CH__BOX_NANO),
+		("Rough Box (mini)   -- Front only", CH__BOX_MINI),
 		("Rough Box (small)  -- Just barely above the nips", CH__BOX_SMALL),
 		("Rough Box (medium) -- Inbetween these two options", CH__BOX_MEDIUM),
 		("Rough Box (big)    -- Height around the center of the arms (incl. armpits)", CH__BOX_BIG),
@@ -165,7 +187,7 @@ def run_kk_defaults(pmx, input_filename_pmx):
 		#-- -- cf_s_bust03_R(barely behind them[-0.8914542])
 		#-- -- 胸親 (Parent bone for physics[-0.6669899])
 		addIfFound("cf_s_bnip02_R", "minZ", 2)
-		bounds["minZ"] = bounds["minZ"] - 1
+		bounds["minZ"] = bounds["minZ"] - 2
 		
 		addIfFound("cf_s_bust03_R", "maxZ", 2)
 		averageOut("胸親", "maxZ", 2)
@@ -194,11 +216,22 @@ def run_kk_defaults(pmx, input_filename_pmx):
 		
 	elif choice == CH__BOX_SMALL:
 		addIfFound("cf_s_bnip02_R", "minX", 0, -0.3)
-		#addIfFound("cf_d_bust03_R", "maxX", 0)
 		addIfFound("cf_s_bnip02_L", "maxX", 0, 0.3)
-		addIfFound("胸親", "minY", 1, -0.25)
+		
+		addIfFound("cf_j_bnip02_R", "minY", 1, -0.25)
 		addIfFound("胸親", "maxY", 1, 0.25)
+		
 		bounds["maxZ"] = 3
+		bounds["minZ"] = -3
+		
+	elif choice == CH__BOX_MINI:
+		addIfFound("cf_j_bnip02_R", "minX", 0, -0.33)
+		addIfFound("cf_j_bnip02_L", "maxX", 0, 0.33)
+		
+		addIfFound("cf_j_bnip02_R", "minY", 1, -0.33)
+		addIfFound("cf_j_bnip02_R", "maxY", 1, 0.33)
+		
+		addIfFound("cf_s_bnip02_R", "maxZ", 2, 0.25)
 		bounds["minZ"] = -3
 	elif has_inside:
 		bounds = get_bounding_box(pmx, inside)
@@ -210,7 +243,7 @@ def run_kk_defaults(pmx, input_filename_pmx):
 		"initial_hidden": True,
 	}
 	
-	if choice in [CH__BOX_BIG, CH__BOX_MEDIUM, CH__BOX_SMALL]:
+	if choice in [CH__BOX_BIG, CH__BOX_MEDIUM, CH__BOX_SMALL, CH__BOX_MINI]:
 		if has_inside:
 			results = cut_out_box_from_material(pmx, bounds, util.find_mat(pmx, inside.name_jp))
 			#log_line.append(f"Isolated vertices of {inside.name_jp} peaking through {outside.name_jp}")
@@ -247,11 +280,10 @@ def __run(pmx, base_mat=None, new_mat=None, new_bounds=None, moreinfo=False, opt
 	}
 	The morph has to be added to the [Facial] frame manually for the time being.
 	"""
-	from kkpmx_core import ask_for_material, from_faces_get_vertices, from_material_get_faces, from_vertices_get_faces, translate_name
-	from kkpmx_utils import find_mat#, find_morph, find_bone
-	#from kkpmx_core import __append_itemmorph_add, __append_itemmorph_mul, __append_itemmorph_sub
+	from kkpmx_core import ask_for_material, from_faces_get_vertices, from_material_get_faces, from_vertices_get_faces
+	from kkpmx_utils import find_mat, translate_name
 	import kkpmx_core as kklib
-	opt["moreinfo"] = opt["moreinfo"] or moreinfo or DEBUG
+	global_opt["moreinfo"] = _verbose() or moreinfo or DEBUG
 	
 	affectPMX = options.get("affectPMX", True)
 	##################################
@@ -484,7 +516,12 @@ def move_verts_to_new_material(pmx, old_mat, that_verts_list, __results, options
 	"""
 	import kkpmx_core as kklib
 	import kkpmx_utils as util
+	verbose = _verbose()
 	affectPMX = options.get("affectPMX", True)
+	if global_opt.get(OPT_YES, False):
+		options["ask"] = False
+		options["initial_hidden"] = True
+	
 	old_idx = util.find_mat(pmx, old_mat.name_jp)
 	that_faces_list = kklib.from_vertices_get_faces(pmx, vert_arr=that_verts_list, mat_idx=old_idx, returnIdx=False, debug=False, trace=True)
 	#>> dict { int, <class 'list', len=3> [ int, int, int ] }
@@ -521,6 +558,9 @@ def move_verts_to_new_material(pmx, old_mat, that_verts_list, __results, options
 	if DEBUG: print(f">> Provided is Valid: {valid_value(old_ask)} -> ask: {ask}")
 	
 	is_new_mat = True
+	if _mirror() and mirDst in local_state:
+		value = local_state[mirDst]; ask = False ##:[_feat_MirrorCut]
+	
 	if ask == True:
 		print(f"- Please provide the target for the faces removed from '{old_mat.name_jp}'")
 		value = int(core.MY_GENERAL_INPUT_FUNC(valid_value, "Id of the Material to append to (-1 for new)"))
@@ -528,8 +568,12 @@ def move_verts_to_new_material(pmx, old_mat, that_verts_list, __results, options
 		add_mat = copy.deepcopy(old_mat)
 		add_mat.faces_ct = 0
 		add_mat.name_jp = re.sub(r'( \(Instance\))+','',old_mat.name_jp)
-		add_mat.name_en = kklib.translate_name(add_mat.name_jp, old_mat.name_en) + "_delta"
+		add_mat.name_en = util.translate_name(add_mat.name_jp, old_mat.name_en) + "_delta"
 		add_mat.name_jp = add_mat.name_jp + "_delta"
+		## Option: Normalize EN Name based on original slot (instead of name) -- duplicates based on JP name regardless of option
+		#-- so that 'cf_m_bra_06_delta' or 'cf_m_bra_emblem_delta' are both 'cf_m_bra_delta'
+		#-- Also store it as _delta_XXXXD (e.g. _delta_bra, _delta_body2, etc.)
+		local_state[mirDst] = len(pmx.materials)
 	else:
 		is_new_mat = False
 		add_mat = pmx.materials[value]
@@ -577,7 +621,7 @@ def move_verts_to_new_material(pmx, old_mat, that_verts_list, __results, options
 				add_to_morph_hide(pmx, "BD-Suit", add_idx, __results)
 			## Rudimentary Body Part: Show in clothes and BD-Suit
 			elif re.search(kklib.rgxBase, old_mat.name_jp):
-				if (old_mat.name_jp == "cf_m_body"):
+				if (old_mat.name_jp == util.find_bodyname(pmx)):
 					add_to_morph_show(pmx, "Hide Non-Acc", add_idx, __results)
 				add_to_morph_show(pmx, "BD-Suit", add_idx, __results)
 			## Anything else: Hide from Clothes and BD-Suit
@@ -602,8 +646,11 @@ def move_verts_to_new_material(pmx, old_mat, that_verts_list, __results, options
 def cut_out_box_from_material(pmx, new_bounds, mat_idx=None):
 	moreinfo = False
 	from kkpmx_core import ask_for_material, from_material_get_faces, from_faces_get_vertices
+	
+	if _mirror(): mat_idx = local_state.get(mirMat, mat_idx) ##:[_feat_MirrorCut]
 	if mat_idx is None:
 		mat_idx = ask_for_material(pmx, ": Material to cut vertices off from", default="cf_m_body", returnIdx=True)
+		local_state[mirMat] = mat_idx
 	base_mat = pmx.materials[mat_idx]
 	##  Their verts
 	faces = from_material_get_faces(pmx, mat_idx, False)
@@ -657,7 +704,8 @@ def __endCut(pmx, input_filename_pmx, logs):
 	from _dispframe_fix import dispframe_fix
 	
 	print("->> Making sure display isn't too big <<-")
-	dispframe_fix(pmx, moreinfo=verbose)
+	print("->>> Will add all no-where added morphs first, so don't worry about the high number")
+	dispframe_fix(pmx, moreinfo=_verbose())
 	print("--- >>  << ---")
 	
 	input_filename_pmx = re.sub("_cutScan\d*", "", input_filename_pmx)

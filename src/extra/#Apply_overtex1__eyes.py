@@ -56,7 +56,9 @@ if hlTwo:
 if verbose: print(("\n=== Running overtex1(Eyes) Script with arguments:" + "\n-- %s" * len(args)) % tuple(args))
 #-------------
 if hlOne == False and hlTwo == False: print("> No valid Highlights defined -- Only apply scale & offset")
+#elif verbose: print(f"> Highlight State: HL1={hlOne} at {hlAlpha}, HL2={hlTwo*100}% at {hlAlpha2*100}%")
 #-------------
+
 image     = cv2.imread(pathMain, cv2.IMREAD_UNCHANGED)
 if hlOne:
 	highlight = imglib.resize(cv2.imread(pathHL, cv2.IMREAD_UNCHANGED), image)
@@ -89,14 +91,27 @@ DisplayWithAspectRatio(opt, 'Scaled', image, 256)
 tmp = np.zeros(orgShape, dtype='uint8')
 #if show: k = cv2.waitKey(0) & 0xFF
 #print(f"{orgShape} vs {image.shape} -- {tmp[-dh+1:dh, -dw+1:dw, :].shape} {image[-dh+1:dh, -dw+1:dw, :].shape}")
-if (dw != 0):
-	if (dw > 0):   image = image[:, dw:-dw, :]
-	elif (dw < 0):
-		if scale[0] > 1: ## 1 off if (big, 1.0) \\ Cut off if (big, big)
-			if scale[1] != 1: tmp = image[:, -int(dw/2):int(dw/2), :]
-			else:             tmp[:, -dw:dw, :] = image
-		else:                 tmp[:, -dw+1:dw, :] = image
-		image = tmp
+try:
+	if (dw != 0):
+		if (dw > 0):   image = image[:, dw:-dw, :]
+		elif (dw < 0):
+			if scale[0] > 1: ## 1 off if (big, 1.0) \\ Cut off if (big, big)
+				if scale[1] != 1: tmp = image[:, -int(dw/2):int(dw/2), :]
+				else:
+					inSh = image.shape
+					outSh = tmp[:, -dw:dw, :].shape
+					if   outSh[1] == inSh[1]:   tmp[:, -dw:dw, :] = image
+					elif outSh[1] == inSh[1]+1: tmp[:, -dw+1:dw, :] = image ## with (1.1, 1.0) on 512,512
+					elif outSh[1] == inSh[1]-1: tmp[:, -dw-1:dw, :] = image
+			else:                 tmp[:, -dw+1:dw, :] = image
+			image = tmp
+except:
+	print(f"- orgShape: {orgShape}")
+	print(f"- img:      {image.shape}")
+	print(f"- dw:       {dw}")
+	print(f"- scale:    {scale}")
+	raise
+	
 #print(f"tmp:{tmp.shape} vs. {image.shape}")
 DisplayWithAspectRatio(opt, 'Resized', image, 256)
 if show: k = cv2.waitKey(0) & 0xFF
@@ -139,9 +154,14 @@ except: ## Fixing rare one-off cases
 			elif padX > 0:            tmp[:,padX+1:-padX,:]            = image; changed=True
 			elif padY > 0:            tmp[padY+1:-padY,:,:]            = image; changed=True
 		except:
-			if padX > 0 and padY > 0: tmp[padY+1:-padY,padX:-padX,:] = image; changed=True
-			elif padX > 0:            tmp[:,padX:-padX,:]            = image; changed=True
-			elif padY > 0:            tmp[padY+1:-padY,:,:]          = image; changed=True
+			try:
+				#print(f"[Y-1:Y,X:X] tmp:{tmp.shape} vs. {image.shape}")
+				if padX > 0 and padY > 0: tmp[padY+1:-padY,padX:-padX,:] = image; changed=True
+				elif padX > 0:            tmp[:,padX:-padX,:]            = image; changed=True
+				elif padY > 0:            tmp[padY+1:-padY,:,:]          = image; changed=True
+			except:
+				print(f"[??????] tmp:{tmp.shape} vs. {image.shape}")
+				raise
 		
 DisplayWithAspectRatio(opt, 'Fixed', tmp, 256)
 if changed: image = tmp

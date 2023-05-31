@@ -1,5 +1,5 @@
 # Cazoo - 2021-05-29
-# This code is free to use and re-distribute, but I cannot be held responsible for damages that it may or may not cause.
+# This code is free to use, but I cannot be held responsible for damages that it may or may not cause.
 #####################
 from typing import List
 import re

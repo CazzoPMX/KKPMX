@@ -143,6 +143,8 @@ def delete_multiple_bones(pmx: pmxstruct.Pmx, bone_dellist: List[int]):
 
 
 def identify_unused_bones(pmx: pmxstruct.Pmx, moreinfo: bool) -> List[int]:
+	return identify_unused_bones_base(pmx, moreinfo, False)
+def identify_unused_bones_base(pmx: pmxstruct.Pmx, moreinfo: bool, ignore_rigid: bool) -> List[int]:
 	"""
 	Process the PMX and return a list of all unused bone indicies in the model.
 	1. get bones used by a rigidbody.
@@ -162,8 +164,9 @@ def identify_unused_bones(pmx: pmxstruct.Pmx, moreinfo: bool) -> List[int]:
 	vertex_ct = {}  # how many vertexes does each bone control? sometimes useful info
 
 	# first: bones used by a rigidbody
-	for body in pmx.rigidbodies:
-		true_used_bones.add(body.bone_idx)
+	if not ignore_rigid:
+		for body in pmx.rigidbodies:
+			true_used_bones.add(body.bone_idx)
 
 	# second: bones used by a vertex i.e. has nonzero weight
 	# any vertex that has nonzero weight for that bone
@@ -293,7 +296,9 @@ def apply_bone_remapping(pmx: pmxstruct.Pmx, bone_dellist: List[int], bone_shift
 	:param bone_dellist: list of bone indices to delete
 	:param bone_shiftmap: created by delme_list_to_rangemap() before calling
 	"""
-	
+	apply_bone_remapping_dyn(pmx, bone_dellist, bone_shiftmap, newval_from_range_map)
+
+def apply_bone_remapping_dyn(pmx: pmxstruct.Pmx, bone_dellist: List[int], bone_shiftmap: Tuple[List[int],List[int]], range_map_func):
 	core.print_progress_oneline(0 / 5)
 	# VERTICES:
 	# just remap the bones that have weight
@@ -303,26 +308,26 @@ def apply_bone_remapping(pmx: pmxstruct.Pmx, bone_dellist: List[int], bone_shift
 		weights = vert.weight
 		if weighttype == 0:
 			# just remap, this cannot have 0 weight
-			weights[0] = newval_from_range_map(weights[0], bone_shiftmap)
+			weights[0] = range_map_func(weights[0], bone_shiftmap)
 		elif weighttype == 1 or weighttype == 3:
 			# b1, b2, b1w
 			# if b1w == 0, zero out b1
 			if weights[2] == 0:
 				weights[0] = 0
 			else:
-				weights[0] = newval_from_range_map(weights[0], bone_shiftmap)
+				weights[0] = range_map_func(weights[0], bone_shiftmap)
 			# if b1w == 1, then b2w == 0 so zero out b2
 			if weights[2] == 1:
 				weights[1] = 0
 			else:
-				weights[1] = newval_from_range_map(weights[1], bone_shiftmap)
+				weights[1] = range_map_func(weights[1], bone_shiftmap)
 		elif weighttype == 2 or weighttype == 4:
 			for i in range(4):
 				# if weight == 0, then change its bone to 0. otherwise, remap
 				if weights[i + 4] == 0:
 					weights[i] = 0
 				else:
-					weights[i] = newval_from_range_map(weights[i], bone_shiftmap)
+					weights[i] = range_map_func(weights[i], bone_shiftmap)
 	# done with verts
 	
 	core.print_progress_oneline(1 / 5)
@@ -337,7 +342,7 @@ def apply_bone_remapping(pmx: pmxstruct.Pmx, bone_dellist: List[int], bone_shift
 			if core.binary_search_isin(morph.items[i].bone_idx, bone_dellist):
 				morph.items.pop(i)
 			else:
-				morph.items[i].bone_idx = newval_from_range_map(morph.items[i].bone_idx, bone_shiftmap)
+				morph.items[i].bone_idx = range_map_func(morph.items[i].bone_idx, bone_shiftmap)
 				i += 1
 	# done with morphs
 	
@@ -355,7 +360,7 @@ def apply_bone_remapping(pmx: pmxstruct.Pmx, bone_dellist: List[int], bone_shift
 				if core.binary_search_isin(item[1], bone_dellist):
 					frame.items.pop(i)
 				else:
-					item[1] = newval_from_range_map(item[1], bone_shiftmap)
+					item[1] = range_map_func(item[1], bone_shiftmap)
 					i += 1
 	# done with frames
 	
@@ -363,7 +368,7 @@ def apply_bone_remapping(pmx: pmxstruct.Pmx, bone_dellist: List[int], bone_shift
 	# RIGIDBODY
 	for d, body in enumerate(pmx.rigidbodies):
 		# only remap, no possibility of one of these bones being deleted
-		body.bone_idx = newval_from_range_map(body.bone_idx, bone_shiftmap)
+		body.bone_idx = range_map_func(body.bone_idx, bone_shiftmap)
 	# done with bodies
 	
 	core.print_progress_oneline(4 / 5)
@@ -377,10 +382,10 @@ def apply_bone_remapping(pmx: pmxstruct.Pmx, bone_dellist: List[int], bone_shift
 				bone.tail = [0, 0, 0]
 			else:
 				# otherwise, remap
-				bone.tail = newval_from_range_map(bone.tail, bone_shiftmap)
+				bone.tail = range_map_func(bone.tail, bone_shiftmap)
 		# other 4 categories only need remapping
 		# true parent:
-		bone.parent_idx = newval_from_range_map(bone.parent_idx, bone_shiftmap)
+		bone.parent_idx = range_map_func(bone.parent_idx, bone_shiftmap)
 		# partial append:
 		if (bone.inherit_rot or bone.inherit_trans) and bone.inherit_parent_idx != -1:
 			if core.binary_search_isin(bone.inherit_parent_idx, bone_dellist):
@@ -390,15 +395,15 @@ def apply_bone_remapping(pmx: pmxstruct.Pmx, bone_dellist: List[int], bone_shift
 				bone.inherit_trans = False
 				bone.inherit_parent_idx = -1
 			else:
-				bone.inherit_parent_idx = newval_from_range_map(bone.inherit_parent_idx, bone_shiftmap)
+				bone.inherit_parent_idx = range_map_func(bone.inherit_parent_idx, bone_shiftmap)
 		# ik stuff:
 		if bone.has_ik:
-			bone.ik_target_idx = newval_from_range_map(bone.ik_target_idx, bone_shiftmap)
+			bone.ik_target_idx = range_map_func(bone.ik_target_idx, bone_shiftmap)
 			for link in bone.ik_links:
-				link.idx = newval_from_range_map(link.idx, bone_shiftmap)
+				link.idx = range_map_func(link.idx, bone_shiftmap)
 	# done with bones
 	return
-
+apply_bone_remapping_dyn.__doc__ = apply_bone_remapping.__doc__
 
 def prune_unused_bones(pmx: pmxstruct.Pmx, moreinfo=False):
 	# first build the list of bones to delete

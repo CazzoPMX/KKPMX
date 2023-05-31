@@ -96,10 +96,19 @@ colArr = image[0,0,:]
 #colImg = imglib.getColorMask(opt, maskB[:,:,3], colArr, useKKOrder=False)
 #colImg[:,:,3] = maskB[:,:,3]
 #DisplayWithAspectRatio(opt, 'ColImg+Alpha', colImg, 256)
-colImg = imglib.getColorImg(opt, maskB, colArr)
+_colImg = imglib.getColorImg(opt, maskB, colArr)
 
-#imglib.testOutModes_wrap(image, colImg)
-image = imglib.blend_segmented("multiply", image, colImg, alpha)#.astype("uint8")
+colImg = _colImg#imglib.invert(_colImg)
+imglib.testOutModes_wrap(image, maskB, opt)
+imglib.testOutModes_wrap(image, colImg, opt)
+isOld = False
+#imglib.testOutModes(opt, image, maskB, _standardize=True)
+#imglib.testOutModes(opt, image, colImg, _standardize=True)
+if (isOld):
+	image = imglib.blend_segmented("multiply", image, colImg, alpha)#.astype("uint8")
+else:
+	image = imglib.blend_segmented(mode, image, maskB, alpha)#.astype("uint8")
+
 
 
 #####
@@ -109,8 +118,9 @@ image = imglib.blend_segmented("multiply", image, colImg, alpha)#.astype("uint8"
 #
 #image = imglib.blend_segmented("overlay", image, maskB, alpha)#.astype("uint8")
 
-#imglib.testOutModes_wrap(image, maskG)
-#image = imglib.blend_segmented("overlay", image, maskG, linetexon).astype("uint8")
+imglib.testOutModes_wrap(image, maskG, opt)
+#imglib.testOutModes(opt, image, maskG, _standardize=True)
+image = imglib.blend_segmented("overlay", image, maskG, linetexon).astype("uint8")
 
 
 ##if (flag): ## Add Top -> Bottom \\ Unknown why it should have been controlable

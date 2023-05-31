@@ -1,5 +1,5 @@
-# Cazoo - 2021-05-15
-# This code is free to use and re-distribute, but I cannot be held responsible for damages that it may or may not cause.
+# Cazoo - 2023-04-06
+# This code is free to use, but I cannot be held responsible for damages that it may or may not cause.
 #####################
 import json
 import re
@@ -17,10 +17,22 @@ from kkpmx_utils import Vector3, Matrix
 
 # Local debug
 DEBUG = util.DEBUG or False
-global_state = { }                   # Store argument info
+local_state = { }                   # Store argument info
 OPT__HAIR = "hair"
 OPT__NODUPES = "no_dupes"
-def verbose(): return global_state.get("moreinfo", False)
+RBD__CLEANUP = "RBD__CLEANUP"
+OPT__TAIL    = "tails"
+def _verbose(): return local_state.get("moreinfo", False)
+
+GRP_BODY    = 1   ## By Export >> Adding own
+GRP_HAIRACC = 3   ## Own
+GRP_SKIRT   = 4   ## By Export >> Adding own
+GRP_CHESACC = 5 
+GRP_CHEST_A = 8   ## By Export
+GRP_TAIL    = 13  ## Own
+GRP_CHEST_B = 14  ## By Export >> Adding other 
+GRP_BODYACC = 16  ## Own
+
 
 def run(pmx, input_filename_pmx, moreinfo=False, write_model=True, _opt={}):
 	"""
@@ -30,13 +42,18 @@ Rigging Helpers for KK.
 - Untangle merged Materials
 -  - Since KKExport loves to merge vertex meshes if they are bound to bones sharing the same name, this also corrects the bone weights
 -  - Works by mapping materials with '[:AccId:] XX' in their comment to a bone chain starting with 'ca_slotXX', with XX being a number (and equal in both).
-- Rig Hair Joints
+- Add Physics to Accessories
 -  - Sometimes needs minor optimizations, but also allows a bit of customization (by changing the Rigid Type of the chain segments)
 -  - The "normal" rigging can also be reproduced by selecting a linked bone range, and opening [Edit]>[Bone]>[Create Rigid/Linked Joint]
 -  - Disclaimer: Might not work in 100% of cases since there is no enforced bone naming convention for plugins (e.g. using 'root' as start)
+-  - Will cleanup certain Physics again if their corresponding bones aren't weighted to anything anymore because of 'Prune invisible faces'.
 
 [Issues]:
-- In rare cases, the Skirt Rigids named 'cf_j_sk12' point into the wrong direction. Simply negate the [RotX] value on the 5 segments.
+- In some cases, the Skirt Rigids named 'cf_j_sk12' point into the wrong direction. Simply negate the [RotX] value on the 5 segments.
+- If the skirt was exported without [Side] Joints, it will be modified to avoid messy collisions with lower body rigids
+- Rigid-Chains will only be added once -- To redo them, please delete the respective Bodies + Joints manually.
+
+[Add note about that there will be missing entries for Slots if things have been merged at the start]
 
 [Options] '_opt':
 - "mode":
@@ -44,18 +61,36 @@ Rigging Helpers for KK.
 -  - 1 -- Reduce chest bounce
 -  - 2 -- Rig a list of bones together (== fix unrecognized chain starts)
 -  - 3 -- Cut morph chains (== fix unrecognized chain ends)
+-  - 4 -- Repair skin issues (Rebind some bones after Semi-Standard-Bones are added)
+-  - 5 -- Cleanup ALL free Physics (unused Bones, RigidBodies, and Joints)
+
+[Input]
+- Mode 2: Two bone indices to chain together all inbetween and add RigidBodies + Joints to. Loops until stopped.
+- Mode 3: A comma-separated list of RigidBodies Indices
+-  - For each Index n, separate it from n+1 and turn them into an End / Start Segment, respectively.
+
+[Logging]: Logs which mode has been executed -- when using '2' or '3', it also stores the respective input indices.
+
+[Output]: PMX file '[modelname]_rigged.pmx'
 """
 	### Add some kind of list chooser & ask for int[steps] to execute
 	import kkpmx_core as kkcore
-	global_state["moreinfo"] = moreinfo or DEBUG
+	local_state["moreinfo"] = moreinfo or DEBUG
 	modes = _opt.get("mode", -1)
-	choices = [("Regular Fixes", 0), ("Reduce Chest bounce",1), ("Rig Bone Array", 2), ("Split Chains", 3)]
+	all_yes = _opt.get("all_yes", False)
+	local_state[OPT__NODUPES] = False
+	
+	CH_REGULAR = 0; CH_BOUNCE = 1; CH_RIG_ARRAY = 2; CH_SPLIT_ARRAY = 3; CH_RUN_MODE = 4; CH_REPAIR = 5; CH_CLEANUP = 6;
+	choices = [
+		("Regular Fixes", CH_REGULAR), ("Reduce Chest bounce",CH_BOUNCE), ("Rig Bone Array", CH_RIG_ARRAY), ("Split Chains", CH_SPLIT_ARRAY),
+		("Repair some bones", CH_REPAIR), ("Cleanup free rigids", CH_CLEANUP)
+	]#, ("Choose mode", CH_RUN_MODE)]
 	modes = util.ask_choices("Choose Mode", choices, modes)
-	if modes == 3:
+	if modes == CH_SPLIT_ARRAY:
 		arr_log = ["Modified Rigging (Split Chains)"]
 		arr_log += [split_rigid_chain(pmx)]
 		return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", arr_log)
-	if modes == 1:
+	if modes == CH_BOUNCE:
 		#rig_hair_joints(pmx)
 		#return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", "Modified Rigging (Hair only)")
 		#transform_skirt(pmx)
@@ -63,27 +98,95 @@ Rigging Helpers for KK.
 		#rig_rough_detangle(pmx)
 		msg = "\n> ".join([""] + adjust_chest_physics(pmx))
 		return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", "Modified Rigging (Chest only)" + msg)
-	if modes == 0:
-		adjust_body_physics(pmx)
+	if modes == CH_REGULAR:
+		arr_log = ["Modified Rigging"]
+		local_state[RBD__CLEANUP] = {}
+		adjust_body_physics(pmx) ## ++ repair_some_bones, add_body_colliders
 		transform_skirt(pmx)
 		split_merged_materials(pmx, None)
 		rig_hair_joints(pmx)
 		rig_other_stuff(pmx)
 		rig_rough_detangle(pmx)
-		return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", "Modified Rigging")
+		#merge_bone_weights(pmx)
+		handle_special_materials(pmx)
+		
+		flag = len(local_state[RBD__CLEANUP].keys()) != 0 ## Only ask if there is anything to do (full scan only in solo mode)
+		if flag and (all_yes or util.ask_yes_no("Delete unbound physics", 'y')):
+			_out = {}
+			cleanup_free_bodies(pmx, _out)
+			if "log_line" in _out: arr_log += _out["log_line"]
+		return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", arr_log)
+	if modes == CH_REPAIR:
+		arr_log = ["Repaired some bones (after Semi-Standard)"]
+		repair_some_bones(pmx)
+		return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", arr_log)
+	if modes == CH_RUN_MODE:
+		pass
+	if modes == CH_CLEANUP:
+		cleanup_free_things(pmx)
+		arr_log = ["Cleaned up unused Physics"]
+		return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", arr_log)
 	#######
 	print("This will connect a consecutive list of bones and rig them together.")
 	print("To skip an accidental input, just type the same number for both steps.")
+	print("Start also accepts:")
+	print("-- A pair of numbers: 123, 123")
+	print("-- Any JSON-Array:    [123, 123] or [[123, 123], [123, 123]]")
+	print("- If an entry contains exactly two numbers, they define a range to generate a chain with.")
+	print("- Otherwise the provided indices will be chained together in the order they are given.")
+	print("-  (in that case there is no bone index validation and it will fail when not found)")
+	print("- If the array has a sufficient length, it will be parsed to detect individual chains.")
+	print("- If this fails, you will be asked if the [Detangle] detection should be called at the end.")
+	def is_valid_bulk(value):
+		if is_valid(value): return True
+		if util.is_csv_number(value): return len(value.split(',')) == 2
+		return util.is_csv_array(value)
 	def is_valid(value): return util.is_number(value) and int(value) > -1 and int(value) < len(pmx.bones)
+	
+	all_arr = []
+	# TODO: Ask for a prefix somewhere here -- else it might get ugly (also check that this prefix isn't already used somewhere)
+	#--- TODO: Print a warning if the prefix already exists (just adds them unconditionally again)
+	# TODO(Think): Think about keeping a Chain start as [orange] if the parent is not green either
+	# TODO(Fix): Seems to loose Chain(both idk are 0) on a Joint if previous segment is a non-consecutive bone
+	# TODO: Figure out how what to do with the final bone-Link -- Unconditional Z=-0.1 seems wrong
+	#	either continue parent or keep at 0 0 0
+	# TODO: Add option that aligns the X-Axis with the body center (see ex__Finana_Honkai)
+	# TODO: -- Make a "paired" flag that mirrors POS ROT etc accordingly (usually already the case except for minor offsets)
+	# TODO: For non-head chains, use the appropriate "a_n_*" bone as Anchor
+	#	--  >> Skip the [N_move] bone, and remove the bone link from [a_n_*] again at the end
+	#	--	>> Provides the required dual root as [a_n_* ++ ca_slot], allowing the whole chain to move freely
+	def looper(start, end, log=True, all_arr=[]):
+		if start < end:
+			arr = list(range(int(start), int(end)+1))
+			all_arr += arr
+			if log: arr_log.append("> " + json.dumps(arr))
+			patch_bone_array(pmx, None, arr, pmx.bones[arr[0]].name_jp, 16, False)
+		else: print("> End must be bigger than start")
 	arr_log = ["Modified Rigging (Bone chains)"]
 	while(True):
-		start = core.MY_GENERAL_INPUT_FUNC(is_valid, "First Bone" + f"?: ")
-		end   = core.MY_GENERAL_INPUT_FUNC(is_valid, "Last Bone"  + f"?: ")
-		if start != end:
-			arr = list(range(int(start), int(end)+1))
-			arr_log.append("> " + json.dumps(arr))
-			patch_bone_array(pmx, None, arr, pmx.bones[arr[0]].name_jp, 16)
+		#try:
+		start = core.MY_GENERAL_INPUT_FUNC(is_valid_bulk, "First Bone (or Pair or JSON-Array)" + f"?: ")
+		if util.is_number(start): looper(start, core.MY_GENERAL_INPUT_FUNC(is_valid, "Last Bone"  + f"?: "), True, all_arr)
+		else:
+			if not start.startswith('[['):
+				if not start.startswith('['): start = f"[[{start}]]" ## Wrap flat pairs
+				else: start = f"[{start}]" ## Wrap lists without enclosing bracket
+			arr_log.append(">>> " + json.dumps(json.loads(start)))
+			for x in json.loads(start):
+				if len(x) < 2: continue
+				if len(x) == 2: looper(x[0], x[1], False, all_arr)
+				else:
+					all_arr += x
+					patch_bone_array(pmx, None, x, pmx.bones[x[0]].name_jp, 16, False)
+			print("> Done")
+			#[looper(x[0], x[-1]) for x in json.loads(start)]
+			#arr = start.split(','); looper(arr[0], arr[1])
+		#except Exception as ex: print(ex)
 		if util.ask_yes_no("-- Add another one","y") == False: break
+	if len(arr_log) > 1:
+		if util.ask_yes_no("-- Call detangle() to try cutting clusters","n"):
+			print(all_arr)
+			rig_rough_detangle(pmx, all_arr)
 	return kkcore.end(pmx if write_model else None, input_filename_pmx, "_rigged", arr_log)
 
 ###############
@@ -92,22 +195,35 @@ Rigging Helpers for KK.
 
 ## [Step 01]
 def adjust_body_physics(pmx):
-	print("--- Stage 'Adjust Body Physics'...")
+	printStage("Adjust Body Physics")
 	mask = 65535 # == [1] is 2^16-1
 
 	if find_bone(pmx, "左胸操作", False):
-		chest_mask = 24560 ## 1 2 3 4 14 16
+		## -- Make Chest ignore Chest Acc & Hairs
+		chest_mask = merge_collision_groups([GRP_BODY, 2, GRP_HAIRACC, GRP_SKIRT, GRP_CHEST_B, GRP_BODYACC]) #24560 ## 1 2 3 4 14 16
 		def tmp(name):
 			idx = find_rigid(pmx, name, False)
 			if idx != -1: pmx.rigidbodies[idx].nocollide_mask = chest_mask
 		tmp("左胸操作");     tmp("右胸操作")
 		tmp("左AH1");       tmp("右AH1")
 		tmp("左AH2");       tmp("右AH2")
-		tmp("左胸操作接続"); tmp("右胸操作接続")
-		tmp("左胸操作衝突"); tmp("右胸操作衝突")
+		tmp("左胸操作接続");  tmp("右胸操作接続")
+		tmp("左胸操作衝突");  tmp("右胸操作衝突")
+		## Fix Joints (WAY LESS BOUNCY)
+		def fixSpring(name):
+			idx = util.find_joint(pmx, name, False)
+			if idx != -1:
+				j = pmx.joints[idx]
+				j.movespring = [200, 200, 200]
+				j.rotspring = [100, 100, 100]
+		fixSpring("左胸操作調整用");  tmp("右胸操作調整用")
 
 	## Butt collision
-	if find_bone(pmx, "cf_j_waist02", False):
+	decider = find_bone(pmx, "cf_j_waist02", False) != -1
+	#-- Sanity check to not do it again because code block is not idempotent.
+	try: decider = decider and pmx.rigidbodies[find_rigid(pmx, "下半身")].size[0] == 1
+	except: decider = False
+	if decider:
 		posX = pmx.bones[find_bone(pmx, "cf_j_waist02")].pos[0]
 		posY = pmx.bones[find_bone(pmx, "cf_d_thigh01_L")].pos[1]
 		posZ = pmx.bones[find_bone(pmx, "cf_s_siri_L")].pos[2]
@@ -124,8 +240,29 @@ def adjust_body_physics(pmx):
 		pmx.rigidbodies[rigid].phys_repel = 0
 		pmx.rigidbodies[rigid].phys_friction = 0.5
 	
+	## Fix existing Sphere / Capsule Colliders
+	if find_rigid(pmx, "cf_hit_spine01", False) != -1:
+		# cf_hit_spine01 -- Center of Torso
+		#[Arms] cf_hit_arm_L, cf_hit_wrist_L, cf_hit_arm_R, cf_hit_wrist_R
+		pmx.rigidbodies[find_rigid(pmx, "cf_hit_arm_L")].rot[2]   = 90
+		pmx.rigidbodies[find_rigid(pmx, "cf_hit_wrist_L")].rot[2] = 90
+		pmx.rigidbodies[find_rigid(pmx, "cf_hit_arm_R")].rot[2]   = 90
+		pmx.rigidbodies[find_rigid(pmx, "cf_hit_wrist_R")].rot[2] = 90
+		# cf_hit_spine03 -- Between Shoulders
+		# cf_hit_berry -- ??
+		# cf_hit_waist_L -- Below Center of Torso [to] Pelvis
+		#[Legs] cf_hit_thigh02_L, cf_hit_leg01_L, cf_hit_thigh02_R, cf_hit_leg01_R
+		# cf_hit_waist02
+		#[Bust] cf_hit_bust02_L, cf_hit_bust02_R    --- Shake colliders
+		#[Butt] cf_hit_siri_L, cf_hit_siri_R        --- Shake colliders
+		#[Thigh] cf_hit_thigh01_L, cf_hit_thigh01_R --- Shake colliders
+	
+	repair_some_bones(pmx)
+	add_body_colliders(pmx, mask)
+
+def add_body_colliders(pmx, mask): ## -- Try to find some use for the other cf_hit_arm_L.. bones
 	## Hair collision
-	if find_rigid(pmx, "RB_upperbody", False) in [-1,None]:
+	if find_rigid(pmx, "RB_upperbody", False) == -1:
 		
 		def absarr(arr): return [abs(a) for a in arr]
 		
@@ -145,11 +282,11 @@ def adjust_body_physics(pmx):
 		bn_shou_L = pmx.bones[find_bone(pmx, "cf_d_shoulder_L")]
 		bn_shou_R = pmx.bones[find_bone(pmx, "cf_d_shoulder_R")]
 		
-		## Torso
-		maxX = pmx.bones[find_bone(pmx, "cf_s_shoulder02_L")].pos[0]
+		## Torso -- Find out why it didn't work with [finished one]
+		maxX = pmx.bones[find_bone(pmx, "左肩Solo")].pos[0]
 		
-		tie = find_bone(pmx, "cf_j_spinesk_01",False)
-		if tie not in [-1,None]: maxY = pmx.bones[tie].pos[1]
+		tie = find_bone(pmx, "cf_j_spinesk_01", False)
+		if tie != -1: maxY = pmx.bones[tie].pos[1]
 		else:
 			up   = bn_shou_R.pos[1]
 			down = pmx.bones[find_bone(pmx, "cf_s_bnip01_R")].pos[1]
@@ -157,7 +294,7 @@ def adjust_body_physics(pmx):
 		
 		maxZ = pmx.bones[find_bone(pmx, "cf_d_sk_03_00")].pos[2]
 		
-		minX = pmx.bones[find_bone(pmx, "cf_s_shoulder02_R")].pos[0]
+		minX = pmx.bones[find_bone(pmx, "右肩Solo")].pos[0]
 		minY = pmx.bones[find_bone(pmx, "下半身")].pos[1]
 		minZ = pmx.bones[find_bone(pmx, "cf_s_bnip01_R")].pos[2]
 		
@@ -190,7 +327,7 @@ def adjust_body_physics(pmx):
 		#-- between cf_d_arm01_L & 左ひじ \\ [rad]: cf_s_elboback_L - cf_s_elbo_L (out)
 		rIn  = pmx.bones[find_bone(pmx, "cf_s_elboback_L")].pos[2]
 		rOut = pmx.bones[find_bone(pmx, "cf_s_elbo_L")].pos[2]
-		lenIn = pmx.bones[find_bone(pmx, "cf_s_shoulder02_L")].pos[0]
+		lenIn = pmx.bones[find_bone(pmx, "左肩Solo")].pos[0]
 		lenOut = pmx.bones[find_bone(pmx, "cf_s_forearm01_L")].pos[0]
 		
 		pos = pmx.bones[find_bone(pmx, "cf_hit_arm_L")].pos
@@ -206,7 +343,7 @@ def adjust_body_physics(pmx):
 		## Right arm
 		rIn  = pmx.bones[find_bone(pmx, "cf_s_elboback_R")].pos[2]
 		rOut = pmx.bones[find_bone(pmx, "cf_s_elbo_R")].pos[2]
-		lenIn = pmx.bones[find_bone(pmx, "cf_s_shoulder02_R")].pos[0]
+		lenIn = pmx.bones[find_bone(pmx, "右肩Solo")].pos[0]
 		lenOut  = pmx.bones[find_bone(pmx, "cf_s_forearm01_R")].pos[0]
 		
 		pos = pmx.bones[find_bone(pmx, "cf_hit_arm_R")].pos
@@ -255,7 +392,7 @@ def adjust_body_physics(pmx):
 		sizeNeck = size
 		
 		add_rigid(pmx, name_jp="RB_neck", pos=pos, size=size, bone_idx=find_bone(pmx, "首"), **commonPill)
-		
+
 		####
 		## Full shoulder
 		
@@ -263,6 +400,202 @@ def adjust_body_physics(pmx):
 		size = [sizeSh[0], sizeSh[1]*2 + sizeNeck[0]*3, sizeSh[2]]
 		rot = [0, 0, 90]
 		add_rigid(pmx, name_jp="RB_shoulders", pos=pos, size=size, rot=rot, bone_idx=find_bone(pmx, "首"), **commonPill)
+		
+		####
+		## Waist
+		# X == 0  \\  Y == Lowerbody w/e  \\  # Z == Legs
+		# X == 0  \\  Y == 0  \\  Z == 90
+		# Pill \\ Root = (Y-Bone)
+		# height(== rotated width) == left of left leg --> right of right leg
+		# radius(== rotated height) == Touch RB_upperbody (if in cube form)
+		
+		#pos = [0, posSh[1], 0]
+		#size = [sizeSh[0], sizeSh[1]*2 + sizeNeck[0]*3, sizeSh[2]]
+		#rot = [0, 0, 90]
+		#add_rigid(pmx, name_jp="RB_shoulders", pos=pos, size=size, rot=rot, bone_idx=find_bone(pmx, "首"), **commonPill)
+		
+		############
+		pass
+
+def repair_some_bones(pmx):
+	## in kkpmx_core
+	#-- Bind Fingertips to fingers
+	#-- Patch weird eyesight: cf_J_Eye_rz_L
+	#-- Provide convenient grab
+	#-- Patch Knees: cf_d_kneeF_L, cf_d_kneeF_R, cf_s_kneeB_L, cf_s_kneeB_R
+	
+	from _prune_unused_bones import insert_single_bone
+	from kkpmx_utils import Vector3
+	
+	def fb(s): return find_bone(pmx, s, False)
+	
+	###--- Add [Semi-Standard-Bones] "Arm Twist" and "Wrist Twist" to avoid having to fix it afterwards
+	def insert_twist_bone(_idx, nameJP, nameEN, parent, child):
+		if _idx == -1: return
+		bone = pmx.bones[_idx]
+		elbowRot = add_bone(pmx, _solo=True)
+		elbowRot.name_jp = nameJP
+		_idx2 = find_bone(pmx, elbowRot.name_jp, False)
+		if _idx2 != -1:
+			#elbowRot = pmx.bones[_idx2]
+			#elbowRot.parent_idx = _idx
+			return _idx2
+		# Adjust Child.Position.Z based on [checkElbowPosOffset] on ArmTwist (== new Bone has different Z)
+		# -- Remove again before leaving Scope
+		boneChi = pmx.bones[child]
+		posPar = Vector3.FromList(pmx.bones[parent].pos)
+		posChi = Vector3.FromList(pmx.bones[child].pos)
+		pos3 = Vector3.LerpS(posPar, posChi, 0.6)
+		pos4 = Vector3.Normalize(posChi - posPar)
+		
+		elbowRot.parent_idx = parent
+		elbowRot.name_en = nameEN
+		elbowRot.pos  = Vector3.ToList(pos3)
+		elbowRot.fixedaxis = Vector3.ToList(pos4)
+		elbowRot.has_rotate = True
+		elbowRot.has_fixedaxis = True
+		insert_single_bone(pmx, elbowRot, _idx + 1);
+		boneChi.parent_idx = fb(elbowRot.name_jp)
+		
+		return _idx + 1
+	
+	insert_twist_bone(fb("右腕"), "右腕捩", "arm twist_R", fb("右腕"), fb("右ひじ"))
+	insert_twist_bone(fb("左腕"), "左腕捩", "arm twist_L", fb("左腕"), fb("左ひじ"))
+	insert_twist_bone(fb("右ひじ"), "右手捩", "wrist twist_R", fb("右ひじ"), fb("右手首"))
+	insert_twist_bone(fb("左ひじ"), "左手捩", "wrist twist_L", fb("左ひじ"), fb("左手首"))
+	
+	##-- Fix incomplete coverage of wrist_twist (Requires Semi-Standard Bones)
+	#> Plugin fails because vertices are in these bones, instead of elbow
+	if find_bone(pmx, "左手捩", False) != -1:
+		def set_attr(parent, ratio, name):
+			twist = pmx.bones[find_bone(pmx, name)]
+			twist.inherit_rot = True
+			twist.inherit_parent_idx = parent
+			twist.inherit_ratio = ratio
+			
+		twistL = find_bone(pmx, "左手捩") ## Semi-Standard "wrist_twist L" -- Also actually comepletely e
+		set_attr(twistL, 0.25, "cf_s_forearm01_L")## Technically this should be moved a bit outwards to be the same as in the arm
+		set_attr(twistL, 0.50, "cf_s_forearm02_L")
+		set_attr(twistL, 0.75, "cf_s_wrist_L")
+		
+		twistR = find_bone(pmx, "右手捩") ## Semi-Standard "wrist_twist R"
+		set_attr(twistR, 0.25, "cf_s_forearm01_R")
+		set_attr(twistR, 0.50, "cf_s_forearm02_R")
+		set_attr(twistR, 0.75, "cf_s_wrist_R")
+		
+		##-- Don't see any effect on these.... but technically has same the problem.
+		twistL = find_bone(pmx, "左腕捩") ## Semi-Standard "arm_twist L"
+		set_attr(twistL, 0.25, "cf_s_arm01_L")
+		set_attr(twistL, 0.50, "cf_s_arm02_L")
+		set_attr(twistL, 0.75, "cf_s_arm03_L")
+		
+		twistR = find_bone(pmx, "右腕捩") ## Semi-Standard "arm_twist R"
+		set_attr(twistR, 0.25, "cf_s_arm01_R")
+		set_attr(twistR, 0.50, "cf_s_arm02_R")
+		set_attr(twistR, 0.75, "cf_s_arm03_R")
+	
+	##--- Make elbow fold move with elbow instead of [cf_s_forearm01_L,R]
+	if find_bone(pmx, "cf_s_elboback_L", False) != -1:
+		## Clone elbow, attach these two and the other two to that instead -- Avoids 
+		def insert_extra_elbow(_idx, nameEN):
+			if _idx == -1: return
+			bone = pmx.bones[_idx]
+			elbowRot = copy.deepcopy(bone)
+			elbowRot.name_jp = bone.name_jp + "_Rot"
+			_idx2 = find_bone(pmx, elbowRot.name_jp, False)
+			if _idx2 != -1:
+				elbowRot = pmx.bones[_idx2]
+				elbowRot.parent_idx = _idx
+				return _idx2
+			elbowRot.name_en = nameEN
+			elbowRot.has_visible = False
+			elbowRot.inherit_rot = True
+			elbowRot.inherit_trans = True
+			elbowRot.inherit_parent_idx = _idx
+			elbowRot.inherit_ratio = -0.5
+			insert_single_bone(pmx, elbowRot, _idx + 1);
+			return _idx + 1
+		## Replacing existing one does not seem to work...
+		elbow = find_bone(pmx, "左ひじ")
+		_elbow = insert_extra_elbow(elbow, "elbow_L_Rot")
+		
+		bone = pmx.bones[find_bone(pmx, "cf_s_elbo_L")]
+		bone.parent_idx = bone.parent_idx if elbow == -1 else _elbow
+		bone = pmx.bones[find_bone(pmx, "cf_s_elboback_L")]
+		bone.parent_idx = bone.parent_idx if elbow == -1 else _elbow
+		
+		elbow = find_bone(pmx, "右ひじ")
+		_elbow = insert_extra_elbow(elbow, "elbow_R_Rot")
+		
+		bone = pmx.bones[find_bone(pmx, "cf_s_elbo_R")]
+		bone.parent_idx = bone.parent_idx if elbow == -1 else _elbow
+		bone = pmx.bones[find_bone(pmx, "cf_s_elboback_R")]
+		bone.parent_idx = bone.parent_idx if elbow == -1 else _elbow
+	
+	idx = find_bone(pmx, "左肩C", False)
+	if idx != -1: pmx.bones[idx].name_en = "shoulderC_L"
+	idx = find_bone(pmx, "右肩C", False)
+	if idx != -1: pmx.bones[idx].name_en = "shoulderC_R"
+	
+	## --- Restore IK in case it is gone
+	
+	
+	## --- Fix Leg Physics & Order based on [Model Todos]
+	
+	## --- Find these based on non-T-Pose alignment
+	### Based on Aira Mumei Model
+	def add_axis(name, fixedaxis, localaxis):
+		idx = find_bone(pmx, name)
+		if idx == -1: return
+		bone = pmx.bones[idx]
+		if fixedaxis != [0, 0, 0]:
+			bone.has_fixedaxis = True
+			bone.fixedaxis = fixedaxis
+		if localaxis != [1, 0, 0, 0, 0, 1]:
+			bone.has_localaxis = True
+			bone.localaxis_x = [localaxis[0], localaxis[1], localaxis[2]]
+			bone.localaxis_z = [localaxis[3], localaxis[4], localaxis[5]]
+	
+	return
+	
+	##--- Set the LocalAxis of Wrists to give some limit
+	# :: localaxis_x: == this.Pos
+	# :: localaxis_z: == Elbow.Pos
+	#-- Check what happens in PMXEditor because the axis are normalized to 1 after changing reloading
+	
+	##--- Find some use for these bones
+	# :: o_tang, cf_j_tang_01-5, cf_j_tang_L_05/04/R
+	# :: Colliders: cf_hit_shoulder_L, cf_hit_shoulder_R, cf_hit_spine02_L, cf_hit_neck, cf_hit_head
+	
+	#:: Investigate this
+	#[Nope] Some motions cause armpit tears on clothes which are fixed when raising cf_d_shoulder_L/R & counter rotating shoulder_L/R... ?
+	#-- Looks like [左肩Solo] should be dragged along, but in turn tears below again... BW detach & ROT Binding ?
+	# Move SOLO below ARM, ROT+ on it, unbind some vertices in armpit
+	#	Rough: Vertices shared by [arm_twist 01] & [shoulder SOLO] but cf_s_spine03 is first (~~0.44.. vs 0.39 of shoulder)
+	#		Look at those where 1-2-3 are spine, shoulder, arm (Shoulder blade)
+	#		--> Armpit are basically those from below where arm01 still exists & spine is first
+	#		Guide at those where 1-2-3 are shoulder, spine, arm (Actual shoulder)
+	#		--> Reduce further by ignoring any with non-zero arm02
+	#		Ignore those where 1-2-3 are shoulder, arm, spine (already in arm)
+	#	Probably want to remove the arm01 things from the shoulder blade ?
+	#---- Alternative
+	# 0.4 -15.8  -39.5 :: Setting Shoulder to "Shoulder Raise", and make Solo be inverted "KIND OF" works, but looks ugly when nude, BW issue ?
+	#- Reason why it could be right: Shoulder & Arm are on the same position -- verify if elsewhere too
+	#----- Current Workaround
+	# Just cut out Armpit with Mode4 -- also add inner (top A) to 2nd selection, add "note" to 2nd instead of 3rd, add TopSlot
+	
+	#--- Find a way to keep the Feet IK where it is -- <<< REASON FOR FEET ROTATIONS (only have to move Y-Axis)
+	# >> When you move the IK Bone back to the Ankle, it looks as supposed to be
+	
+	## Add some AxisLimit for Knees to prevent them from bending too much
+	
+	## << "bone_auto_armtwist" is fancy
+	
+	##---
+	# :: Rename dummy_R, dummy_L to "Grab Item" or smt (OP anchor for props)
+	
+	########
+	pass####
 
 ## [Mode 01]
 def adjust_chest_physics(pmx):
@@ -288,9 +621,10 @@ def adjust_chest_physics(pmx):
 	pmx.rigidbodies[rigid].pos[2] += 0.4
 	return ["Bone+Rigid(左AH2, 右AH2): PosZ +0.4","Rigid(左胸操作接続,右胸操作接続): Height -0.4, PosZ +0.2"]
 
-def fix_skirt_rigs(pmx):
+def fix_skirt_rigs(pmx): ReplaceAllWeights(pmx, 202, 192)
+def ReplaceAllWeights(pmx, searchFor, replaceWith):
 	def replaceBone(target):
-		if target == 202: return 192
+		if target == searchFor: return replaceWith
 		return target
 	for vert in pmx.verts:
 		#vert = pmx.verts[idx]
@@ -318,27 +652,40 @@ def transform_skirt(pmx):
 	#-- [-Z] = away from body
 	#-- [+X] = To the left (roughly previous segment)
 	
-	print("--- Stage 'Transform Skirt'...")
-	moreinfo = global_state["moreinfo"]
+	printStage("Transform Skirt")
+	moreinfo = local_state["moreinfo"]
+	
+	col__skirt_tail = merge_collision_groups([GRP_SKIRT, GRP_TAIL])
 	
 	rotY = 0
 	rigids = []
+	bones = []
+	cleanup = {}
 	for rigid in pmx.rigidbodies:
 		## Change width of all but [05] to XX (start at 0.6)
 		if not re.match(r"cf_j_sk", rigid.name_jp): continue
 		rigids.append(rigid)
 		m = re.match(r"cf_j_sk_(\d+)_(\d+)", rigid.name_jp)
+		bones.append(rigid.bone_idx)
+		cleanup.setdefault(m[1], [])
+		cleanup[m[1]] += [rigid.bone_idx]
+		rigid.nocollide_mask = col__skirt_tail
 		
-		## Unify the Rotation for all lines (some assets mess them up)
+		## Normalize Rotation for extended lines below
+		rigid.rot = util.normalize(rigid.rot, 360)
+		
+		## Unify the outward Rotation for all lines (some assets mess them up)
 		if int(m[2]) == 0: rotY = rigid.rot[1]
 		else: rigid.rot[1] = rotY
 		
-		rigid.phys_mass = 2
+		rigid.phys_mass = 1
 		rigid.phys_move_damp = 0.5
 		rigid.phys_rot_damp = 0.5
 		rigid.phys_repel = 0
-		rigid.phys_friction = 0
-		if int(m[2]) == 5: continue
+		rigid.phys_friction = 0.5
+		if int(m[2]) == 5: ## Keep the ends as capsules
+			#rigid.phys_mass = 2
+			continue
 		
 		## Change mode to 1 & set depth to 0.02
 		rigid.shape = 1
@@ -348,6 +695,9 @@ def transform_skirt(pmx):
 		#-- Make front / back pieces a bit wider
 		if int(m[1]) in [0,4]: rigid.size[0] = 0.7
 	
+	## Add them as a whole to the cleanup dict for later
+	local_state[RBD__CLEANUP]["__skirt__"] = list(cleanup.values())
+	
 	if len(rigids) == 0:
 		print("> No Skirt rigids found, skipping")
 		return
@@ -355,7 +705,7 @@ def transform_skirt(pmx):
 		print("> Skirt already rigged, skipping")
 		return
 	
-	## Create more rigids inbetween
+	## Create more rigids inbetween (?)
 	
 	## Move Side Joints to sides (X + width / 2, Y + height / 2)
 	joints = []
@@ -374,7 +724,7 @@ def transform_skirt(pmx):
 	for joint in joints:
 		m = re.match(r"cf_j_sk_(\d+)_(\d+)(\[side\])?", joint.name_jp)
 		main = int(m[1])
-		sub = int(m[2])
+		sub  = int(m[2])
 		side = not (m[3] is None)
 		corner = main in [1, 2, 5, 6]
 		## Adjust main joints
@@ -391,6 +741,7 @@ def transform_skirt(pmx):
 		elif sub == 4: (joint.movemin[0], joint.movemax[0]) = (-20, 20)
 		
 		## Issue: Still too much collision with body during hectic movements
+		#-- Remark: Seems like the Joints of cf_j_sk_03_04/5 (and diagonal front counterpart) are dropping a bit more than the others (==CW the first of front / back)
 	##################################
 	####### Extend skirt with more "lines"
 	#### First the rigidbodies
@@ -426,7 +777,7 @@ def transform_skirt(pmx):
 		"67": zip(rlst[6], rlst[7]), "70": zip(rlst[7], rlst[0]),
 	}
 	
-	if moreinfo: print("-------- Physics")
+	if moreinfo: printSubStage("Physics")
 	## Get pos,rot,size of both, and set the average as new
 	for grp in rigid_dict.items():
 		#print("----- P Grp " + grp[0])
@@ -454,19 +805,22 @@ def transform_skirt(pmx):
 			mode = l.phys_mode # 0 if int(m[1]) == 0 else 1
 			add_rigid(pmx, name_jp=name, pos=pos, rot=rot, size=size, shape=shape,
 				phys_mode=mode, bone_idx=bone_idx, **commonRbd)
+
+	##-- Bind them together because screw you
+	#util.bind_bone(pmx, )
 	
 	################
 	## Same for joints
+	if moreinfo: printSubStage("Joints")
 	
 	jlst = chunk(joints[0:8*5], 5)
-	joint_dict = {
+	joint_dict = { # 10,70 to avoid confusion with 01 & 07
 		"10": zip(jlst[0], jlst[1]), "12": zip(jlst[1], jlst[2]),
 		"23": zip(jlst[2], jlst[3]), "34": zip(jlst[3], jlst[4]),
 		"45": zip(jlst[4], jlst[5]), "56": zip(jlst[5], jlst[6]),
 		"67": zip(jlst[6], jlst[7]), "70": zip(jlst[7], jlst[0]),
 	}
 	## Get pos,rot,size of both, and set the average as new
-	if moreinfo: print("-------- Joints")
 	for grp in joint_dict.items():
 		for l,r in list(grp[1]):
 			m = re.match(r"cf_j_sk_(\d+)_(\d+)", l.name_jp)
@@ -486,6 +840,14 @@ def transform_skirt(pmx):
 			)
 	####### And again for the side ones
 	jslst = chunk(joints[8*5:-1], 6)
+	
+	if len(jslst) == 0:
+		print("[!] The model did not contain any [side] joints -- skipping them")
+		##-- Set the 2nd row to silent because they will vibrate because of the butt
+		for rigid in pmx.rigidbodies:
+			if re.match(r"cf_j_sk_\d+_01", rigid.name_jp): rigid.phys_mode = 0
+		return
+	
 	side_dict = {
 		"10": zip(jslst[0], jslst[1]), "12": zip(jslst[1], jslst[2]),
 		"23": zip(jslst[2], jslst[3]), "34": zip(jslst[3], jslst[4]),
@@ -506,7 +868,7 @@ def transform_skirt(pmx):
 	}
 	
 	## Get pos,rot,size of both, and set the average as new
-	if moreinfo: print("-------- Side Joints")
+	if moreinfo: printSubStage("Side Joints")
 	for grp in side_dict.items():
 		for l,r in list(grp[1]):
 			m = re.match(r"cf_j_sk_(\d+)_(\d+)(\[side\])", l.name_jp)
@@ -538,7 +900,7 @@ def transform_skirt(pmx):
 
 ## [Step 04]
 def rig_hair_joints(pmx): #--- Find merged / split hair chains --> apply Rigging to them
-	print("--- Stage 'Rig Hair'...")
+	printStage("Rig Hair")
 	### Add a Head Rigid for the Hair to anchor onto -- return if none
 	head = find_bone(pmx, "a_n_headflont", True)
 	if head == -1: return
@@ -553,28 +915,27 @@ def rig_hair_joints(pmx): #--- Find merged / split hair chains --> apply Rigging
 	except: limit = 0.0
 	_limit = lambda i: i < limit
 	
-	#print(f"Limit: {limit}")
-
-	global_state[OPT__HAIR] = True
+	local_state[OPT__HAIR] = True
 	################################
 	_patch_bone_array = lambda x,n: patch_bone_array(pmx, head_body, x, n, grp=3)
 	__rig_acc_joints(pmx, _patch_bone_array, _limit)
 
 ## [Common of 04+05]
-def __rig_acc_joints(pmx, _patch_bone_array, limit):
+def __rig_acc_joints(pmx, _patch_bone_array, limit): ## TODO: Make the tail end have a tail in the same diretion as the previous bone-Link
 	"""
 	:: private method as common node for both normal and hair chains
 	"""
-	
+	verbose = _verbose()
 	### At least this exists for every accessory
 	__root_Name = "N_move"
 	bones = [i for (i,b) in enumerate(pmx.bones) if b.name_jp.startswith(__root_Name)]
 	#print(bones)
 	if len(bones) == 0:
-		print("No acc chains found to rig.")
+		print("> No acc chains found to rig.")
 		return
 	
-	global_state[OPT__NODUPES] = True
+	local_state[OPT__NODUPES] = True
+	local_state.setdefault(RBD__CLEANUP, {})
 	################################
 	for bone in bones:
 		##[Hair] Ignore the groups not anchored to the head
@@ -592,6 +953,7 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit):
 		if not any(root_arr): print(f"{bone} has weird bones({list(arr.keys())}), skipping"); continue
 		
 		root_arr0 = arr[root_arr[0]] ## root_arr[list(root_arr.keys())[0]]
+		root_arr1 = []
 		
 		## These exist just to make it... less complicated
 		def finder(name): return [x for x in root_arr0 if pmx.bones[x].name_jp.startswith(name)]
@@ -606,7 +968,13 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit):
 			all_child = get_children_map(pmx, _arr, returnIdx=False, add_first=True)
 			## Reduce to the chains whose first bone has the above as parent
 			return [all_child[pmx.bones[x].name_jp] for x in _arr if pmx.bones[x].parent_idx == parent_idx]
-		
+		##-- Finalizer of most finders
+		def evaluate_chains(_arr):
+			if verbose:
+				print(f"{name} starting with {root_arr1[0]}")
+				print(_arr);print("----")
+			local_state[RBD__CLEANUP][name] = _arr
+			for i,arr in enumerate(_arr): _patch_bone_array(arr, name+'_'+str(i))
 		
 		##################
 		#-- CM3D2 Handling -- because it contains [joints.xxx]
@@ -622,8 +990,7 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit):
 			hair = finder2("Hair_R", arr)
 			if len(hair) > 0: child_arr += get_direct_chains(arr, hair[0])
 			#child_arr = get_direct_chains(arr, arr[0])
-			for i,arr in enumerate(child_arr): _patch_bone_array(arr, name+'_'+str(i))
-			continue
+			evaluate_chains(child_arr);continue
 		##################
 		#-- AS01 Handling  -- contains "SCENE_ROOT"
 		root_arr1 = finder("AS01_N_kami")
@@ -633,8 +1000,33 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit):
 			##[C] Reduce to children but keep first -- it contains some root weights
 			##[A] Reduce to the chains whose first bone has "AS01_J_kami" as parent
 			child_arr = get_direct_chains(arr, arr[0])
-			for i,arr in enumerate(child_arr): _patch_bone_array(arr, name+'_'+str(i))
-			continue
+			evaluate_chains(child_arr);continue
+		
+		# AS00_N_kami
+		# > A00_N_kamiB --> "O"
+		# > A00_N_kamiBtop --> "J"
+		# > > A00_J_kamiBtop >> RB00... LB00 .. B00
+		
+		root_arr1 = finder("AS00_N_kami")
+		if any(root_arr1):
+			##[C] Descend onto Hair_R etc.
+			arr = descend_first(root_arr1)
+			##[A] Reduce to the chains whose first bone has "AS01_J_kami" as parent
+			child_arr = get_direct_chains(arr, arr[0])
+			
+			#-- Skip the "O" branch
+			topBone = pmx.bones[child_arr[0][0]]
+			if topBone.name_jp.startswith("A00_O"):
+				child_arr = get_direct_chains(arr, child_arr[-1][-1]+1)
+			
+			#-- Descend the first "J" parent if special
+			topBone = pmx.bones[child_arr[0][0]]
+			doFlag  = topBone.name_jp.endswith("kami00")
+			doFlag |= re.search("kami[SB]top$", topBone.name_jp) is not None
+			if doFlag:
+				arr = descend_first(child_arr)
+				child_arr = get_direct_chains(arr, child_arr[0][0])
+			evaluate_chains(child_arr);continue
 		##################
 		#-- Regular Joint Handling
 		root_arr1 = finder("root") + finder("joint")
@@ -642,8 +1034,7 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit):
 			## Get parent of first bone
 			first_parent = pmx.bones[root_arr1[0]].parent_idx
 			child_arr = get_direct_chains(root_arr0, first_parent)
-			for i,arr in enumerate(child_arr): _patch_bone_array(arr, name+'_'+str(i))
-			continue
+			evaluate_chains(child_arr);continue
 		##################
 		#-- p_cf_hair && cf_N_J_ Handling
 		root_arr3 = finder("cf_N_J_")
@@ -651,8 +1042,7 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit):
 			continue ## Already pre-rigged ? --> Or simply add [Group 16] to pre-rigged ones
 			arr = descend_first(root_arr3)
 			child_arr = get_direct_chains(arr, arr[0])
-			for i,arr in enumerate(child_arr): _patch_bone_array(arr, name+'_'+str(i))
-			continue
+			evaluate_chains(child_arr);continue
 		#######################
 		# Common Accs: Use all that have "name" as parent
 		##################
@@ -664,23 +1054,24 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit):
 		if any(root_arr2):
 			arr = descend_first(root_arr2)
 			child_arr = get_direct_chains(arr, root_arr2[0])
-			for i,arr in enumerate(child_arr): _patch_bone_array(arr, name+'_'+str(i))
-			continue
+			evaluate_chains(child_arr);continue
 		#######################
+		## If nothing else, just filter out all Renderer bones (= starting with "o_") and go all-in.
 		arr = root_arr0
 		if len(arr) == 0: continue
 		if pmx.bones[arr[0]].name_jp.startswith("All_Root"): continue
 		arr = [x for x in arr if not pmx.bones[x].name_jp.startswith("o_")]
 		if len(arr) < 2: continue
 		
+		local_state[RBD__CLEANUP][name] = [arr]
 		_patch_bone_array(arr, name)
-	global_state[OPT__NODUPES] = False
+	local_state[OPT__NODUPES] = False
 ####################
 	pass
 
 ## [Step 05]
 def rig_other_stuff(pmx):
-	print("--- Stage 'Rig non hair stuff'...")
+	printStage("Rig non hair stuff")
 	## Get reference point for discard
 	try: limit = pmx.bones[find_bone(pmx, "胸親", False)].pos[1]
 	except: limit = 0.0
@@ -692,16 +1083,19 @@ def rig_other_stuff(pmx):
 # Maybe rig Tongue: weighted to [cf_J_MouthCavity] << cf_J_MouthBase_rx < ty < cf_J_FaceLow_tz < Base < J FaceRoot < J_N < p_cf_head_bone < cf_s_head
 #>> But these exist: cf_s_head < cf_j_tang_01 < 02 < 03 < 04(< 05(< L+R), L+R), L+R -- Quite some below the mesh though
 
-## [Step 06]
-def rig_rough_detangle(pmx):
-	print("--- Stage 'Detangle some chains'...")
-	print("> aka perform [Mode: 3] for some obvious cases")
+## [Step 06] -- Cut chains into smaller segments that correspond more with how the bones are connected
+def rig_rough_detangle(pmx, custArr=None): ## << HAS TODO
+	printStage("Detangle some chains")
+	if _verbose(): print("> aka perform [Mode: 3] for some obvious cases")
+	isCustom = custArr is not None
 	# Remark: The first three of any given ca_slot are already [green] through generation
 	## Get all rigging starting with ca_slot
 	def collect(item):
 		idx = item[0]
 		rig = item[1]
-		if not rig.name_jp.startswith("ca_slot"): return False
+		if isCustom:
+			if rig.bone_idx not in custArr: return False
+		elif not rig.name_jp.startswith("ca_slot"): return False
 		if idx == len(pmx.rigidbodies) - 1: return False
 		
 		def matcher(_m, _n = None, isLess = False):
@@ -714,12 +1108,30 @@ def rig_rough_detangle(pmx):
 				return int(m[1]) > int(n[1])
 			return None
 		
+		## TODO: Verify Chains where a Hair strand is not anchored to the root but halfway on another
+		#-- e.g. parent of green is not green but orange --> turn orange as well
+		
+		###-- This should cover everything if the bone structure is correct already
+		if True:
+			cur = rig.bone_idx
+			nxt = pmx.bones[pmx.rigidbodies[idx+1].bone_idx]
+			#- Consider any two subsequent rigids whose bones are not parent x child
+			if nxt.parent_idx != cur:
+				#- ... but ignore those where the first is already a tail to begin with
+				return pmx.bones[cur].tail_usebonelink
+		
+		###-- Otherwise (if it somehow is still weird) go off manually.
+		## Basic joints -- Just to capture that ahead of time
+		ret = matcher(r"joint(\d+)");
+		if ret is not None: return ret
+		
 		## "ca_slot05_0:joint1-3" > "ca_slot05_0:joint2-1"
 		ret = matcher(r"joint(\d+)-\d+", None, True);
 		if ret is not None: return ret
 		
 		## Always if with "_end$"
-		mm = re.search(r"\d+_end$", rig.name_jp)
+		mm = re.search(r"\d+_end$", rig.name_jp) is not None
+		mm |= re.search(r"_base_[FSB]$", rig.name_jp) is not None ## ["May_Strongs"]
 		if mm: return True
 		
 		## "left+1,2,3..." > "right+1,2,3"
@@ -727,8 +1139,12 @@ def rig_rough_detangle(pmx):
 		ret = matcher(r"(?:"+lst+r")[LR]?(\d)$");
 		if ret is not None: return ret
 		
-		## "R1,R2,R3" > "L1,L2,L3", with optional "Top / Bottom"
-		ret = matcher(r"[LR][TB]?(\d+)$");
+		## "R1,R2,R3" > "L1,L2,L3", with optional "Top / Side / Bottom"
+		ret = matcher(r"[LR][TSB]?(\d+)$");
+		if ret is not None: return ret
+		
+		## A00 and AS01
+		ret = matcher(r"kami[LRB]?[TSB](\d+)$");
 		if ret is not None: return ret
 		
 		## "2_L" > "1_R"
@@ -736,14 +1152,494 @@ def rig_rough_detangle(pmx):
 		if ret is not None: return ret
 		
 		## Check if next is "_core$" << from "mat_sshair2"
-		mm = re.search(r"_core$", pmx.rigidbodies[idx+1].name_jp)
+		xx = "|".join(["_core"])
+		#-- Stuff from SCENE_ROOT
+		yy = "|".join(["[BS]top"])
+		zz = (xx + "|" + yy).strip("|")
+		mm = re.search(r"(" + zz + r")$", pmx.rigidbodies[idx+1].name_jp)
 		if mm: return True
 		
 		## Nothing matched
 		return False
 	######
 	arr = [item[0] for item in enumerate(pmx.rigidbodies) if collect(item)]
+	print(f"> Found {len(arr)} entries to verify")
 	return split_rigid_chain(pmx, arr)
+
+## [Step XX] -- Merge some bones
+def merge_bone_weights(pmx, input_filename_pmx=None):
+	import kkpmx_core as kkcore
+	printStage("Merge some bones")
+	log_line = ["Moved bone weights of:"]
+	### Read in Bones to replace
+	
+	def replace_bone(oldIdx, newIdx):
+		if type(oldIdx) != type([]): oldIdx = [oldIdx]
+		if len(oldIdx) == 0 or newIdx == -1: return
+		for vert in pmx.verts:
+			if vert.weighttype == 0:
+				if(vert.weight[0] in oldIdx): vert.weight[0] = newIdx
+			elif vert.weighttype == 1:
+				if(vert.weight[0] in oldIdx): vert.weight[0] = newIdx
+				if(vert.weight[1] in oldIdx): vert.weight[1] = newIdx
+			elif vert.weighttype == 2:
+				if(vert.weight[0] in oldIdx): vert.weight[0] = newIdx
+				if(vert.weight[1] in oldIdx): vert.weight[1] = newIdx
+				if(vert.weight[2] in oldIdx): vert.weight[2] = newIdx
+				if(vert.weight[3] in oldIdx): vert.weight[3] = newIdx
+			else:
+				raise NotImplementedError("weighttype '{}' not supported! ".format(vert.weighttype))
+		log_line.append(f"-- {oldIdx} to {newIdx},{pmx.bones[newIdx].name_jp}")
+	def replace_bones(oldIdx, newIdx):
+		if type(oldIdx) != type([]): oldIdx = [oldIdx]
+		if type(newIdx) == type(""): newIdx = find_bone(pmx, newIdx, True)
+		arr = []
+		for b in oldIdx:
+			if type(b) == type(""): arr.append(find_bone(pmx, b, True))
+			arr.append(b)
+		try:
+			replace_bone(list(filter(lambda x: x != -1, arr)), newIdx)
+		except:
+			print(f"[!] Error while reweighting {arr}")
+	def replace_all_not_shared(srcIdx, cmpIdx, dumpIdx):
+		srcIdx  = find_bone(pmx, srcIdx , True)
+		cmpIdx  = find_bone(pmx, cmpIdx , True)
+		dumpIdx = find_bone(pmx, dumpIdx, True)
+		if -1 in [srcIdx, cmpIdx, dumpIdx]: raise Error("Must all exist")
+		for vert in pmx.verts:
+			all_verts = [x for x in vert.weight]
+			if srcIdx not in all_verts: continue
+			if cmpIdx in all_verts: continue
+			perform_on_weights(vert, lambda x: x == srcIdx, dumpIdx)
+		log_line.append(f"-- {srcIdx} (where not also {cmpIdx}) to {dumpIdx}, {pmx.bones[dumpIdx].name_jp}")
+	def replace_all_shared(srcIdx, cmpIdx, dumpIdx=None):
+		srcIdx  = find_bone(pmx, srcIdx , True)
+		cmpIdx  = find_bone(pmx, cmpIdx , True)
+		if not dumpIdx: dumpIdx = cmpIdx
+		if -1 in [srcIdx, cmpIdx, dumpIdx]: raise Error("Must all exist")
+		for vert in pmx.verts:
+			all_verts = [x for x in vert.weight]
+			if srcIdx not in all_verts: continue
+			if cmpIdx not in all_verts: continue
+			perform_on_weights(vert, lambda x: x == srcIdx, dumpIdx)
+		log_line.append(f"-- {srcIdx} (where also {cmpIdx}) to {dumpIdx}, {pmx.bones[dumpIdx].name_jp}")
+
+	##-- Fix [X-Axis] when rotating [arm_L, arm_R]
+	#Swap [arm_L] <-> [左肩Solo]
+	#Set [左肩Solo]: ROT+=1 L=57
+
+	##-- Merge elbow bones -- Unknown if it fixes anything
+	#replace_bones(["cf_s_elbo_L", "cf_s_forearm01_L", "cf_s_elboback_L"], "左ひじ")
+	#replace_bones(["cf_s_elbo_R", "cf_s_forearm01_R", "cf_s_elboback_R"], "右ひじ")
+	###-- Merge arm bones -- Fixes [X-Axis] when rotating [arm_L]
+	#replace_bones(["cf_d_arm01_L", "cf_s_arm01_L", "cf_d_arm02_L", "cf_s_arm02_L", "cf_d_arm03_L", "cf_s_arm03_L"], "左腕")
+	#replace_bones(["cf_d_arm01_R", "cf_s_arm01_R", "cf_d_arm02_R", "cf_s_arm02_R", "cf_d_arm03_R", "cf_s_arm03_R"], "右腕")
+	###-- Merge shoulder bones -- Fixes [X-Axis] when rotating [shoulder_L]
+	#replace_bones(["左肩Solo"], "左肩")
+	#replace_bones(["右肩Solo"], "右肩")
+	#
+	###-- Merge knee bones (does not fix knee issue ?)
+	#replace_bones(["cf_d_kneeF_L", "cf_s_leg01_L", "cf_s_kneeB_L"], "左ひざ")
+	#replace_bones(["cf_d_kneeF_R", "cf_s_leg01_R", "cf_s_kneeB_R"], "右ひざ")
+	
+	
+	#replace_all_shared("cf_s_elboback_L", "左肩Solo")
+	#replace_all_shared("cf_s_elboback_R", "右肩Solo")
+
+	
+	if input_filename_pmx is not None:
+		return kkcore.end(pmx, input_filename_pmx, "_boneMerge", log_line)
+	return log_line
+
+## [Step 07] -- Apply additional processing to certain materials
+def handle_special_materials(pmx):
+	import kkpmx_core as kkcore
+	from kkpmx_core import from_material_get_faces, from_faces_get_vertices
+	printStage("Handle special materials")
+	verbose = _verbose()
+	
+	def collect_by_slot():
+		_map = {}
+		for mat in pmx.materials:
+			m = util.readFromComment(mat.comment, 'Slot')
+			s = util.readFromComment(mat.comment, 'AccId')
+			if m is None or s is None: continue
+			_arr = _map.get(m, [])
+			_arr.append(s)
+			_map[m] = _arr
+		return _map
+	slot_map = collect_by_slot()
+	### Assign Chest Group to all Chest accs (verified to not work yet, try again)
+	col__chestAll = merge_collision_groups([GRP_CHESACC, GRP_CHEST_A, GRP_CHEST_B])
+	for slot in [x for x in ["a_n_bust_f", "a_n_bust", "a_n_nip_L", "a_n_nip_R"] if x in slot_map]:
+		for slotMat in [f"ca_slot{x}" for x in slot_map[slot]]:
+			for rigid in util.find_all_in_sublist(slotMat, pmx.rigidbodies, returnIdx=False):
+				rigid.group = GRP_CHESACC
+				rigid.nocollide_mask = col__chestAll
+	
+	############
+	## Fox Tail
+	############
+	# Set some properties
+	skirt_col = get_collision_group(GRP_SKIRT)[1]
+	acc_col   = get_collision_group(GRP_BODYACC)[1]
+	tail_col  = get_collision_group(GRP_TAIL)
+	col__skirt_acc_tail = merge_collision_groups([GRP_SKIRT, GRP_BODYACC, GRP_TAIL])
+	col__acc_tail = merge_collision_groups([GRP_BODYACC, GRP_TAIL])
+	
+	#---
+	tails = util.find_all_mats_by_name(pmx, "acs_m_tail_fox", withName=True)
+	for tail in tails:
+		root = tail[0]
+		## root >> contains "ca_slotXX"
+		rigids = util.find_all_in_sublist(root, pmx.rigidbodies, returnIdx=False)
+		if len(rigids) < 5: continue
+		joints = util.find_all_in_sublist(root, pmx.joints, returnIdx=False)
+		if len(joints) < 3: continue
+		
+		### base
+		body = rigids[0]
+		body.group = tail_col[0]
+		# Make the base bodies not interact with the Skirt << todo: Still causes Pantsu leaks, so find the skirt ones and make them ignore the tail
+		body.nocollide_mask = col__skirt_acc_tail
+		### base
+		body = rigids[1]
+		body.group = tail_col[0]
+		body.nocollide_mask = col__skirt_acc_tail
+		### Segment 1
+		body = rigids[2];joint = joints[0]
+		body.phys_mode = 1
+		body.group = tail_col[0]
+		body.nocollide_mask = col__acc_tail
+		# Make movements more smooth
+		joint.rotmax[0] = 40
+		joint.rotmax[2] = 15
+		joint.rotmin[2] = -15
+		### Segment 2
+		body = rigids[3];joint = joints[1]
+		body.group = tail_col[0]
+		body.nocollide_mask = col__acc_tail
+		joint.rotmax[0] = 50
+		joint.rotmax[2] = 25
+		joint.rotmin[2] = -25
+		### End
+		body = rigids[4];joint = joints[2]
+		body.group = tail_col[0]
+		body.nocollide_mask = col__acc_tail
+		lastIdx = find_rigid(pmx, body.name_jp)
+		joint.rotmax[0] = 50
+		joint.rotmax[2] = 25
+		joint.rotmin[2] = -25
+		########## Add extra bone to the end for fancyness
+		# Find lowest vertice
+		mat_idx = find_mat(pmx, tail[1])
+		faces = from_material_get_faces(pmx, mat_idx, False, moreinfo=False)
+		verts = from_faces_get_vertices(pmx, faces, False, moreinfo=False)
+		def lowestY(e): return e.pos[1]
+		verts.sort(key=lowestY)
+		endVert = verts[0]
+		
+		# Create new bone
+		lastBone = pmx.bones[body.bone_idx]
+		bone_idx = add_bone(pmx, name_jp=f"{lastBone.name_jp}先", name_en=f"{lastBone.name_jp}_End")
+		bone = pmx.bones[bone_idx]
+		bone.pos         = endVert.pos
+		bone.has_visible = False
+		bone.parent_idx = body.bone_idx
+		
+		# Create new physics
+		arr = [body.bone_idx, bone_idx]
+		newName = body.name_jp.split(':')[0]
+		util.bind_bone(pmx, arr, True)
+		num_bodies = len(pmx.rigidbodies)
+		num_joints = len(pmx.joints)
+		AddBodyChainWithJoints(pmx, arr, 1, radius=0.0, uvFlag=False, name=newName, group=GRP_TAIL)
+		
+		if verbose:
+			print(f"-- Adding extra physics for tail [{tail[1]}]")
+			for x in pmx.rigidbodies[num_bodies:]: print(x)
+			for x in pmx.joints[num_joints:]: print(x)
+		
+		new_body   = pmx.rigidbodies[num_bodies]
+		tail_body  = pmx.rigidbodies[num_bodies+1]
+		new_joint  = pmx.joints[num_joints]
+		tail_joint = pmx.joints[num_joints+1]
+		## Copy values from new_body to rigids[4]
+		new_body.phys_mode = 1
+		body = pmx.rigidbodies[lastIdx] = copy.deepcopy(new_body)
+		### Set all of nocollide_mask again
+		rigids[2].nocollide_mask = col__acc_tail
+		rigids[3].nocollide_mask = col__acc_tail
+		rigids[4].nocollide_mask = col__acc_tail
+		body.nocollide_mask      = col__acc_tail
+		tail_body.nocollide_mask = col__acc_tail
+		
+		## Rotate new tails like rigids[4]
+		tail_body.rot  = body.rot
+		tail_joint.rot = body.rot
+		## Bind tail_joint to rigids[4] & tail_body
+		tail_joint.rb1_idx = lastIdx
+		tail_joint.rb2_idx = num_bodies+1
+		## Clear limit of tail_joint
+		tail_joint.rotmin = Vector3(0,0,0).ToList()
+		tail_joint.rotmax = Vector3(0,0,0).ToList()
+		## Mark new_body as invalid so that it is cleaned up
+		new_body.bone_idx = 0
+		## Connect new_joint to new_body for the same reason
+		new_joint.rb1_idx = num_bodies
+		new_joint.rb2_idx = num_bodies
+	
+	############
+	## All in slot a_n_bust ignore chest ?
+	############
+	miko_flaps = util.find_all_mats_by_name(pmx, "acs_m_miko_sode_00")
+	##### Find direction axis
+	# Get max X, min X, max Z, min Z
+	# -- Get min Y within 5% of that area
+	# -- Higher Y on Z is front, other is back
+	# -- Lower Y on X is Ribbon
+	# -- Determine if Ribbon is towards or away from Body
+	# -- Collect Bones, RigidBodies, Joints
+	# --- [0] = center, [1,2]=Inner Top/Bottom, [3,4]=Outer T/B
+	# -- Collect RigidBodies
+	# --- Root, Hor Piece in Arm, 
+	# --- Downwards Inner Top, End piece
+	# -[Actions]
+	# -- Add new Bone at bottom of the Flaps on both X
+	# -- -- Add an extra bone onto the Ribbon
+	# -- -- Add an extra Rigid between 0 and 3
+	# -- Reweight stuff
+	# -- Recreate the Rigid-Chains
+	
+	### Scarf: Make lats Rigid be flat and same alignment as parent << Actually do this in general
+	#>> If on back, make bone offset face backwards too, properly extend to the end
+	#>> 0.1 0.06 0.01
+	
+	### Fix these kinda materials which have their mirror halfs anchored on the same root bone, but only one half gets the rigid to it
+	
+	### Fix cf_m_hair_f_20_00*1 -- All vertices are on the center line, and the sides only have a little bit on the 2nd bone segment
+	### Find out why cf_m_hair_f_20_00 is not broken -- everything is fine
+	
+	#######
+	pass ##
+
+
+## [Step 08] -- Cleanup Physics whose bones aren't weighted to any vertices. (Only works if ran together with 04 and/or 05)
+def cleanup_free_bodies(pmx, outParam={}):
+	local_state.setdefault(RBD__CLEANUP, {})
+	#if local_state[RBD__CLEANUP] is None: return
+	verbose = _verbose()
+	
+	##-- Maybe add an option to ask if they should stay
+	
+	printStage("Delete Physics used by pruned vertices")
+	##-----
+	from _prune_unused_vertices import newval_from_range_map, delme_list_to_rangemap
+	
+	## Collect all bones targeted by weights
+	weighted_bones = set()
+	for vert in pmx.verts:
+		wtype  = vert.weighttype
+		weight = vert.weight
+		if wtype == 0: weighted_bones.add(weight[0])
+		elif wtype == 1 or wtype == 3:
+			# b1, b2, b1w
+			# if b1w = 0, then skip b1
+			if weight[2] != 0: weighted_bones.add(weight[0])
+			# if b1w = 1, then skip b2
+			if weight[2] != 1: weighted_bones.add(weight[1])
+		elif wtype == 2 or wtype == 4:
+			for i in range(4):
+				if weight[i+4] != 0: weighted_bones.add(weight[i])
+	
+	## Map all (accessory) rigids as "boneIndex : [list of rigids attached to it]"
+	rigid_dict = {}
+	for idx,rigid in enumerate(pmx.rigidbodies):
+		#if not rigid.name_jp.startswith("ca_slot"):
+		if not re.search(r"^(ca_slot|cf_j_sk_)", rigid.name_jp): continue
+		b = rigid.bone_idx
+		if not b or b < 0: b = -1 ## Just to be safe.
+		if b in rigid_dict: rigid_dict[b] += [idx]
+		else: rigid_dict[b] = [idx]
+	
+	if verbose:
+		#print("------- [rigid_dict]")
+		#for x in rigid_dict: print(f"- {x}: {rigid_dict[x]}")
+		print("------- [List of chains to check]")
+		zz = local_state[RBD__CLEANUP]
+		for x in zz: print(f"- {x}: {zz[x]}")
+		print("-------------")
+	
+	## Collect rigidbodies
+	rigid_dellist = []
+	for (k,v) in local_state[RBD__CLEANUP].items():
+		## Keep solo or short chains
+		if v is None or len(v) == 0: continue
+		if len(v) < 2:
+			if len(v[0]) < 15: continue
+			## Try walking the long list to verify the chains
+			arr = {}
+			tmp = v[0][0]
+			for bone in v[0]:
+				rr = rigid_dict[bone][0]
+				if pmx.rigidbodies[rr].phys_mode == 0: tmp = rr
+				arr.setdefault(tmp, [])
+				arr[tmp] += [bone]
+			v = arr.values()
+			if verbose:
+				print("-- Re-scanned long list:")
+				print(v)
+		##--- Scan the rest
+		for _arr in v:
+			## Ignore if any part of the chain has bone weights
+			if any([x for x in _arr if x in weighted_bones]):
+				if verbose: print(f"--- Bone-Chain {_arr} contains bone weights")
+				continue
+			## Otherwise collect all their rigids
+			flat = util.flatten([rigid_dict[x] for x in _arr])
+			if verbose: print(f"Remove {flat} from {_arr}")
+			rigid_dellist += flat
+	## Invalid rigids are always unweighted
+	if -1 in rigid_dict:
+		flat = util.flatten([rigid_dict[-1]])
+		if verbose: print(f"Invalid Rigids: {flat}")
+		rigid_dellist += flat
+	
+	if len(rigid_dellist) == 0:
+		print(f"> Removed 0 rigidbodies and 0 joints.")
+		return
+	
+	## Collect their joints too
+	joint_dellist = []
+	for idx,joint in enumerate(pmx.joints):
+		if joint.rb1_idx in rigid_dellist: joint_dellist.append(idx)
+		elif joint.rb2_idx in rigid_dellist: joint_dellist.append(idx)
+		elif joint.rb1_idx == 0 and joint.rb2_idx == 0: joint_dellist.append(idx)
+	
+	## Delete both
+	rigid_dellist = sorted(rigid_dellist)
+	joint_dellist = sorted(joint_dellist)
+	rigid_shiftmap = delme_list_to_rangemap(rigid_dellist)
+	
+	for i in reversed(joint_dellist): pmx.joints.pop(i)
+	for i in reversed(rigid_dellist): pmx.rigidbodies.pop(i)
+	msg = f"> Removed {len(rigid_dellist)} rigidbodies and {len(joint_dellist)} joints."
+	print(msg)
+	outParam["log_line"] = [msg]
+	
+	## Remap the rigid indices in the remaining joints
+	for idx,joint in enumerate(pmx.joints):
+		joint.rb1_idx = newval_from_range_map(joint.rb1_idx, rigid_shiftmap)
+		joint.rb2_idx = newval_from_range_map(joint.rb2_idx, rigid_shiftmap)
+
+def fix_slot_collisions(pmx):
+	
+	## Make certain Slots ignore the rigids of other things to avoid useless vibration
+	
+	#- Make Wrists (Armbands) ignore Arms
+	#- Make chest decor ignore Jiggle physics
+	#- Detangle certain Hair rigids from the skirt
+	
+	#- Make some things just ... idk, be fine?
+	
+	# Ask to cleanup useless rigids like Rings, ornaments, etc. with only root+one rigid
+	
+	######
+	pass #
+
+def cleanup_free_things(pmx):
+	from _prune_unused_bones import prune_unused_bones, identify_unused_bones
+	from _prune_unused_vertices import newval_from_range_map, delme_list_to_rangemap
+	unusedBones = identify_unused_bones(pmx, False) + [-1, None]
+	
+	rigid_dellist = []
+	for d,body in enumerate(pmx.rigidbodies):
+		if body.name_jp.startswith("ca_slot03") or body.name_jp.startswith("ca_slot05"):
+			print(f"{d}: {body.bone_idx} --> {body.bone_idx in unusedBones}")
+		if body.phys_mode == 0 or body.name_jp.startswith("ca_slot"):
+			if body.bone_idx in unusedBones:
+				rigid_dellist.append(d)
+	
+	
+	rigid_dellist2 = rigid_dellist + [-1, None]
+	joint_dellist = []
+	for d,joint in enumerate(pmx.joints):
+		if joint.rb1_idx in rigid_dellist2 or joint.rb2_idx in rigid_dellist2:
+			joint_dellist.append(d)
+	
+	prune_unused_bones(pmx, False)
+	print(f"Deleted {len(rigid_dellist):3} / {len(pmx.rigidbodies):3} rigidbodies")
+	print(f"Deleted {len(joint_dellist):3} / {len(pmx.joints):3} joints")
+	
+	rigid_shiftmap = delme_list_to_rangemap(sorted(rigid_dellist))
+	for f in reversed(joint_dellist): pmx.joints.pop(f)
+	for f in reversed(rigid_dellist): pmx.rigidbodies.pop(f)
+	for idx, joint in enumerate(pmx.joints):
+		joint.rb1_idx = newval_from_range_map(joint.rb1_idx, rigid_shiftmap)
+		joint.rb2_idx = newval_from_range_map(joint.rb2_idx, rigid_shiftmap)
+
+#def simplify_acc_slots(pmx):
+#	## Get all such bones
+#	
+#	def is_bone_used(idx):
+#		## Does any vertex have bone weights on this
+#		## Does the bone have any Rigging attached
+#		## Is it called [N_move] (but not N_move2) -- used for recognizing them // Throw away anyway on BlenderMode or Non-Idepotent Mode
+#		pass
+#	
+#	
+#	for slot in slots: ## ca_slot
+#		for bone in slot:
+#			# if has Link: Add (X has Link to Y)
+#			# if has no Parent: ERROR
+#			# Add (X has Parent Y)
+#			# Add (Y has Parent X)
+#		
+#			x = """
+#Add start bone
+#Register con (Z has parent Y) \ (Y has child Z)
+#Determine if Z is used
+#>	if not used, set Z in "Z has Parent of Y" = -1, which gets deleted later
+#>	if not used, set Z in "Y has Child of Z" = -1, which gets deleted later
+#>	if used,     set ....
+#
+#Go to bone Y
+#Register con (Y has Link Z1) \ (Y has parent X) \ (X has child Y)
+#If Z1 is Z, set to -1 if not used, else stay at Z
+#Determine if Y is used
+#>if not used:
+#>	Set Y in any (* has Parent Y) to own Parent
+#>	>	(Z has Parent Y) -> (Z has Parent X) or (-1 has Parent X)
+#>	Set Y in any (Y has Child *) to own Parent
+#>	>	(Y has Child Z) -> (X has Child Z) or (X has Child -1)
+#>	Set Y in any (Y has Link *) to own Parent
+#>	>	(Y has Link Z)   -> (X has Link Z) or (X has Link -1)
+#
+#"""
+feat__CleanUpForBlender = """
+Rename the respective Bones into English Equivalent
+Remove Twist(Arm, Wrist), Cancel (Waist), Dummy (kneeF, kneeB)
+
+Run [Cleanup unused Rigids / Joints] in Blender-Mode
+> ==== Remove all Acc-CLusters with only 1 or 2 Bodies
+>	== Remove all Chest Physics (?)
+
+Run Simplify on all Slots with "Strict" Cleanup (e.g. all except used & ca_slotXX are removed)
+>	Example: a primmaterial uses 4 bones each (ca_slot, N_move, O_nosetama, O_nosetama*3)
+Remove all kf_** Bones unless asked to keep
+Remove any reference to Nether bones unless asked
+>	Probably also remove the [Breast Control] ones unless a reason to keep is found
+Reduce Root Bones
+> Replace / Combine [Motherbone, Center, Groove, Armature, "Model name"] back into Armature
+>	If leg IK etc exists, keep as Sibling to Armature
+
+Find a way to properly sync the Weights of [VRM] vs. [KK Clothes] on Spine and Chest
+
+"""
+####---- 
+
+	
+	
 
 ########
 ## ca_slot (a_n_headside)
@@ -784,13 +1680,27 @@ def rig_rough_detangle(pmx):
 
 ## [Mode 02]
 ##--- Hook a chain of RigidBodies to a static Body and anchor it to [head_body]
-def patch_bone_array(pmx, head_body, arr, name, grp):
-	""" Hook a chain of RigidBodies to a static Body and anchor it to [head_body] """
+##
+def patch_bone_array(pmx, head_body, arr, name, grp, overrideLast=True):
+	"""
+	Hook a chain of RigidBodies to a static Body and anchor it to [head_body]
+
+	Chain-Actions:
+	:: Return if [head_body is None] & root was already added
+	:: Bind supplied bones
+	:: Create root Rigid as "[name]_r"
+	:: Call [AddBodyChainWithJoints]
+	:: if nothing changed, remove root rigid & return
+	:old: If [head_body] provided, connect first rigid to it, else remove first joint
+	:new: Connect first new Joint to [head_body] (or root if None)
+	:: Make first two bodies static because of MMD
+	
+	"""
 	if True: ## To keep the History aligned
 		if check_no_dupes(pmx, find_rigid, name+"_r"):
 			if DEBUG: print(f"Already added a bone chain for {name}")
 			return
-		bind_bones(pmx, arr, True)
+		util.bind_bone(pmx, arr, overrideLast)
 		#grp = 16 # the nocollide_mask given as argument to [add_rigid] has to be changed when using lower numbers
 		
 		mask = 65535 - (1 << grp - 1)
@@ -806,21 +1716,36 @@ def patch_bone_array(pmx, head_body, arr, name, grp):
 		new_bodies = len(pmx.rigidbodies) - num_bodies
 		new_joints = len(pmx.joints) - num_joints
 		if (new_bodies == 0 and new_joints == 0):
+			## Cleanup extra root rigid if nothing was added
 			del pmx.rigidbodies[num_bodies]
 			return
 		
+		PREVIOUS = True
 		## Connect with head rigid
-		if head_body is None or head_body < 0:
-			del pmx.joints[num_joints]
-		else:
+		if PREVIOUS:
+			if head_body is None or head_body < 0:
+				del pmx.joints[num_joints]
+			else:
+				joint = pmx.joints[num_joints]
+				joint.rb1_idx = head_body #root
+				joint.rb2_idx = num_bodies
+				joint.movemin = [ 0.0, 0.0, 0.0]
+				joint.movemax = [ 0.0, 0.0, 0.0]
+				joint.rotmin  = [ 0.0, 0.0, 0.0]
+				joint.rotmax  = [ 0.0, 0.0, 0.0]
+		else:# UNTESTED -- Provide the Root Rigid when not head
+			if head_body is None or head_body < 0:
+				head_body = root #del pmx.joints[num_joints]
+			else:
+				## Unbind unused root rigid to clean it up later.
+				pmx.rigidbodies[root].bone_idx = 0
 			joint = pmx.joints[num_joints]
-			joint.rb1_idx = head_body #root
+			joint.rb1_idx = head_body
 			joint.rb2_idx = num_bodies
 			joint.movemin = [ 0.0, 0.0, 0.0]
 			joint.movemax = [ 0.0, 0.0, 0.0]
 			joint.rotmin  = [ 0.0, 0.0, 0.0]
 			joint.rotmax  = [ 0.0, 0.0, 0.0]
-		
 		
 		########### If using shorter chains
 		## Make first body static
@@ -831,13 +1756,10 @@ def patch_bone_array(pmx, head_body, arr, name, grp):
 		if new_bodies > 1:
 			### MMD needs two fixated rigids or one central anchored by multiple
 			pmx.rigidbodies[num_bodies+1].phys_mode = 0
+			_rot = pmx.rigidbodies[-2].rot
+			pmx.joints[-1].rot = _rot
+			pmx.rigidbodies[-1].rot = _rot
 			pmx.rigidbodies[-1].size[0] = 0.1
-			## Reduce height by the size of a Joint, relative to the radiius
-			# --- Otherwise the ends overlap too much
-			for bodyX in pmx.rigidbodies[num_bodies:]:
-				#msg = f"Size: {bodyX.size[1]}"
-				bodyX.size[1] -= (bodyX.size[0]*10) * 0.2 ## 0.1 are exactly 0.2
-				#print(msg + f" -> {bodyX.size[1]}")
 ##########
 	pass# To keep trailing comments inside
 
@@ -854,8 +1776,8 @@ def split_merged_materials(pmx, input_filename_pmx): #-- Find and split merged M
 	By removing the tag from certain materials, they stay glued to the original (e.g. move together)
 	Important: This must be run before [nuthouse01 cleanup], as that removes all unused bones (== all whose children have no vertices connected)
 	"""
-	print("--- Stage 'split_merged_materials'...")
-	_verbose = global_state.get("moreinfo", False)
+	printStage("split_merged_materials")
+	verbose = _verbose()
 	#### Get parental map of all bones
 	par_map = get_parent_map(pmx, range(len(pmx.bones)))
 	slots = [i for (i,b) in enumerate(pmx.bones) if b.name_jp.startswith("ca_slot")]
@@ -876,10 +1798,10 @@ def split_merged_materials(pmx, input_filename_pmx): #-- Find and split merged M
 		if name in name_map: name_map[name].append(slot)
 		else: name_map[name] = [slot]
 	
-	if _verbose: print("----")
+	if DEBUG: print("----")
 	
 	###-- Test with more than two cases of one such thing
-	if _verbose:
+	if verbose:
 		print("-- Found these Material clusters -- () = total length of name chain")
 		[print(f"{name[:50]:50}({len(name):3}): {name_map[name]}") for name in name_map]
 
@@ -936,7 +1858,7 @@ def split_merged_materials(pmx, input_filename_pmx): #-- Find and split merged M
 		tabu[name].append(_next)
 		#fixed.append([key for key in slot_map.keys() if idx in slot_map[key]][0])
 	##--
-	if _verbose: print("----")
+	if DEBUG: print("----")
 	######
 	#### Fix all other materials (those which are weighted to the same bones)
 	seen = set()
@@ -976,13 +1898,14 @@ def split_manually(pmx, key, values): #-- Loop within cluster and pull apart
 		arr = values[idx][1:] ## Collect bone chain
 		##
 		if first_chain is None: first_chain = copy.deepcopy(arr)
-		bind_bones(pmx, arr, True)
+		util.bind_bone(pmx, arr, True)
 		if not reweight_bones(pmx, first_chain, arr, int(re.search(r"ca_slot(\d+)", name)[1]), False):
 			if not chain_matched: first_chain = None
 		else: chain_matched = True
 
 ## [Mode 03]
 def split_rigid_chain(pmx, arr=None):
+	verbose = _verbose()
 #>	Move Rigid to linked Bone
 	# Ask for list of Rigids to fix (only the first)
 	if arr is None:
@@ -997,6 +1920,7 @@ def split_rigid_chain(pmx, arr=None):
 		
 		# Get Linked Bone of Rigid
 		bone = pmx.bones[rigid.bone_idx]
+		
 		# Set Rigid.Position to Bone.Position
 		rigid.pos = bone.pos
 		# Set Rigid.Rotation to [0 0 0]
@@ -1007,7 +1931,7 @@ def split_rigid_chain(pmx, arr=None):
 		# Store Bone.LinkTo as BoneLink
 		tail = bone.tail
 		if bone.tail_usebonelink == False:
-			if verbose(): print(f"{idx} is already an end (Bone {rigid.bone_idx} had no link)")
+			if verbose: print(f"{idx} is already an end (Bone {rigid.bone_idx} had no link)")
 			return
 		
 		# Set RigidBody1.Type to Green
@@ -1019,7 +1943,7 @@ def split_rigid_chain(pmx, arr=None):
 		
 		# Find Rigid linked to BoneLink (RigidBody2)
 		rigid3 = None
-		span = util.cut_to_range(len(pmx.rigidbodies), idx-30, idx+30)
+		span = util.get_span_within_range(len(pmx.rigidbodies), idx-30, idx+30)
 		for r in pmx.rigidbodies[span[0]:span[1]]:
 			if r.bone_idx == tail:
 				rigid3 = r
@@ -1033,19 +1957,31 @@ def split_rigid_chain(pmx, arr=None):
 		rigid2.phys_mode = old
 		rigid3.phys_mode = 0
 		
-		# Find Joint that connects Rigid & RigidBody1
-		prefix = re.search("(ca_slot\d+)", rigid.name_jp)[1]
+		# Get responsible List of Joints
+		try:    prefix = re.search("(ca_slot\d+)", rigid.name_jp)[1]
+		except: prefix = rigid.name_jp.split(':')[0]
 		if prefix in slot_map: joints = slot_map[prefix]
 		else:
 			joints = [x for x in pmx.joints if x.name_jp.startswith(prefix)]
 			slot_map[prefix] = joints
+		##-- Refresh Rotation to previous segment
+		for j in joints:
+			if j.rb2_idx == idx:
+				if j.rb1_idx is None: break
+				parRig = pmx.rigidbodies[j.rb1_idx]
+				if parRig:
+					rigid.rot = parRig.rot
+					j.rot = parRig.rot
+					break
+		
+		# Find Joint that connects Rigid & RigidBody1
 		joint = None
 		for j in joints:
 			if j.rb1_idx == idx and j.rb2_idx == idx3:
 				joint = j
 				break
 		if joint == None:
-			if verbose(): print(f"{idx}: Not connected by joint with {idx3}, so no need to change any.")
+			if verbose: print(f"{idx}: Not connected by joint with {idx3}, so no need to change any.")
 			return
 		
 		# Set A to RigidBody2
@@ -1092,8 +2028,8 @@ def reweight_bones(pmx, src, dst, slot, is_hair=True):
 	mat_idx_list = []
 	
 	for (i,m) in enumerate(pmx.materials):
-		if re.search("\[:AccId:\] (\d+)", m.comment):
-			tmp = int(re.search("\[:AccId:\] (\d+)", m.comment)[1])
+		if re.search(r"\[:AccId:\] \d+", m.comment):
+			tmp = int(re.search(r"\[:AccId:\] (\d+)", m.comment)[1])
 			if slot == tmp:
 				mat_idx_list.append(i)
 	if len(mat_idx_list) == 0:
@@ -1134,7 +2070,7 @@ def reweight_bones(pmx, src, dst, slot, is_hair=True):
 ######-- Emulate rigging similar to how it [PMXView] does
 
 ##--- Adds a linked Chain of RigidBodies and their Joints
-def AddBodyChainWithJoints(pmx, boneIndex: List[int], mode: int, r: float, uvFlag: bool, name, group):
+def AddBodyChainWithJoints(pmx, boneIndex: List[int], mode: int, radius: float, uvFlag: bool, name, group):
 	"""
 	Creates:
 	:: @AddBaseBody()
@@ -1142,7 +2078,7 @@ def AddBodyChainWithJoints(pmx, boneIndex: List[int], mode: int, r: float, uvFla
 	:: Assign rigidbodies to enclosed joint
 	"""
 	body_num: int = len(pmx.rigidbodies)
-	AddBaseBody(pmx, boneIndex, mode, r, uvFlag, name, group)
+	AddBaseBody(pmx, boneIndex, mode, radius, uvFlag, name, group)
 	added_bodies: int = len(pmx.rigidbodies) - body_num
 	if (added_bodies <= 0):
 		print(f"Did not add any chains for {name}, might already exist!")
@@ -1172,6 +2108,7 @@ def AddBodyChainWithJoints(pmx, boneIndex: List[int], mode: int, r: float, uvFla
 			dictionary2[bone_idx] = len(pmx.joints) - 1
 
 	### @todo: [?] add hidden bone with [0, 0, -1] as pointer
+	# TODO: If called directly (with only two bones), joints are always bound to rb = 0
 	for key in dictionary.keys():
 		pmxBone2 = pmx.bones[key]
 		if pmxBone2.parent_idx not in boneIndex: continue
@@ -1182,8 +2119,24 @@ def AddBodyChainWithJoints(pmx, boneIndex: List[int], mode: int, r: float, uvFla
 		pmxJoint2.rb2_idx = dictionary[key]
 		pmxJoint2.rot = pmx.rigidbodies[dictionary[key]].rot
 
+	if radius <= 0.0:
+		## Reduce height by the size of a Joint, relative to the radiius
+		# --- Otherwise the ends overlap too much
+		for bodyX in pmx.rigidbodies[body_num:]:
+			#msg = f"Size: {bodyX.size[1]}"
+			bodyX.size[1] -= (bodyX.size[0]*10) * 0.2 ## 0.1 are exactly 0.2
+			#print(msg + f" -> {bodyX.size[1]}")
+	#######
+	pass ##
+
 ##-- Adds the RigidBodies
-def AddBaseBody(pmx, boneIndices: List[int], mode: int, r: float, uvFlag: bool, name, group):
+def AddBaseBody(pmx, boneIndices: List[int], mode: int, radius: float, uvFlag: bool, name, group):
+	"""
+	:boneIndices: -- List of Bones to combine
+	:mode:        -- phys_mode to set on all bodies
+	:radius:      -- Set explicit radius
+	:uvFlag:      -- if True, ignore hidden bones
+	"""
 	if group in range(1,17):
 		if   group == 16: mask = 2**15 - 1
 		else:
@@ -1223,8 +2176,8 @@ def AddBaseBody(pmx, boneIndices: List[int], mode: int, r: float, uvFlag: bool, 
 				#continue
 			body = pmx.rigidbodies[add_rigid(pmx)]
 			body.shape = 2 # Capsule
-			x: float = r
-			if (r <= 0.0): x = num3 * 0.2
+			x: float = radius
+			if (radius <= 0.0): x = num3 * 0.2
 			body.size = Vector3(x, num3, 0.0).ToList()
 			body.pos = zero.ToList()
 			m: Matrix = GetPoseMatrix_Bone(pmx, idx)
@@ -1232,8 +2185,8 @@ def AddBaseBody(pmx, boneIndices: List[int], mode: int, r: float, uvFlag: bool, 
 		else:
 			body = pmx.rigidbodies[add_rigid(pmx)]
 			body.shape = 0 # Sphere
-			x2: float = r
-			if (r <= 0.0): x2 = 0.2
+			x2: float = radius
+			if (radius <= 0.0): x2 = 0.2
 			body.size = [x2, 0.0, 0.0]
 			body.pos = pos.ToList()
 		####--
@@ -1304,20 +2257,6 @@ def spread_pos(arr):
 	pos.Z = arr.pos[2]
 	return pos
 
-def bind_bones(pmx, _arr, last_link=False):
-	from copy import deepcopy
-	arr = deepcopy(_arr)
-	while len(arr) > 1:
-		parent = arr[0]#find_bone(pmx, arr[0], False)
-		child  = arr[1]#find_bone(pmx, arr[1], False)
-		if parent is not None and child is not None:
-			pmx.bones[parent].tail_usebonelink = True
-			pmx.bones[parent].tail = child
-		arr.pop(0)
-	if last_link:
-		pmx.bones[arr[-1]].tail_usebonelink = False
-		pmx.bones[arr[-1]].tail = [0, 0, -0.1]
-
 def change_phy_mode(pmx, _arr, mode):
 	if (find_rigid(pmx, _arr[0]) is None): return
 	for name in _arr:
@@ -1326,10 +2265,72 @@ def change_phy_mode(pmx, _arr, mode):
 
 def get_bone_or_default(pmx, name_jp, idx, default):
 	tmp = find_bone(pmx, name_jp, False)
-	if tmp not in [-1,None]:
+	if tmp != -1:
 		return pmx.bones[tmp].pos[idx]
 	return default
 
+def get_collision_group(group): ## returns [group, mask]
+	mask = -1
+	if group in range(1,17):
+		if   group == 16: mask = 2**15 - 1
+		else:
+			#mask = 0 << group - 1 ## All bigger than 'group'
+			#mask = 1 << group - 1 ## All except 'group'
+			mask = 65535 - (1 << group - 1) ## group
+		
+		group = group - 1 ## Because actually [0 - 15]
+	else:
+		group = 0
+		mask = 0 ## == All
+	return [group, mask]
+def merge_collision_groups(groups): ## returns mask
+	mask = 65535
+	groups.sort(reverse=True)
+	for group in groups:
+		if group in range(1,17):
+			if   group == 16: mask = 2**15 - 1
+			else:
+				#mask = 0 << group - 1 ## All bigger than 'group'
+				#mask = 1 << group - 1 ## All except 'group'
+				mask = mask - (1 << group - 1) ## group
+			
+			#group = group - 1 ## Because actually [0 - 15]
+	return mask
+
+
+def perform_on_all_weights(pmx, cb):
+	for vert in pmx.verts:
+		if vert.weighttype == 0: cb(vert, 0)
+		elif vert.weighttype == 1: cb(vert, 0); cb(vert, 1)
+		elif vert.weighttype == 2:
+			cb(vert, 0); cb(vert, 1); cb(vert, 2); cb(vert, 3)
+		else:
+			raise NotImplementedError("weighttype '{}' not supported! ".format(vert.weighttype))
+def perform_on_weights__(vert, cb):
+	if vert.weighttype == 0: cb(vert, 0)
+	elif vert.weighttype == 1: cb(vert, 0); cb(vert, 1)
+	elif vert.weighttype == 2:
+		cb(vert, 0); cb(vert, 1); cb(vert, 2); cb(vert, 3)
+	else:
+		raise NotImplementedError("weighttype '{}' not supported! ".format(vert.weighttype))
+def perform_on_weights(vert, cond, newIdx):
+	if vert.weighttype == 0:
+		if(cond(vert.weight[0])): vert.weight[0] = newIdx
+	elif vert.weighttype == 1:
+		if(cond(vert.weight[0])): vert.weight[0] = newIdx
+		if(cond(vert.weight[1])): vert.weight[1] = newIdx
+	elif vert.weighttype == 2:
+		if(cond(vert.weight[0])): vert.weight[0] = newIdx
+		if(cond(vert.weight[1])): vert.weight[1] = newIdx
+		if(cond(vert.weight[2])): vert.weight[2] = newIdx
+		if(cond(vert.weight[3])): vert.weight[3] = newIdx
+	else:
+		raise NotImplementedError("weighttype '{}' not supported! ".format(vert.weighttype))
+
+
+#----
+def printStage(text): print(f"-------- Stage '{text}' ...")
+def printSubStage(text): print(f"---- {text}")
 #----
 
 def print_map(_mapObj):
@@ -1340,26 +2341,33 @@ def print_map(_mapObj):
 def get_parent_map(pmx, bones):
 	"""
 	Arranges @bones into a dict of the form { @bone: [ancestors in @bones] }
+	@bones:     List[int] or Range
 	"""
 	boneMap = { -1: [], 0: [] }
-	for bone in sorted(bones):
-		p = bone
-		while p not in boneMap: p = pmx.bones[p].parent_idx
-		if p not in [0,-1]: boneMap[bone] = boneMap[p] + [p]
-		else:               boneMap[bone] = []
-	del boneMap[-1]
-	if 0 not in bones: del boneMap[0]
+	try:
+		for bone in sorted(bones):
+			if bone in boneMap: continue
+			p = bone
+			while p not in boneMap: p = pmx.bones[p].parent_idx
+			if p not in [0,-1]: boneMap[bone] = boneMap[p] + [p]
+			else:               boneMap[bone] = []
+		del boneMap[-1]
+		if 0 not in bones: del boneMap[0]
+	except Exception as ex:
+		print("[!!] error with " + str(p))
+		raise ex
 	return boneMap
 
-def get_delta_map(pmx1, pmx2, boneMap, relative=True):
+def get_delta_map(pmx, boneMap, relative=True):
 	vecDict = {}
 	for bone in boneMap.keys():
-		vector2 = Vector3.FromList(pmx2.bones[bone].pos)
-		target  = Vector3.FromList(pmx1.bones[bone].pos)
+		b = pmx.bones[bone]
+		vector2 = Vector3.FromList(pmx.bones[b.parent_idx].pos)
+		target  = Vector3.FromList(pmx.bones[bone].pos)
 		## Reduce delta in relation to the already added delta from parent bones, accumulative
 		delta = (target - vector2)
 		if relative:
-			for idx in boneMap[bone]: delta -= vecDict.get(idx, Vector3.Zero)
+			for idx in boneMap[bone]: delta -= vecDict.get(idx, Vector3.Zero())
 		vecDict[bone] = delta
 	return vecDict
 
@@ -1371,7 +2379,8 @@ def get_children_map(pmx, bones, returnIdx=False, add_first=True):
 	@returnIdx: <dict.keys> will consist of the boneIndices instead
 	@add_first: Adds @bone.index as first entry in each <dict.value>
 	"""
-	if type(bones) is not list: bones = [bones]
+	if bones == None: bones = range(len(pmx.bones))
+	elif type(bones) is not list: bones = [bones]
 	par_map = get_parent_map(pmx, range(len(pmx.bones)))
 	bone_map = {}    ## dict of { "name": [bone, list of children] }
 	for bone in bones:
@@ -1382,8 +2391,15 @@ def get_children_map(pmx, bones, returnIdx=False, add_first=True):
 		bone_map[bone_key] = children
 	return bone_map
 
-def check_no_dupes(pmx, func, name):
-	return global_state[OPT__NODUPES] and func(pmx, name, False) != -1
+
+def check_no_dupes(pmx, func, name, outParam={}):
+	""" Checks if the given func [Finder from UTIL] reports existence or not. 
+	:outParam: -- Store the index as "result" into this object
+	"""
+	if not local_state.get(OPT__NODUPES, False): return False
+	idx = func(pmx, name, False)
+	outParam["result"] = idx
+	return idx != -1
 
 #### Calculate nocollide_mask
 # Given a group X in [1 to 16]
@@ -1402,34 +2418,34 @@ def check_no_dupes(pmx, func, name):
 def add_bone(pmx,
 			 name_jp: str = "New Bone1",
 			 name_en: str = "",
-			 pos: List[float] = [0,0,0],
-			 parent_idx: int = -1,
-			 deform_layer: int = 0,
-			 deform_after_phys: bool = False,
-			 has_rotate: bool = True,
-			 has_translate: bool = False,
-			 has_visible: bool = True,
-			 has_enabled: bool = True,
-			 has_ik: bool = False,
-			 tail_usebonelink: bool = False,
+			 pos: List[float] = [0,0,0],              ## "Position:"
+			 parent_idx: int = -1,                    ## "P-Bone:"
+			 deform_layer: int = 0,                   ## "Deform:"
+			 deform_after_phys: bool = False,         ## [After Ph.]
+			 has_rotate: bool = True,                 ## [ROT]
+			 has_translate: bool = False,             ## [MVN]
+			 has_visible: bool = True,                ## [VIS]
+			 has_enabled: bool = True,                ## [Enable]
+			 has_ik: bool = False,                    ## [IK]
+			 tail_usebonelink: bool = False,          ## False=(Offset) \\ True=(Bone)
 			 tail: Union[int, List[float]] = [0,0,0],
 			 # NOTE: either int or list of 3 float, but always exists, never None
-			 inherit_rot: bool = False,
-			 inherit_trans: bool = False,
-			 has_fixedaxis: bool = False,
-			 has_localaxis: bool = False,
-			 has_externalparent: bool = False,
+			 inherit_rot: bool = False,               ## [Rot+]
+			 inherit_trans: bool = False,             ## [Mov+]
+			 has_fixedaxis: bool = False,             ## [Axis Limit:]
+			 has_localaxis: bool = False,             ## [Local Axis:]
+			 has_externalparent: bool = False,        ## [External:]
 			 # optional/conditional
-			 inherit_parent_idx: int=None,
-			 inherit_ratio: float=None,
-			 fixedaxis: List[float]=None,
-			 localaxis_x: List[float]=None,
-			 localaxis_z: List[float]=None,
-			 externalparent: int=None,
-			 ik_target_idx: int=None,
-			 ik_numloops: int=None,
-			 ik_angle: float=None,
-			 ik_links=None
+			 inherit_parent_idx: int=None,            ## "Parent:"  --- [L] is missing 
+			 inherit_ratio: float=None,               ## "Ratio:"   Apply <Parent> times this to own
+			 fixedaxis: List[float]=None,             ## "0 0 0"
+			 localaxis_x: List[float]=None,           ## "X: 1 0 0"
+			 localaxis_z: List[float]=None,           ## "Z: 0 0 1"
+			 externalparent: int=None,                ## "Parent Key:"
+			 ik_target_idx: int=None,                 ## "Target:"
+			 ik_numloops: int=None,                   ## "Loop:"
+			 ik_angle: float=None,                    ## "Angle:"
+			 ik_links=None                            ## < Link >
 			 ):
 	args = locals()
 	del args["pmx"]
@@ -1490,80 +2506,40 @@ def add_joint(pmx,
 
 ##############
 
-def start_fancy_things(pmx, input_filename_pmx):
+##: Create a morph that transforms a model from one into the other only based on Vertices.
+#> Use [do_mode_2] to include Bones. -- The only use for this is to construct small static Morphs for VRM
+def Internal_MorphVertexDelta(pmx, input_filename_pmx):
 	import kkpmx_core as kkcore
 	(pmx1, input_filename_pmx1) = (pmx, input_filename_pmx)
-	## Load 2nd model
-	(pmx2, input_filename_pmx2) = util.main_starter(None)
-	## Ask for Mode 1, Mode 2
-	choices = [("<< Mode 1 >>", do_mode_1), ("<< Mode 2 >>", do_mode_2), ("<< Invert >>", do_invert)]
-	mode = util.ask_choices("Select direction to calculate growth morph for", choices)
-	## Ask which is the small == Morph Target
-	choices = [("Add Morph to 2nd, becomes 1st at 100%", 1), ("Add Morph to 1st, becomes 2nd at 100%", 2)]
-	dirFlag = util.ask_choices("Select direction to calculate growth morph for", choices)
-	## Call Mode
-	if dirFlag == 1: mode(pmx1, pmx2, input_filename_pmx2)
-	else:            mode(pmx2, pmx1, input_filename_pmx1)
-	pass
-
-def do_mode_1(pmx, pmx2, input_filename_pmx):
-	import kkpmx_core as kkcore
-	(pmx1, input_filename_pmx2) = (pmx, input_filename_pmx)
-	##########
-	# do the bones stuff
-	morphBones = range(len(pmx1.bones))
-	vecDictRel = get_delta_map(pmx, pmx2, get_parent_map(pmx, morphBones), True)
+	# load the morphed pmx as pmx2
+	(pmx2, input_filename_pmx2) = util.main_starter(None, "Input the morphed PMX File")
 	
-	boneList = []
-	def add_morph_bone(bone_idx):
-		delta = vecDictRel[bone_idx].ToList()
-		kkcore.__append_bonemorph(boneList, bone_idx, delta, [0,0,0], None)
-	[add_morph_bone(idx) for idx in morphBones]
-	import nuthouse01_pmx_struct as pmxstruct
-	pmx2.morphs.append(pmxstruct.PmxMorph("BoneMorph", "BoneMorph", 4, 2, boneList))
-	flag = util.ask_yes_no("Do you want me to wait for the 3rd and execute Mode 2 afterwards?")
-	##########
-	# Ask if we should wait or doing it later(end)
-	kkcore.end(pmx2, input_filename_pmx2, "_vmorph_v1")
-	##-- Wait
-	if flag:
-	# Write the model
-	# Tell instructions
-	# Wait for input to continue
-		util.ask_yes_no("Press Enter or 'y' to continue", "y")
-	# Call do_mode_2
-		print("--------------")
-		do_mode_2(pmx1, pmx2, input_filename_pmx2)
-	##-- Do later
-	else:
-	# Write the model
-	# Tell instructions
-	# exit
-		pass
-#########
-	pass
-
-def do_mode_2(pmx, pmx2, input_filename_pmx):
-	import kkpmx_core as kkcore
-	(pmx1, input_filename_pmx2) = (pmx, input_filename_pmx)
-	# load the morphed pmx as pmx3
-	(pmx3, input_filename_pmx3) = util.main_starter(None)
+	lOne = len(pmx1.verts)
+	lTwo = len(pmx2.verts)
+	
+	if lOne != lTwo:
+		bigger = "1st" if lOne > lTwo else "2nd"
+		raise Exception(f"Models must be exactly equal for this to work! ({bigger} is bigger)")
+	
+	def invert(x): return (-(Vector3.FromList(x))).ToList()
 	
 	##############
 	morphList = []
+	morphList_rev = []
 	def add_morph(idx: int, vert_idx: int, abs_idx=False): ## @vector = pos of @idx in pmx2 \\ @vert_idx in pmx1
-		big_vert = pmx3.verts[idx]
+		big_vert = pmx2.verts[idx]
 		big_pos  = Vector3.FromList(big_vert.pos)
 		big_idx  = big_vert.weight[0]
-		big_bone = Vector3.FromList(pmx3.bones[big_idx].pos)
+		#big_bone = Vector3.FromList(pmx3.bones[big_idx].pos)
 		
 		sma_vert = pmx1.verts[vert_idx]# if abs_idx else vertices[vert_idx]
 		sma_pos  = Vector3.FromList(sma_vert.pos)
 		sma_idx  = sma_vert.weight[0]
-		sma_bone = Vector3.FromList(pmx1.bones[sma_idx].pos)
+		#sma_bone = Vector3.FromList(pmx1.bones[sma_idx].pos)
 
-		delta = (big_bone - big_pos) - (sma_bone - sma_pos)
-		kkcore.__append_vertexmorph(morphList, idx, delta.ToList(), None)
+		delta = (big_pos) - (sma_pos)
+		kkcore.__append_vertexmorph(morphList_rev, idx, invert(delta.ToList()), None) ## Morphed into Unmorphed
+		kkcore.__append_vertexmorph(morphList, idx, delta.ToList(), None) ## Unmorphed into Morphed
 	##############
 	
 	def match_uv(src, dst):
@@ -1571,144 +2547,24 @@ def do_mode_2(pmx, pmx2, input_filename_pmx):
 		return round(src[0], prec) == round(dst[0], prec) and round(src[1], prec) == round(dst[1], prec)
 	wrong_vert = []
 	
-	# do the vertices stuff for all materials
-	for idx in range(len(pmx3.verts)):#vertices2:
-		vert = pmx3.verts[idx]
-		#vector = Vector3.FromList(vert.pos)
+	# Verify that each vertex has roughly the same UV-Coordinate
+	for idx in range(len(pmx2.verts)):
+		vert = pmx2.verts[idx]
 		if match_uv(pmx1.verts[idx].uv, vert.uv):
 			add_morph(idx, idx, True)
-		else: wrong_vert.append(idx)#raise Exception(f"Vertices at {idx} are not equal")
+		else: wrong_vert.append(idx)
 	
 	if len(wrong_vert) > 0: raise Exception(f"Found inequal Vertices at {wrong_vert}!")
 	
 	# write model
-	pmx2.morphs.append(pmxstruct.PmxMorph("VertexMorph", "VertexMorph", 4, 1, morphList))
-	finalizer(pmx2)
-	input_filename_pmx2 = re.sub(r"_vmorph_v1","_vmorph_v2",input_filename_pmx2)
-	kkcore.end(pmx2, input_filename_pmx2, "", ["Added GrowthMorph"])
-	# Ask if it also should do the inverted version
+	pmx2.morphs.append(pmxstruct.PmxMorph("VertexMorph", "VertexMorph", 4, 1, morphList_rev))
+	kkcore.end(pmx2, input_filename_pmx2, "_vmorph", [f"Added VertexMorph back into {input_filename_pmx1}"])
+	
+	pmx1.morphs.append(pmxstruct.PmxMorph("VertexMorph", "VertexMorph", 4, 1, morphList))
+	kkcore.end(pmx1, input_filename_pmx1, "_vmorph", [f"Added VertexMorph towards {input_filename_pmx2}"])
+	
 	pass
 
-def do_invert(pmx, pmx2, input_filename_pmx):
-	"""
-	@pmx (== old @pmx2) contains an already completed GrowthMorph based on @pmx2 (== old @pmx1)
-	Now @pmx2 should get the same morph, but inverted
-	"""
-	import kkpmx_core as kkcore
-	(pmx_big, pmx_sma) = (pmx, pmx2)
-	if find_morph(pmx_big, "GrowthMorph") is None:
-		print("<< GrowthMorph not found >>")
-		return
-	def invert(x): return (-(Vector3.FromList(x))).ToList()
-	
-	## Invert BoneMorph
-	boneList = []
-	morph_b = pmx_big.morphs[find_morph(pmx_big, "BoneMorph")]
-	for bone in morph_b.items: kkcore.__append_bonemorph(boneList, bone.bone_idx, invert(bone.move), [0,0,0], None)
-	
-	## Invert VertexMorph
-	morphList = []
-	morph_v = pmx_big.morphs[find_morph(pmx_big, "VertexMorph")]
-	for vert in morph_v.items: kkcore.__append_vertexmorph(morphList, vert.vert_idx, invert(vert.move), None)
-	
-	## Create Morphs
-	pmx_sma.morphs.append(pmxstruct.PmxMorph("BoneMorph", "BoneMorph", 4, 2, boneList))
-	pmx_sma.morphs.append(pmxstruct.PmxMorph("VertexMorph", "VertexMorph", 4, 1, morphList))
-	finalizer(pmx_sma)
-	kkcore.end(pmx_sma, input_filename_pmx, "_vmorph_Invert", ["Added inverted GrowthMorph"])
-
-def finalizer(pmx):
-	group = [ ]
-	group.append(pmxstruct.PmxMorphItemGroup(find_morph(pmx, "BoneMorph"), value = 1))
-	group.append(pmxstruct.PmxMorphItemGroup(find_morph(pmx, "VertexMorph"), value = 1))
-	pmx.morphs.append(pmxstruct.PmxMorph("GrowthMorph", "GrowthMorph", 4, 0, group))
-	
-	## Repair some Physics
-	change_phy_mode(pmx, ["左AH1","左AH2","左胸操作接続","左胸操作衝突","右AH1","右AH2","右胸操作接続","右胸操作衝突"], 2)
-##########
-	pass
-
-
-def do_fancy_things(pmx, input_filename_pmx):
-	import kkpmx_core as kkcore
-	#Load Model Full    = pmx
-	#Load Model Partial = pmx2
-	#pmx2 = None
-	#input_filename_pmx2 = None
-	#def caller(_pmx, _input_filename_pmx):
-	#	pmx2 = _pmx
-	#	input_filename_pmx2 = _input_filename_pmx
-	(pmx2, input_filename_pmx2) = util.main_starter(None)
-
-	mat_idx = kkcore.ask_for_material(pmx, returnIdx=True)
-	faces = kkcore.from_material_get_faces(pmx, mat_idx, returnIdx=False)
-	vertices = kkcore.from_faces_get_vertices(pmx, faces, returnIdx=False)
-	vertIdxs = kkcore.from_faces_get_vertices(pmx, faces, returnIdx=True)
-	bones = kkcore.from_vertices_get_bones(pmx, vertIdxs, returnIdx=True)
-	
-	uv_map = [ v.uv for v in vertices ]
-	uv_enum = tuple(enumerate(uv_map))
-
-	mat_idx2 = kkcore.ask_for_material(pmx2, returnIdx=True)
-	faces2 = kkcore.from_material_get_faces(pmx2, mat_idx2, returnIdx=False)
-	vertices2 = kkcore.from_faces_get_vertices(pmx2, faces2, returnIdx=True)
-	bones2 = kkcore.from_vertices_get_bones(pmx, vertices2, returnIdx=True)
-	
-	from kkpmx_handle_overhang import get_bounding_box
-	print(get_bounding_box(pmx, mat_idx))
-	print(get_bounding_box(pmx2, mat_idx2))
-
-	morphList = []
-	
-	def match_uv(src, dst):
-		prec = 4
-		flag = round(src[0], prec) == round(dst[0], prec) and round(src[1], prec) == round(dst[1], prec)
-		return flag
-		if flag: return True
-		prec = 5
-		return round(src[0], prec) == round(dst[0], prec) or round(src[1], prec) == round(dst[1], prec)
-	morphBones = range(len(pmx.bones))#
-	vecDictRel = get_delta_map(pmx, pmx2, get_parent_map(pmx, morphBones), True)
-	
-	def add_morph(vector: Vector3, idx: int, vert_idx: int, abs_idx=False): ## @vector = pos of @idx in pmx2 \\ @vert_idx in pmx
-		big_vert = pmx2.verts[idx]
-		big_pos  = Vector3.FromList(big_vert.pos)
-		big_idx  = big_vert.weight[0]
-		big_bone = Vector3.FromList(pmx2.bones[big_idx].pos)
-		
-		sma_vert = pmx.verts[vert_idx] if abs_idx else vertices[vert_idx]
-		sma_pos  = Vector3.FromList(sma_vert.pos)
-		sma_idx  = sma_vert.weight[0]
-		sma_bone = Vector3.FromList(pmx.bones[sma_idx].pos)
-
-		delta = (big_bone - big_pos) - (sma_bone - sma_pos)
-		
-		kkcore.__append_vertexmorph(morphList, idx, delta.ToList(), None)
-		
-	if True:
-		boneList = []
-		def add_morph_bone(bone_idx):
-			delta = vecDictRel[bone_idx].ToList()
-			kkcore.__append_bonemorph(boneList, bone_idx, delta, [0,0,0], None)
-		[add_morph_bone(idx) for idx in morphBones]
-		import nuthouse01_pmx_struct as pmxstruct
-		pmx2.morphs.append(pmxstruct.PmxMorph("BoneMorph", "BoneMorph", 4, 2, boneList))
-
-	miss_list = []
-	####
-	for idx in vertices2:
-		vert = pmx2.verts[idx]
-		vector = Vector3.FromList(vert.pos)
-		if match_uv(pmx.verts[idx].uv, vert.uv):
-			add_morph(vector, idx, idx, True)
-			continue
-		raise Exception("Vertices are not equal")
-	
-	##### Finalize
-	import nuthouse01_pmx_struct as pmxstruct
-	pmx2.morphs.append(pmxstruct.PmxMorph("Test", "Test", 4, 1, morphList))
-	
-	kkcore.end(pmx2, input_filename_pmx2, "_vmorph")
 
 ###########
 if __name__ == '__main__': util.main_starter(run)

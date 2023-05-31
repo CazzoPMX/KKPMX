@@ -1,5 +1,5 @@
 # Cazoo - 2022-05-13
-# This code is free to use and re-distribute, but I cannot be held responsible for damages that it may or may not cause.
+# This code is free to use, but I cannot be held responsible for damages that it may or may not cause.
 #####################
 from typing import List, Union, Tuple
 import re, os, json, copy  ## copy.deepcopy
@@ -7,13 +7,13 @@ import re, os, json, copy  ## copy.deepcopy
 import kkpmx_core as kklib
 import kkpmx_utils as util
 from kkpmx_utils import find_bone, find_mat, find_disp, find_morph, find_rigid, __typePrinter
+import kkpmx_rigging as kkrig
 
 try:
 	import nuthouse01_core as core
 	import nuthouse01_pmx_parser as pmxlib
 	import nuthouse01_pmx_struct as pmxstruct
 	import _prune_unused_bones as bonelib
-	import _translation_tools as tlTools
 	import morph_scale
 except ImportError as eee:
 	print(eee.__class__.__name__, eee)
@@ -24,9 +24,11 @@ except ImportError as eee:
 	core = pmxlib = pmxstruct = morph_scale = bonelib = None
 
 
-## Local "moreinfo"
+## Local "moreinfo" -- See [ANNIV List]
 DEBUG = util.DEBUG or False
-state = {}
+local_state = {}
+def _verbose(): return local_state.get("moreinfo", False)
+def _univrm(): return local_state.get("univrm", False)
 
 #--- [Text]: How it appears in the exported morph name
 #--- [Morph]: The name how it should be displayed in MMD [== name_en]
@@ -55,72 +57,74 @@ prefixes = [ # ["Text", "", "", "EN"]
 	["kuti_sita"  , "", "", "tongue"],
 	["mayuge"     , "", "", "brow"],
 	]
-infixes  = [ # ["Text", "Morph", "KK Name", ".EN", "JP", ]
-	["_a"         , "Say 'A'"      ,  ".." , ".a", "あ"],
-	["_e"         , "Say 'E'"      ,  ".." , ".e", "え"],
-	["_i"         , "Say 'I'"      ,  ".." , ".i", "い"],
-	["_o"         , "Say 'O'"      ,  ".." , ".o", "お"],
-	["_u"         , "Say 'U'"      ,  ".." , ".u", "う"],
-	["_n"         , "Say 'N'"      ,  ".." , ".n", "ん"],
-	## Mayuge only[B]
-	##### Both[X]
+infixes  = [ # ["Text", "Morph", "KK Name", ".EN", "JP", ]		\t"\t, "\t
+	["_a"         , "Say 'A'"      ,  ".." 			, ".a"			, "あ"		],
+	["_e"         , "Say 'E'"      ,  ".." 			, ".e"			, "え"		],
+	["_i"         , "Say 'I'"      ,  ".." 			, ".i"			, "い"		],
+	["_o"         , "Say 'O'"      ,  ".." 			, ".o"			, "お"		],
+	["_u"         , "Say 'U'"      ,  ".." 			, ".u"			, "う"		],
+	["_n"         , "Say 'N'"      ,  ".." 			, ".n"			, "ん"		],
+	# [Infix]        [My name]       [KK Name/TL]    [EN Infix] []
+	## Mayuge only[B]	
+	##### All[X]
 	##### Eye or Mayuge only[E]
 	##### Mouth only[M]
-	["_akire"     , "Flustered"    ,  "Flustered"   , ".zzz", ""   ],#[M] あせり		Haste
-	["_aseri"     , ""             ,  ""            , ".zzz", ""   ],#[X] あせり		Haste
-	["_bisyou"    , "Grin"         ,  "Grin"        , ".zzz", ""   ],#[X] びしょう		Smile
-	["_def"       , "default"      ,  "default"     , ".default", "" ],#[X] でふぁうと	
-	["_doki"      , ""             ,  ""            , ".zzz", ""   ],#[M] どき		
-	["_doya"      , "Smug"         ,  "Smug"        , ".zzz", ""   ],#[X] どや		
-	["_egao"      , "Smiling"      ,  "Smiling"     , ".smile", ""   ],#[X] えがお		
-	["_gag"       , ""             ,  ""            , ".zzz", ""   ],#[E] がが		
-	["_gyu"       , ""             ,  ""            , ".zzz", ""   ],#[E] ぎゅ		
-	["_gyul"      , ""             ,  ""            , ".zzz", ""   ],#[E] 			
-	["_gyur"      , ""             ,  ""            , ".zzz", ""   ],#[E] 			
-	["_huan"      , ""             ,  ""            , ".zzz", ""   ],#[B] 			
-	["_human"     , "Pouting"      ,  "Grumbling"   , ".zzz", ""   ],#[M] ふまん		
-	["_ikari"     , "Angry"        ,  "Angry"       , ".zzz", ""   ],#[X] いかり		
-	["_kanasi"    , "Sad 2"        ,  "Sad 2"       , ".zzz", ""   ],#[E] かなし		
-	["_keno"      , "Disgust"      ,  "Disgust"     , ".zzz", "気の"   ],#[X] けの		
-	["_kisu"      , "Kiss"         ,  "Kiss"        , ".zzz", ""   ],#[M] きす		
-	["_koma"      , ""             ,  ""            , ".zzz", ""   ],#[B] こま		
-	["_komaru"    , "Concerned"    ,  "Concerned"   , ".zzz", ""   ],#[E] こまる		
-	["_kurusi"    , "In Pain"      ,  "In Pain"     , ".zzz", ""   ],#[E] くるし		
-	["_kuwae"     , "Sucking"      ,  "Sucking"     , ".zzz", ""   ],#[M] くわえ		
-	["_mogu"      , ""             ,  ""            , ".zzz", ""   ],#[M]
-	["_naki"      , "Crying"       ,  "Crying"      , ".zzz", ""   ],#[E] なき		
-	["_name"      , "Licking"      ,  "Licking"     , ".zzz", ""   ],#[M] なめ		
-	["_neko"      , ""             ,  ""            , ".zzz", ""   ],#[M]
-	["_niko"      , ""             ,  ""            , ".zzz", ""   ],#[M]
-	["_odoro"     , "Surprised"    ,  "Surprised"   , ".zzz", ""   ],#[X] おどろ		
-	["_oko"       , "Angry"        ,  ""            , ".zzz", ""   ],#[B] 			
-	["_pero"      , "Bleh"         ,  "Bleh"        , ".zzz", ""   ],#[M] ぺろ		
-	["_rakutan"   , "Upset"        ,  "Upset"       , ".zzz", ""   ],#[E] らくたん	
-	["_sabisi"    , "Lonely"       ,  "Lonely"      , ".zzz", ""   ],#[M] さびし		
-	["_san"       , ""             ,  ""            , ".zzz", ""   ],#[M]
-	["_setunai"   , "Sad"          ,  "Sad"         , ".zzz", ""   ],#[E] せつない	
-	["_sian"      , "Thoughtful"   ,  "Thoughtful"  , ".zzz", ""   ],#[E] しあん		
-	["_sinken"    , "Serious"      ,  "Serious"     , ".zzz", ""   ],#[X] しんけん	
-	["_tabe"      , ""             ,  ""            , ".zzz", ""   ],#[M]
-	["_tere"      , "Shy"          ,  "Shy"         , ".zzz", ""   ],#[E] てれ		
-	["_tmara"     , ""             ,  ""            , ".zzz", ""   ],#[B] 			
-	["_tumara"    , "Bored"        ,  "Bored"       , ".zzz", ""   ],#[E] つまら		
-	["_uresi"     , "Happy"        ,  "Happy"       , ".zzz", ""   ],#[M] うれし		
-	["_winkl"     , "Wink L"       ,  "Wink L"      , ".zzz", ""   ],#[E] うぃんく		
-	["_winkr"     , "Wink R"       ,  "Wink R"      , ".zzz", ""   ],#[E] 			
-#	["_doki_s"    , ""             ,  ""            , ".zzz", ""   ],#[X] 			
-#	["_doki_ss"   , ""             ,  ""            , ".zzz", ""   ],#[X] 			
-#	["_gyu02"     , ""             ,  ""            , ".zzz", ""   ],#[E] 			
-#	["_gyul02"    , ""             ,  ""            , ".zzz", ""   ],#[E] 			
-#	["_ikari02"   , ""             ,  ""            , ".zzz", ""   ],#[X] 			
-#	["_name02"    , ""             ,  ""            , ".zzz", ""   ],#[M] 			
-#	["_odoro_s"   , ""             ,  ""            , ".zzz", ""   ],#[X] 			
-#	["_sianL"     , ""             ,  ""            , ".zzz", ""   ],#[B] 			
-#	["_sianR"     , ""             ,  ""            , ".zzz", ""   ],#[B] 			
-#	["_sinken02"  , ""             ,  ""            , ".zzz", ""   ],#[X] 			
-#	["_sinken03"  , ""             ,  ""            , ".zzz", ""   ],#[X] 			
-#	["_uresi_s"   , "Happy"        ,  "Happy"       , ".zzz", ""   ],#[M] 			
-#	["_uresi_ss"  , "Happy"        ,  "Happy"       , ".zzz", ""   ],#[M] 			
+	["_akire"     , "Flustered"    ,  "Flustered"   , ".zzz", 		""   		],#[M] あせり		Haste
+	["_aseri"     , ""             ,  ""            , ".zzz", 		""   		],#[X] あせり		Haste
+	["_bisyou"    , "Grin"         ,  "Grin"        , ".zzz", 		""   		],#[X] びしょう		Smile
+	["_def"       , "default"      ,  "default"     , ".default",	""   		],#[X] デフォルト	
+	["_doki"      , "Excited"      ,  ""            , ".zzz",		""   		],#[M] どき		
+	["_doya"      , "Smug"         ,  "Smug"        , ".zzz",		""   		],#[X] どや		
+	["_egao"      , "Smiling"      ,  "Smiling"     , ".smile",		""   		],#[X] えがお		
+	["_gag"       , ""             ,  ""            , ".zzz",		""   		],#[E] がが		
+	["_gyu"       , ""             ,  ""            , ".zzz",		""   		],#[E] ぎゅ		
+	["_gyul"      , ""             ,  ""            , ".zzz",		""   		],#[E] 			
+	["_gyur"      , ""             ,  ""            , ".zzz",		""   		],#[E] 			
+	["_huan"      , "Confused"     ,  ""            , ".zzz",		""   		],#[B] 			
+	["_human"     , "Pouting"      ,  "Grumbling"   , ".zzz",		""   		],#[M] ふまん		
+	["_ikari"     , "Angry"        ,  "Angry"       , ".zzz",		""   		],#[X] いかり		
+	["_kanasi"    , "Sad 2"        ,  "Sad 2"       , ".zzz",		""   		],#[E] かなし		
+	["_keno"      , "Disgust"      ,  "Disgust"     , ".zzz",		"気の"		   ],#[X] けの		
+	["_kisu"      , "Kiss"         ,  "Kiss"        , ".zzz",		""   		],#[M] きす		
+	["_koma"      , "Concerned"    ,  ""            , ".zzz",		""   		],#[B] こま		
+	["_komaru"    , "Concerned"    ,  "Concerned"   , ".zzz",		""   		],#[E] こまる		
+	["_kurusi"    , "In Pain"      ,  "In Pain"     , ".zzz",		""   		],#[E] くるし		
+	["_kuwae"     , "Sucking"      ,  "Sucking"     , ".zzz",		""   		],#[M] くわえ		
+	["_mogu"      , "Chewing"      ,  ""            , ".zzz",		""   		],#[M]
+	["_naki"      , "Crying"       ,  "Crying"      , ".zzz",		""   		],#[E] なき		
+	["_name"      , "Licking"      ,  "Licking"     , ".zzz",		""   		],#[M] なめ		
+	["_neko"      , "OwO"          ,  ""            , ".zzz",		""   		],#[M]
+	["_niko"      , "NikoNikoNii"  ,  ""            , ".zzz",		""   		],#[M]
+	["_odoro"     , "Surprised"    ,  "Surprised"   , ".zzz",		""   		],#[X] おどろ		
+	["_oko"       , "Angry"        ,  ""            , ".zzz",		""   		],#[B] 			
+	["_pero"      , "Bleh"         ,  "Bleh"        , ".zzz",		""   		],#[M] ぺろ		
+	["_rakutan"   , "Upset"        ,  "Upset"       , ".zzz",		""   		],#[E] らくたん	
+	["_sabisi"    , "Lonely"       ,  "Lonely"      , ".zzz",		""   		],#[M] さびし		
+	["_san"       , "Triangle"     ,  ""            , ".zzz",		""   		],#[M]
+	["_setunai"   , "Sad"          ,  "Sad"         , ".zzz",		""   		],#[E] せつない	
+	["_sian"      , "Thoughtful"   ,  "Thoughtful"  , ".zzz",		""   		],#[E] しあん		
+	["_sinken"    , "Serious"      ,  "Serious"     , ".zzz",		""   		],#[X] しんけん	
+	["_tabe"      , "Eating"       ,  ""            , ".zzz",		""   		],#[M]
+	["_tere"      , "Shy"          ,  "Shy"         , ".zzz",		""   		],#[E] てれ		
+	["_tmara"     , ""             ,  ""            , ".zzz",		""   		],#[B] 			
+	["_tumara"    , "Bored"        ,  "Bored"       , ".zzz",		""   		],#[E] つまら		
+	["_uresi"     , "Happy"        ,  "Happy"       , ".zzz",		""   		],#[M] うれし		
+	["_winkl"     , "Wink L"       ,  "Wink L"      , ".zzz",		""   		],#[E] うぃんく		
+	["_winkr"     , "Wink R"       ,  "Wink R"      , ".zzz",		""   		],#[E] 			
+]; infixes_2 = [
+	["_doki_s"    , ""             ,  ""            , ".zzz",		""   		],#[X] 			
+	["_doki_ss"   , ""             ,  ""            , ".zzz",		""   		],#[X] 			
+	["_gyu02"     , ""             ,  ""            , ".zzz",		""   		],#[E] 			
+	["_gyul02"    , ""             ,  ""            , ".zzz",		""   		],#[E] 			
+	["_ikari02"   , ""             ,  ""            , ".zzz",		""   		],#[X] 			
+	["_name02"    , ""             ,  ""            , ".zzz",		""   		],#[M] 			
+	["_odoro_s"   , ""             ,  ""            , ".zzz",		""   		],#[X] 			
+	["_sianL"     , ""             ,  ""            , ".zzz",		""   		],#[B] 			
+	["_sianR"     , ""             ,  ""            , ".zzz",		""   		],#[B] 			
+	["_sinken02"  , ""             ,  ""            , ".zzz",		""   		],#[X] 			
+	["_sinken03"  , ""             ,  ""            , ".zzz",		""   		],#[X] 			
+	["_uresi_s"   , "Happy"        ,  "Happy"       , ".zzz",		""   		],#[M] 			
+	["_uresi_ss"  , "Happy"        ,  "Happy"       , ".zzz",		""   		],#[M] 			
 	]
 suffixes = [ # ["Text", "Morph", "", "EN"]
 	["_op" , ""            , "", ".open"],
@@ -163,8 +167,8 @@ def translateItem(name): ## Always input the untranslated name
 	return dest
 
 ## Create or find a given morph and write the given fields
-def addOrReplace(pmx, name_jp, name_en, panel, items:List[Tuple[str, float]]):# > PMX, "", "", int, [ ("", 0.0) ]
-	""" IN: PMX, str, str, int, List<Tuple<str, float>> ==> OUT: void """
+def addOrReplace(pmx, name_jp:str, name_en:str, panel:int, items:List[Tuple[str, float]], morphtype=0):# > PMX, "", "", int, [ ("", 0.0) ]
+	""" IN: PMX, str, str, int, List<Tuple<str, float>> or PmxMorph** ==> OUT: void """
 	# if exist: get from store & set Idx \\ else: create new, append, set Idx
 	idx = find_morph(pmx, name_jp, False)
 	if idx == -1:
@@ -173,7 +177,11 @@ def addOrReplace(pmx, name_jp, name_en, panel, items:List[Tuple[str, float]]):# 
 	morph = pmx.morphs[idx]
 	morph.name_en = name_en
 	morph.panel   = panel
-	morph.items   = genGroupItem(pmx, items)
+	if morphtype == 0:
+		morph.items   = genGroupItem(pmx, items)
+	else:
+		morph.morphtype = morphtype
+		morph.items     = items
 
 ## Returns the name by which this morph can be found, or ""
 def find_one_morph(_morphs, name, value=None) -> Union[str, Tuple[str, float]]:
@@ -193,13 +201,13 @@ def find_one_morph(_morphs, name, value=None) -> Union[str, Tuple[str, float]]:
 
 ####
 ### Remark: Throw out all of the "translated" matches again
-def find_all_morphs(_morphs, prefix=None, infix=None, suffix=None, value=None, isVocal=False) -> Union[List[str], List[Tuple[str, float]]]:
+def find_all_morphs(_morphs, prefix=None, infix=None, suffix=None, value=None, isVocal=False, exclude=None) -> Union[List[str], List[Tuple[str, float]]]:
 	"""
 	OUT(empty):       []
 	OUT(value==None): List[str]
 	OUT(value!=None): List[Tuple[str, float]]
 	"""
-	verbose = state.get("moreinfo", True)
+	verbose = _verbose()
 	## Get all morphs
 	morphs = copy.copy(_morphs)
 	if verbose: print(f"\nFind all morphs called <{prefix}:{infix}:{suffix}>")
@@ -211,9 +219,14 @@ def find_all_morphs(_morphs, prefix=None, infix=None, suffix=None, value=None, i
 		morphs = [m for m in morphs if r.match(m)] ## Only match at start
 	## Reduce by infixes, if any
 	if infix is not None:
+		noNum = False; exact = False
+		if infix[-1] == "$": noNum = True; infix = infix[:-1]
+		if infix[-1] == "%": exact = True; infix = infix[:-1]
 		pat = [x[3] for x in infixes if x[0] == infix]
 		if len(pat) == 0: raise Exception(f"Infix {infix} is not defined!")
-		r = re.compile(re.escape(infix) + "|" + re.escape(pat[0]) + "(\.|$)")
+		if exact:   r = re.compile(re.escape(infix) + "(_op|_cl)|" + re.escape(pat[0]) + "(_|$)")
+		elif noNum: r = re.compile(re.escape(infix) + "_|" + re.escape(pat[0]) + "(_|$)")
+		else:       r = re.compile(re.escape(infix) + "|" + re.escape(pat[0]) + "(\.|$)")
 		#print(f">>[Infix]: " + re.escape(infix) + "|" + re.escape(pat[0]))
 		morphs = [m for m in morphs if r.search(m)]
 	## Reduce by suffixes, if any
@@ -228,39 +241,82 @@ def find_all_morphs(_morphs, prefix=None, infix=None, suffix=None, value=None, i
 		if isVocal: _suffix = infix + _suffix
 		r = re.compile(f"{_suffix}$")
 		morphs = [m for m in morphs if r.search(m)]
+	if exclude:
+		r2 = re.compile(exclude)
+		morphs = [x for x in filter(lambda x: not r2.search(x), morphs)]
 	if verbose: print(f">> " + str(morphs))
 	if len(morphs) == 0: return []
 	if value is not None: return [(m, value) for m in morphs]
 	return morphs
+	
+def replace_one_morph(_morphs, text, value=None):
+	data = []
+	for m in _morphs:
+		if text in m[0]: data.append((m[0], value))
+		else: data.append(m)
+	return data
+
+def generateAlias(pmx, name, alias, alias_en):
+	if find_morph(pmx, alias, False) != -1: return False
+	m_idx = find_morph(pmx, name, True)
+	if m_idx == -1: return False
+	morph = copy.deepcopy(pmx.morphs[m_idx])
+	morph.name_jp = alias
+	morph.name_en = alias_en
+	pmx.morphs.append(morph)
 
 ###########################
 def emotionalize(pmx, input_file_name: str, write_model = True, moreinfo = False):
 	"""
 Utilizes the emotion morphs extracted from KK to construct TDA morphs.
+Will override existing morphs, which allows "repairing" cursed Impact-Values.
 
-[Output]: name + "_emote"
-	"""
-	state["moreinfo"] = moreinfo or DEBUG
+[Option]:
+-- Impact-Value: Between 0%-100%(=0..1), how strong the morphs should pull on the face.
+-- -- Default is 0.75, but 0.66 is also common.
+
+[Side-effects]:
+-- Will rerun Morph-Validation, which ensures that [Display] has less than 250 morphs.
+-- All surplus and otherwise ungrouped morphs are then added into [moremorphs].
+
+[Output]: PMX file '[modelname]_emote.pmx'
+"""
+	local_state["moreinfo"] = moreinfo or DEBUG
+	local_state["univrm"] = util.is_univrm()
 	####
-	CH__KK = 0; CH__TDA = 1;
+	if not _univrm() and find_mat(pmx, "cf_m_face_00", True) == -1:
+		print(">> Skipping because model has no standard face texture.")
+		return input_file_name
+	putAuxIntoGroup(pmx)
+	####
+	CH__TDA = 0; CH__VRM = 1;
 	choices = [
-		#("Generic            -- Combine all morphs based on their KK name", CH__KK),
-		("TDA                -- Try to assemble morphs resembling TDA", CH__TDA),
+		("TDA                -- Try to assemble morphs resembling TDA", CH__TDA, add_TDA),
+		("UniVRM             -- Categorize morphs on imported model ", CH__VRM, sort_morphs_into_frames),
 		]
 	choice = CH__TDA#util.ask_choices("Select the target collection", choices)
+	if _univrm(): choice = CH__VRM
 	####
-	if choice == CH__KK: collect_KK(pmx)
-	if choice == CH__TDA: add_TDA(pmx)
-	return kklib.end(pmx if write_model else None, input_file_name, "_emote", ["Mode: " + str(choice)])
+	choices[choice][2](pmx);
+	
+	from _dispframe_fix import dispframe_fix
+	if moreinfo:
+		print("->> Making sure display isn't too big <<-")
+		print("->>> Will add all no-where added morphs first, so don't worry about the high number")
+	idx = find_disp(pmx, "moremorphs", False)
+	if idx != -1: pmx.frames.remove(pmx.frames[idx])
+	dispframe_fix(pmx, moreinfo=moreinfo)
+	if moreinfo: print("--- >>  << ---")
+	
+	####--- Find a convenience way to sort all [KK morph segments] below the groups
+	
+	_results = []#["Mode: " + str(choice)]
+	if "eyeOpenness" in local_state: _results += ["EyeSlider Value: " + str(local_state["eyeOpenness"])]
+	cleanup_invalid(pmx)
+	
+	return kklib.end(pmx if write_model else None, input_file_name, "_emote", _results)
 
-def collect_KK(pmx):
-	### -- Just collect all matching and add them with e m b suffixes (or prefixes)
-	##--- Group face, sirome, eye_line_l, eye_line_u into [eye]
-	##--- Group lip, teeth, canine, tongue into [mouth]
-	## -- Group mayuge into [eyebrow]
-	pass
-
-def add_TDA(pmx):
+def add_TDA(pmx): ## Note: Add specific morphs as empty placeholder (JP, EN="Placeholder", it=[])
 	addOrReplaceEye   = lambda jp,en,it: addOrReplace(pmx, jp, en, 2, it)
 	addOrReplaceMouth = lambda jp,en,it: addOrReplace(pmx, jp, en, 3, it)
 	addOrReplaceBrow  = lambda jp,en,it: addOrReplace(pmx, jp, en, 1, it)
@@ -285,15 +341,46 @@ def add_TDA(pmx):
 		#はちゅ目横潰れ		… yokotsubure		Hort Squint		*	: ^ Squint Hor
 		pass
 	# def: Search all morphs with "_winkl" in their name -- Could also search for the alternative name in case it was renamed
-	addOrReplaceEye("まばたき",   "Blink",  find_all_morphs(morphs, "eye", "_def", [None,"_cl"], 0.5) )
-	addOrReplaceEye("笑い",   "Smile",  find_all_morphs(morphs, "eye", "_egao", [None,"_cl"], 0.5) )
-	addOrReplaceEye("ウィンク",   "Wink",  find_all_morphs(morphs, "eye", "_winkl", None, 0.5) )
-	addOrReplaceEye("ウィンク右", "Wink R",  find_all_morphs(morphs, "eye", "_winkr", None, 0.5) )
-	addOrReplaceEye("ウィンク２",  "Wink 2",  find_all_morphs(morphs, "eye", "_winkl", None, 0.75) )   # technically [def]
-	addOrReplaceEye("ｳｨﾝｸ２右", "Wink 2 R",  find_all_morphs(morphs, "eye", "_winkr", None, 0.75) ) # technically [def]
+	eyeOpenness = util.ask_number("Set Impact Value for Eye-Morphs", 0.00, 1.00, 0.75)
+	local_state["eyeOpenness"] = eyeOpenness
+	
+	find_all_morphs_eyes = lambda prefix,infix,suffix,value=eyeOpenness: find_all_morphs(morphs, prefix, infix, suffix, value, exclude="_siro[LR]")
+	
+	## Suggestion: Add (Face[Smile / Blink]=0.125), respective, and set Sirome to 0.66
+	addOrReplaceEye("まばたき",   "Blink",  find_all_morphs_eyes("eye", "_def", [None,"_cl"]) )
+	addOrReplaceEye("笑い",   "Smile",    find_all_morphs_eyes("eye", "_egao", [None,"_cl"]) )
+	addOrReplaceEye("ウィンク",   "Wink",    find_all_morphs_eyes("eye", "_winkl$", None) )
+	addOrReplaceEye("ウィンク右", "Wink R",  find_all_morphs_eyes("eye", "_winkr$", None) )
+	addOrReplaceEye("hitomi-small", "hitomi-small",  [
+			find_one_morph(morphs, "hitomiX-small", 1),
+			find_one_morph(morphs, "hitomiy-small", 1),
+			])
+	
+	
+	if generateWink(pmx):
+		morphs = [m.name_jp for m in pmx.morphs]
+		addOrReplaceEye("ウィンク２", "Wink 2", [
+			find_one_morph(morphs, "eye_face.f00_winkl02_op", eyeOpenness),
+			find_one_morph(morphs, "eye_nose.nl00_winkl_op", eyeOpenness),
+			#find_one_morph(morphs, "eye_siroL.sL00_def_cl", eyeOpenness),
+			find_one_morph(morphs, "eye_line_u.elu00_winkl02_cl", eyeOpenness),
+			find_one_morph(morphs, "eye_line_l.ell00_winkl02_cl", eyeOpenness),
+			])
+		addOrReplaceEye("ｳｨﾝｸ２右", "Wink 2 R", [
+			find_one_morph(morphs, "eye_face.f00_winkr02_op", eyeOpenness),
+			find_one_morph(morphs, "eye_nose.nl00_winkr_op", eyeOpenness),
+			#find_one_morph(morphs, "eye_siroR.sR00_def_cl", eyeOpenness),
+			find_one_morph(morphs, "eye_line_u.elu00_winkr02_cl", eyeOpenness),
+			find_one_morph(morphs, "eye_line_l.ell00_winkr02_cl", eyeOpenness),
+			])
+	
 	#addOrReplaceEye("なごみ", "...",  find_all_morphs(morphs, "eye", "_winkr", None, 0.8) )
 	#addOrReplaceEye("<ha>", "...",  find_all_morphs(morphs, "eye", "_winkr", None, 0.8) )
-	addOrReplaceEye("じと目", "Disgust",  find_all_morphs(morphs, "eye", "_keno", None, 0.5) )
+	#-- Slightly inwards slanted eyes
+	addOrReplaceEye("じと目", "Disgust",  find_all_morphs_eyes("eye", "_keno", None) )
+	#-- Wide open eyes
+	addOrReplaceEye("! あせり", "BigEyes",  find_all_morphs_eyes("eye", "_aseri", None) )
+	addOrReplaceEye("! 切ない", "Sad (Eyes)",  find_all_morphs(morphs, "eye", "_setunai", None, 0.75) ) # 切ない = Pained
 	# kiri
 	#############
 	def mouth():
@@ -323,20 +410,32 @@ def add_TDA(pmx):
 		#	歯無し下			hanashimoto			No DwT			C	Dw T is gone
 		#	ハンサム			hansamu				Handsome			Transform Chin
 		pass
-	defT_Op = find_one_morph(morphs, "kuti_ha.ha00_def_op")
-	defZ_Op = find_one_morph(morphs, "kuti_sita.t00_def_op")
+	defT_Op = find_one_morph(morphs, "kuti_ha.ha00_def_op") ## Default open teeth
+	defY_Op = find_one_morph(morphs, "kuti_yaeba.y00_def_op") ## Default open canine
+	defZ_Op = find_one_morph(morphs, "kuti_sita.t00_def_op") ## Default Tongue
+	
 	addOrReplaceMouth("あ", "A",  find_all_morphs(morphs, "kuti", "_a", "_s", 1.0, True) )
 	addOrReplaceMouth("い", "I",  find_all_morphs(morphs, "kuti", "_i", "_s", 0.75, True) )
-	addOrReplaceMouth("う", "U",  find_all_morphs(morphs, "kuti", "_u", "_s", 0.75, True) + [ (defT_Op, 0.75) ])
-	addOrReplaceMouth("え", "E",  find_all_morphs(morphs, "kuti", "_e", "_s", 1.0, True) )
-	addOrReplaceMouth("お", "O", find_all_morphs(morphs, "kuti", "_o", "_s", 0.75, True)	+ [ (defT_Op, 0.75) ])
-	addOrReplaceMouth("あ２", "A (Large)",  find_all_morphs(morphs, "kuti", "_a", "_l", 1.0, True) )
+	addOrReplaceMouth("う", "U",  find_all_morphs(morphs, "kuti", "_u", "_s", 0.75, True) + [ (defT_Op, 0.75), (defY_Op, 0.1) ])
+	
+	#addOrReplaceMouth("え", "E",  find_all_morphs(morphs, "kuti", "_e", "_s", 1.0, True) ) # idk maybe change tongue to 0.95
+	eMorphs = find_all_morphs(morphs, "kuti", "_e", "_s", 1.0, True)
+	eMorphs = replace_one_morph(eMorphs, "sita", value=0.85)
+	addOrReplaceMouth("え", "E",  eMorphs)
+	
+	addOrReplaceMouth("お", "O",  find_all_morphs(morphs, "kuti", "_o", "_s", 1.0, True)	+ [ (defT_Op, 0.75), (defY_Op, 0.5), (defZ_Op, 0.5) ])
 	addOrReplaceMouth("ん", "N",  find_all_morphs(morphs, "kuti", "_n", "_s", 1.0, True) )
-	addOrReplaceMouth("▲", "°▲°", 
-		find_all_morphs(morphs, "kuti", "_san", None, 0.5) + [(defT_Op, 1.0)])
+	addOrReplaceMouth("ああ", "A (Large)",  find_all_morphs(morphs, "kuti", "_a", "_l", 1.0, True) )
+	addOrReplaceMouth("いい", "I (Large)",  find_all_morphs(morphs, "kuti", "_i", "_l", 0.75, True) )
+	addOrReplaceMouth("うう", "U (Large)",  find_all_morphs(morphs, "kuti", "_u", "_l", 0.75, True) + [ (defT_Op, 0.75), (defY_Op, 0.1) ])
+	addOrReplaceMouth("ええ", "E (Large)",  find_all_morphs(morphs, "kuti", "_e", "_l", 1.0, True) )
+	addOrReplaceMouth("おお", "O (Large)",  find_all_morphs(morphs, "kuti", "_o", "_l", 1.0, True) + [ (defT_Op, 0.75), (defY_Op, 0.33), (defZ_Op, 0.5) ])
+	addOrReplaceMouth("▲", "°▲°",  find_all_morphs(morphs, "kuti", "_san", None, 0.5) + [(defT_Op, 1.0), (defY_Op, 1)])
 #	addOrReplaceMouth("∧", "°∧°",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
 #	addOrReplaceMouth("□", "°□°",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
 #	addOrReplaceMouth("ワ", "Wa",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
+	addOrReplaceMouth("□", "°□°[Placeholder]", [])
+	addOrReplaceMouth("ワ", "Wa[Placeholder]", [])
 	addOrReplaceMouth("ω", "°ω°",  find_all_morphs(morphs, "kuti", "_neko", [None,"_cl"], 0.5) )
 #	addOrReplaceMouth("ω□", "°ω° (Open)",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
 #	addOrReplaceMouth("にやり", "Disgust",  find_all_morphs(morphs, "kuti", "", None, 0.5) )
@@ -345,6 +444,12 @@ def add_TDA(pmx):
 #	addOrReplaceMouth("ぺろっ", "Licking",  find_all_morphs(morphs, "kuti", "_pero", None, 0.5) ) ##>> Fix or off
 #	addOrReplaceMouth("てへぺろ", "Disgust",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
 #	addOrReplaceMouth("てへぺろ２", "Disgust",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
+	addOrReplaceMouth("にやり", "にやり[Placeholder]", [])
+	addOrReplaceMouth("にやり２", "にやり２[Placeholder]", [])
+	addOrReplaceMouth("にっこり", "にっこり[Placeholder]", [])
+	addOrReplaceMouth("ぺろっ", "ぺろっ[Placeholder]", [])
+	addOrReplaceMouth("てへぺろ", "てへぺろ[Placeholder]", [])
+	addOrReplaceMouth("てへぺろ２", "てへぺろ２[Placeholder]", [])
 	addOrReplaceMouth("口角上げ", "Be Happy", [find_one_morph(morphs, "kuti_face.f00_uresi_cl", 0.5)])
 	addOrReplaceMouth("口角下げ", "Be Sad", [find_one_morph(morphs, "kuti_face.f00_ikari_cl", 1.0)])
 #	addOrReplaceMouth("口横広げ", "Disgust",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
@@ -353,25 +458,36 @@ def add_TDA(pmx):
 	#############
 	addOrReplaceBrow("真面目", "Serious",  find_all_morphs(morphs, "mayuge", "_sinken", [None,"_cl"], 1) )
 	addOrReplaceBrow("困る", "Worried",  find_all_morphs(morphs, "mayuge", "_koma", [None, "_cl"], 1) )
-#	addOrReplaceBrow("上", "Eyebrow up",  find_all_morphs(morphs, "mayuge", "_komaru", None, 1) )
+	addOrReplaceBrow("上", "Eyebrow up",  [find_one_morph(morphs, "mayuge.mayu00_def_cl", -1.0)])
 	addOrReplaceBrow("下", "Eyebrow down",  [find_one_morph(morphs, "mayuge.mayu00_def_cl", 1.0)])
 	#############
 	addOrReplaceOther("怒り", "Angry", [
-		find_one_morph(morphs, "eye_face.f00_ikari_op", 0.5),
-		find_one_morph(morphs, "eye_nose.nl00_ikari_op", 0.5),
-		find_one_morph(morphs, "eye_siroL.sL00_ikari_op", 0.5),
-		find_one_morph(morphs, "eye_siroR.sR00_ikari_op", 0.5),
-		find_one_morph(morphs, "eye_line_u.elu00_ikari_op", 0.5),
-		find_one_morph(morphs, "eye_line_l.ell00_ikari_op", 0.5),
+		find_one_morph(morphs, "eye_face.f00_ikari_op", 0.75),
+		find_one_morph(morphs, "eye_nose.nl00_ikari_op", 0.75),
+		#find_one_morph(morphs, "eye_siroL.sL00_ikari_op", 0.75),
+		#find_one_morph(morphs, "eye_siroR.sR00_ikari_op", 0.75),
+		find_one_morph(morphs, "eye_line_u.elu00_ikari_op", 0.75),
+		find_one_morph(morphs, "eye_line_l.ell00_ikari_op", 0.75),
 		find_one_morph(morphs, "kuti_face.f00_ikari_cl", 1.0),
 		find_one_morph(morphs, "mayuge.mayu00_oko_cl", 1.0),
 		])
+	addOrReplaceOther("哀しい", "[Face] Sad", [
+		find_one_morph(morphs, "eye_line_u.elu00_setsunai_op", 0.80),
+		find_one_morph(morphs, "Worried", 1.0),
+		])
+	## Think about renaming the items to have only the suffix in EN
+	
+	hotfix_generate_all_morphs(pmx, morphs, eyeOpenness)
 	
 	names = [
-		"あ","い","う","え","お","あ２","ん",# Talking
+		# Talking
+		"あ","い","う","え","お","ん",
+		"ああ","いい","うう","ええ","おお",
+		##----
 		"まばたき","笑い","ウィンク","ウィンク右","ウィンク２","ｳｨﾝｸ２右","じと目", # Eyes
 		"▲","ω","口角上げ","口角下げ","怒り", # Mouth
-		"真面目","困る","下", # Mayuge
+		"真面目","困る","上","下", # Mayuge
+		"哀しい", # Other
 		]
 	print("\n-- Add Vocals to combined group 'TrackVoice'...")
 	frames = [find_morph(pmx, name, True) for name in names]
@@ -383,4 +499,335 @@ def add_TDA(pmx):
 	
 	#############
 	pass
-########
+##############
+### Assemble new Morphs
+##############
+
+def generateWink(pmx): ### FUNC: Split things 
+	arr = [[],[]]
+	if find_morph(pmx, "eye_face.f00_def_cl", False) == -1: return False
+	eRIGHT = -1; eBOTH = 0; eLEFT = 1;
+	addOrReplaceEye   = lambda jp,en,it: addOrReplace(pmx, jp, en, 2, it, morphtype=1)
+	def splitLeftRight(_name):
+		arr[0] = []; arr[1] = []
+		m_idx = find_morph(pmx, _name, False)
+		if m_idx == -1: return False
+		vertices = [x for x in pmx.morphs[m_idx].items]
+		left  = [] ## positive X
+		right = [] ## negative X
+		for item in vertices:
+			v = pmx.verts[item.vert_idx].pos[0]
+			
+			##-- Add center vertices to both
+			if abs(v) < 0.005: x = eBOTH
+			else: x = eRIGHT if v < 0 else eLEFT
+			
+			if eRIGHT < x: left.append(item)
+			if x < eLEFT:  right.append(item)
+		arr[0] = left; arr[1] = right
+		return True
+	if splitLeftRight("eye_face.f00_def_cl"):
+		name = "eye_face.f00_winkl02_op";addOrReplaceEye(name, name, arr[0])
+		name = "eye_face.f00_winkr02_op";addOrReplaceEye(name, name, arr[1])
+	if splitLeftRight("eye_line_u.elu00_def_cl"):
+		name = "eye_line_u.elu00_winkl02_cl";addOrReplaceEye(name, name, arr[0])
+		name = "eye_line_u.elu00_winkr02_cl";addOrReplaceEye(name, name, arr[1])
+	if splitLeftRight("eye_line_l.ell00_def_cl"):
+		name = "eye_line_l.ell00_winkl02_cl";addOrReplaceEye(name, name, arr[0])
+		name = "eye_line_l.ell00_winkr02_cl";addOrReplaceEye(name, name, arr[1])
+	
+	return True
+
+def hotfix_generate_all_morphs(pmx, morphs, eyeOpenness):
+	addOrReplaceEye   = lambda jp,en,it: addOrReplace(pmx, jp, en, 2, it)
+	addOrReplaceMouth = lambda jp,en,it: addOrReplace(pmx, jp, en, 3, it)
+	addOrReplaceBrow  = lambda jp,en,it: addOrReplace(pmx, jp, en, 1, it)
+	addOrReplaceOther = lambda jp,en,it: addOrReplace(pmx, jp, en, 4, it)
+	arr = [x[0] for x in infixes][6:]
+	#arr += [x[0] for x in infixes_2]
+	def action(act, _name, _arr):
+		if act == "O" and _arr[0] == ('', eyeOpenness): return
+		if _arr is None or len(_arr) == 0: return
+		if _arr[0] in [None, "", ('', 1)]: return
+		if act == "E": addOrReplaceEye  (f"[E] {_name}", f"[E] {_name}", _arr)
+		if act == "M": addOrReplaceMouth(f"[M] {_name}", f"[M] {_name}", _arr)
+		if act == "B": addOrReplaceBrow (f"[B] {_name}", f"[B] {_name}", _arr)
+		if act == "O": addOrReplaceOther(f"[O] {_name}", f"[O] {_name}", _arr)
+	
+	for infix in arr:
+		action("E", infix, find_all_morphs(morphs, "eye", infix, [None,"_op"], eyeOpenness, exclude="_siro[LR]"))
+		action("O", infix, [ find_one_morph(morphs, f"eye_line_u.elu00{infix}_op", eyeOpenness) ])
+	
+	for infix in arr:
+		action("B", f"{infix}_op", find_all_morphs(morphs, "mayuge", infix+"%", [None,"_op"], 1))
+		action("B", f"{infix}_cl", find_all_morphs(morphs, "mayuge", infix+"%", [None,"_cl"], 1))
+	
+	for infix in arr:
+		action("M", f"{infix}_op", find_all_morphs(morphs, "kuti", infix+"%", [None,"_op"], 1))
+		action("M", f"{infix}_cl", find_all_morphs(morphs, "kuti", infix+"%", [None,"_cl"], 1))
+
+def combine_standards(pmx):
+	rename_if_foundEN(pmx, "bounce",				"MMD-Pose")
+	rename_if_foundEN(pmx, "unbounce",				"T-Pose")
+	rename_if_foundEN(pmx, "cf_m_face_00",			"Face")
+	rename_if_foundEN(pmx, "cf_m_body",				"Body")
+	rename_if_foundEN(pmx, "cm_m_body",				"Body")
+	rename_if_foundEN(pmx, "cf_m_mayuge_00",		"Eyebrows")
+	rename_if_foundEN(pmx, "cf_m_noseline_00",		"Nose")
+	if (find_morph(pmx, "cf_m_tooth*1", False) != -1):
+		rename_if_foundEN(pmx, "cf_m_tooth",		"Canine")
+		rename_if_foundEN(pmx, "cf_m_tooth*1",		"Teeth")
+	else:
+		rename_if_foundEN(pmx, "cf_m_tooth",		"Teeth")
+	rename_if_foundEN(pmx, "cf_m_eyeline_00_up",	"Eyeline_Up")
+	rename_if_foundEN(pmx, "cf_m_eyeline_down",		"Eyeline_Down")
+	rename_if_foundEN(pmx, "cf_m_sirome_00",		"EyeL_White")
+	rename_if_foundEN(pmx, "cf_m_sirome_00*1",		"EyeR_White")
+	rename_if_foundEN(pmx, "cf_m_hitomi_00*1",		"EyeR_Iris")
+	rename_if_foundEN(pmx, "cf_m_hitomi_00",		"EyeL_Iris")
+	rename_if_foundEN(pmx, "cf_m_tang", 			"Tongue")
+	
+	## Make Face Morph with all these parts
+	######
+	pass##
+
+
+##############
+### Display Frames
+##############
+
+def find_or_replace_disp(pmx, name):
+	idx = find_disp(pmx, name, False)
+	if idx == -1: idx = len(pmx.frames); pmx.frames.append(None)
+	return idx;
+
+def putAuxIntoGroup(pmx):
+	showWarning = not _univrm()
+	names = [
+		"bounce", "unbounce",
+		"hitomiX-small", "hitomiY-small", "hitomiX-big", "hitomiY-big", 
+		"hitomi-up", "hitomi-down", "hitomi-left", "hitomi-right", 
+		"Move Model downwards", "Move Body downwards",
+		"chikubi_in", "chikubi_out", 
+	]
+	name = "AuxMorphs"
+	print(f"\n-- Add misc Morphs to combined group '{name}'...")
+	frames = [find_morph(pmx, name, showWarning) for name in names]
+	frames += [find_morph(pmx, "OwO Moprh", False)]
+	frames = [[1,idx] for idx in frames if idx != -1]
+	idx = find_disp(pmx, name, False)
+	if idx != -1: pmx.frames[idx].items = frames
+	else: pmx.frames.append(pmxstruct.PmxFrame(name, name, False, frames))
+
+def sort_morphs_into_frames(pmx): ## Intended for UniVRM models
+	eyes = ["smile", "wink", "^blink", "eyelid", "look", "grin", "highlight"] + ["jitome", "tsurime", "tareme", "hitomi", "doukou"] + ["><", "=="]
+	mouth = ["mouth", "tongue", "teeth"] + ["^kuchi", "^bero", "pero"]
+	brows = ["^mayu"]
+	
+	eyes += ["^eye_face", "^eye_nose", "^eye_line_u", "^eye_line_l", "eye_siroL", "eye_siroR"]
+	mouth += ["^kuti_face", "^kuti_nose", "kuti_ha", "kuti_sita", "kuti_yaeba"]
+	
+	names = [
+		## Eyes (Move)
+		["まばたき", "笑い", "ウィンク", "ウィンク右", "ウィンク２", "ｳｨﾝｸ２右"],
+		## Eyes (Expression)
+		["なごみ", "はぅ", "びっくり", "じと目", "ｷﾘｯ", "星目", "はぁと", "瞳小", "瞳大", "光下", "ハイライト消し"], 
+		## Mouth (Talking)
+		["あ", "い", "う", "え", "お", "ω□", "ワ", "∧", "▲"],
+		## Mouth (Expression)
+		["はんっ！", "にやり", "にっこり", "ぺろっ", "てへぺろ", "口角上げ", "口角下げ", "口横広げ"], 
+		## Eyebrow
+		["真面目", "困る", "にこり", "怒り", "上", "下"], 
+		## Other
+		["頬染め", "涙"], 
+	]
+	flat_names = util.flatten(names)
+	rgE = util.matchList(eyes)
+	rgM = util.matchList(mouth)
+	rgB = util.matchList(brows)
+	### Categorize the Morphs & translate any if needed
+	for morph in pmx.morphs:
+		name = morph.name_jp
+		morph.name_en = util.translate_name(name, morph.name_en)
+		if name in [flat_names]: continue
+		morph.panel = 4
+		if  rgE.search(name): morph.panel = 2
+		if  rgM.search(name): morph.panel = 3
+		if  rgB.search(name): morph.panel = 1
+	
+	### Assign any MMD Morphs correctly (separately because Talking is one letter)
+	eyes  = names[0] + names[1]
+	mouth = names[2] + names[3]
+	brows = names[4]
+	frames = [find_morph(pmx, name, True) for name in flat_names]
+	
+	for idx in frames:
+		if idx == -1: continue
+		morph = pmx.morphs[idx]
+		name = morph.name_jp
+		if name in eyes:    morph.panel = 2
+		elif name in mouth: morph.panel = 3
+		elif name in brows: morph.panel = 1
+		else:               morph.panel = 4
+	
+	#####
+	print("\n-- Add Vocals to combined group 'TrackVoice'...")
+	frames = [[1,idx] for idx in frames if idx != -1]
+	name = "TrackVoice"
+	idx = find_disp(pmx, name, False)
+	if idx != -1: pmx.frames[idx].items = frames
+	else: pmx.frames.append(pmxstruct.PmxFrame(name, name, False, frames))
+
+def sort_bones_into_frames(pmx):
+	used_bones = set()
+	for d,frame in enumerate(pmx.frames):
+		if frame.name_jp == "morebones": continue
+		for item in frame.items:
+			if not item[0]: used_bones.add(item[1])
+	
+	extra_bones = []
+	slot_bones = []
+	
+	child_map = kkrig.get_children_map(pmx, None, True, False)
+	
+	reSkip = re.compile(r"cf_(hit|t|pv)_|a_n_|k_f_|KKS_")
+	
+	for d,bone in enumerate(pmx.bones):
+		if d in used_bones: continue
+		if reSkip.match(bone.name_jp): continue
+		if bone.name_jp.startswith("ca_slot"):
+			arr = [d] + child_map[d]
+			[used_bones.add(x) for x in arr]
+			slot_bones += arr
+			continue
+		extra_bones.append(d)
+	
+	idx = find_or_replace_disp(pmx, "extraBones")
+	pmx.frames[idx] = pmxstruct.PmxFrame(name_jp="extraBones", name_en="extraBones", is_special=False, items=[[0, x] for x in extra_bones])
+	
+	idx = find_or_replace_disp(pmx, "slotBones")
+	pmx.frames[idx] = pmxstruct.PmxFrame(name_jp="slotBones", name_en="slotBones", is_special=False, items=[[0, x] for x in slot_bones])
+	
+	idx = find_disp(pmx, "morebones", False)
+	if idx != --1:
+		oldFrame = pmx.frames[idx]
+		del pmx.frames[idx]
+		pmx.frames.append(oldFrame)
+
+
+
+##############
+### BoneMorph
+##############
+
+def make_bone_morph(pmx, name, items=[], override=False): return make_any_morph(pmx, name, items, override, 2)
+def make_bone_item(pmx, name, pos, rot): return pmxstruct.PmxMorphItemBone(find_bone(pmx, name, False), pos, rot)
+## =/BoneMorph,".+?",(".+?"),([\-\d\.]+,[\-\d\.]+,[\-\d\.]+),([\-\d\.]+,[\-\d\.]+,[\-\d\.]+)/ --> =/make_bone_item\(pmx, \1, [\2], [\3]\),/
+
+def add_heels_morph(pmx):
+	make_bone_morph(pmx, "Move for Shoes", [
+		make_bone_item(pmx, "グルーブ", [0,0.18,0], [0,0,0]),
+		make_bone_item(pmx, "左足ＩＫ", [0,-0.281,0], [0,0,0]),
+		make_bone_item(pmx, "右足ＩＫ", [0,-0.281,0], [0,0,0]),
+		make_bone_item(pmx, "cf_j_toes_L", [0,0,0], [21,0,0]),
+		make_bone_item(pmx, "cf_j_toes_R", [0,0,0], [21,0,0]),
+	])
+	make_bone_morph(pmx, "Move to Barefeet", [
+		make_bone_item(pmx, "グルーブ", [0,-0.18,0], [0,0,0]),
+		make_bone_item(pmx, "左足ＩＫ", [0,0.281,0], [0,0,0]),
+		make_bone_item(pmx, "右足ＩＫ", [0,0.281,0], [0,0,0]),
+		make_bone_item(pmx, "cf_j_toes_L", [0,0,0], [-21,0,0]),
+		make_bone_item(pmx, "cf_j_toes_R", [0,0,0], [-21,0,0]),
+	])
+
+
+
+##############
+### VertexMorph
+##############
+
+
+##############
+### More Morph Helpers
+##############
+
+def rename_if_foundEN(pmx, oldName, newName): return rename_if_found(pmx, oldName, newName, None)
+def rename_if_foundJP(pmx, oldName, newName): return rename_if_found(pmx, oldName, None, newName)
+def rename_if_found(pmx, oldName, newNameEN, newNameJP):
+	if _univrm(): oldName = re.sub(r"\*", r"+", oldName)
+	idx = find_morph(pmx, oldName, False)
+	if idx != -1:
+		m = pmx.morphs[idx]
+		if newNameEN: m.name_en = newNameEN
+		if newNameJP: m.name_jp = newNameJP
+
+def make_any_morph(pmx, name, items=[], override=False, cat=0):
+	morphIdx = find_morph(pmx, name, False)
+	if morphIdx != -1:
+		if not override: return
+	else:
+		morphIdx = len(pmx.morphs)
+		pmx.morphs.append(None)
+	if cat < 0 or cat > 6: cat = 0
+	if not items: items = []
+	pmx.morphs[morphIdx] = pmxstruct.PmxMorph(name, name, 4, cat, items)
+	######
+	pass##
+
+def cleanup_invalid(pmx):
+	vert_len = len(pmx.verts)
+	for morph in pmx.morphs:
+		if morph.morphtype == 1:
+			morph.items = [m for (idx,m) in enumerate(morph.items) if m.vert_idx < vert_len]
+		elif morph.morphtype == 2:
+			morph.items = [m for (idx,m) in enumerate(morph.items) if m.bone_idx != -1]
+
+
+#########
+#---- Expression ideas
+# <（i）>			
+# 胸ボーン							
+# パンツZ								
+# パンツY								
+# パンツY2							
+# 真面目			eyebrow_serius1		
+# 困る			eyebrow_sad1		
+# にこり			eyebrow_smile		
+# 怒り			eyebrow_anger1		
+# 上			eyebrow_up			
+# 下			eyebrow_down		
+# まばたき			eye_blink			Blink
+# 笑い			eye_smile			Happy
+# ウィンク			eye_wink_L			Wink (L)
+# ウィンク右		eye_wink_R			Wink (R)
+# ウィンク２		eye_wink2_L			Happy Wink (L)
+# ｳｨﾝｸ２右		eye_wink2_R			Happy Wink (R)
+# はぅ			eye_hau				>.<				// replace eye with texture
+# なごみ			eye_nagomi			=.=				// replace eye with texture
+# びっくり			eye_surprised		O.O				// morph eyelid
+# じと目			eye_jito			-.- (p eyes)	// morph eyelid
+# ぐるぐる目		eye_guruguru		@.@				// replace iris texture
+# 絶望			eye_zetsubou		#.# (blank)		// replace iris texture
+# ハート目		eye_heart							// add texture
+# きらきら目		eye_star							// add texture
+# 瞳小			eye_small							// shrink iris
+# カメラ目線		eye_camera			???
+# あ				A					
+# い				I					
+# う				U					
+# え				E					
+# お				O					
+# ▲				mouth_triangle		
+# ∧				mouth_∧				
+# ω				mouth_w				
+# えー			e-					"Ehh....?"
+# 口角上げ		mouth_corner_up		
+# 口角下げ		mouth_corner_down	
+# 幅大			mouth_wide			
+# 幅小			mouth_narrow		
+# 青ざめ			ex_aozame			// add texture to forehead
+# 涙			ex_tear				// add tears to corner of the eye
+# 照れ			ex_tere				// add blush
+# ムカッ			ex_muka				// add anger symbol to head
+# 汗			ex_ase				// add "Ehhh...." Tear to head
+# ホラー			Horror				

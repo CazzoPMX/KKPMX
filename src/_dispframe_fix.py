@@ -203,6 +203,7 @@ def dispframe_fix(pmx: pmxstruct.Pmx, moreinfo=False):
 		# if this morph is in a valid panel, add it to the list
 		if 1 <= morph.panel <= 4: undisplayed_morphs.append(d)
 	
+	morphsAdded = len(undisplayed_morphs) #-- custom
 	if undisplayed_morphs:
 		if moreinfo:
 			core.MY_PRINT_FUNC("added %d undisplayed morphs to Facials group" % len(undisplayed_morphs))
@@ -237,8 +238,11 @@ def dispframe_fix(pmx: pmxstruct.Pmx, moreinfo=False):
 					i += 1
 	num_morphs_over_limit = max(total_num_morphs - MAX_MORPHS_IN_DISPLAY, 0)
 	if num_morphs_over_limit:
-		core.MY_PRINT_FUNC("removed %d morphs to stay under the %d morph limit (cause of crashes)" % (num_morphs_over_limit, MAX_MORPHS_IN_DISPLAY))
-		core.MY_PRINT_FUNC("!!! Warning: do not add the remaining morphs to the display group! MMD will crash!")
+		morphsAdded = len(undisplayed_morphs) - num_morphs_over_limit #-- custom
+		## Only show if we actually removed more morphs than we added previously removed ones.
+		if moreinfo or (morphsAdded < 0): #-- custom
+			core.MY_PRINT_FUNC("removed %d morphs to stay under the %d morph limit (cause of crashes)" % (num_morphs_over_limit, MAX_MORPHS_IN_DISPLAY))
+			core.MY_PRINT_FUNC("!!! Warning: do not add the remaining morphs to the display group! MMD will crash!")
 		
 	# delete any groups that are empty
 	i = 0
@@ -254,7 +258,12 @@ def dispframe_fix(pmx: pmxstruct.Pmx, moreinfo=False):
 		core.MY_PRINT_FUNC("removed %d empty groups" % empty_groups_removed)
 	
 	overall = num_morphs_over_limit + fix_center + empty_groups_removed + len(undisplayed_bones) + len(undisplayed_morphs) + duplicate_entries_removed + hidden_morphs_removed + fix_root
-	if overall == 0:
+	##-- custom
+	if not moreinfo:
+		overall = overall - num_morphs_over_limit - len(undisplayed_morphs)
+		if morphsAdded > 0: overall += morphsAdded
+	##-- custom (end)
+	if overall < 0:
 		core.MY_PRINT_FUNC("No changes are required")
 		return pmx, False
 	

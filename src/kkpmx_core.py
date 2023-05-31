@@ -1,5 +1,5 @@
 # Cazoo - 2022-02-10
-# This code is free to use and re-distribute, but I cannot be held responsible for damages that it may or may not cause.
+# This code is free to use, but I cannot be held responsible for damages that it may or may not cause.
 #####################
 from typing import List
 import re
@@ -14,11 +14,11 @@ import kkpmx_rigging as kkrig
 from kkpmx_handle_overhang import run as runOverhang
 from kkpmx_json_generator import GenerateJsonFile
 from kkpmx_morphs import emotionalize
+import kkpmx_morphs as kkmorph
 try:
 	import nuthouse01_core as core
 	import nuthouse01_pmx_parser as pmxlib
 	import nuthouse01_pmx_struct as pmxstruct
-	import _translation_tools as tlTools
 	import morph_scale
 	from kkpmx_csv import csv__from_bones, csv__from_mat, csv__from_vertex, export_material_surface
 except ImportError as eee:
@@ -83,6 +83,7 @@ def get_choices():
 		("Adjust for Raycast", PropParser.convert_color_for_RayMMD),
 		("Prune invisible Faces", delete_invisible_faces),
 		("Add Emotion Morphs", emotionalize),
+		("Bone weights", kkrig.merge_bone_weights),
 	]
 def main(moreinfo=True):
 	# promt choice
@@ -102,9 +103,9 @@ def main(moreinfo=True):
 		core.MY_PRINT_FUNC(doc if doc is not None else (f"<< no help for '{choices[_idx][0]}' >>"))
 	if idx == 0: return [print_help(idx) for idx in range(1,len(choices))]
 	elif idx == 6:
-		if DEBUG:
-			if util.ask_yes_no("Transfer Filenames"): transfer_names();
-		exit()
+		if not DEBUG: exit()
+		from kkpmx_internal import main2
+		main2(); 		exit()
 	else: print_help(idx)
 	# prompt PMX name
 	core.MY_PRINT_FUNC(">> The script can be terminated at any point by pressing Ctrl+C")
@@ -114,10 +115,13 @@ def main(moreinfo=True):
 	if len(choices[idx]) == 3: pmx = None
 	else: pmx = pmxlib.read_pmx(input_filename_pmx, moreinfo=moreinfo)
 	print("==--==")
+	util.set_globals(input_filename_pmx)
 	choices[idx][1](pmx, input_filename_pmx)
 	print("==--==")
 	core.MY_PRINT_FUNC("Done!")
 	return None
+
+
 
 ###################
 ### Main Method ###
@@ -128,7 +132,7 @@ def cleanup_texture(pmx, input_filename_pmx, write_model=True, opt = {}): ### [0
 This is one of two main methods to make KK-Models look better.
 It does the following things:
 
-- disable "Bonelyfans", "Standard" (+ emblem if no texture)
+- Disable "Bonelyfans", "Standard" (+ emblem if no texture)
 - Simplify material names (removes "(Instance)" etc)
 - After promting user for permission:
 -  - if tex_idx != -1: Set diffRGB to [1,1,1] ++ add previous to comment
@@ -136,17 +140,23 @@ It does the following things:
 - If no toon: Set toon_idx = "toon02.bmp"
 - Rename certain bones to match standard MMD better
 - Only for KK-Models:
+-  - Cleanup the extra items added by Clothes-to-Accessories (CTA)
 -  - Adjust Ankle Bones to avoid twisted feet
+-  - Replace Tongue color because it is weird by default
+-  - Link the standard MMD bones (Arms, Legs, Torso) together
+-  - Add a Display group for quick access of certain TrackAnchors
+-  - Add a Display group each for Chest and Skirt bones (allows disabling their physics in MMD)
+-  - Repair the already existing Morphs (for AEIOU, Blinking, Happy) and fix panels
 - Remove items with idx == -1 from dispframes [<< crashes MMD]
 - Fix invalid vertex morphs [<< crashes MMD]
 
 In some cases, this is already enough to make a model look good for simple animations.
 Which is why this also standardizes color and toon,
 
-Options (for Automization):
-- "colors": bool -- Standardize colors. Asks user if None
+[Options] (for Automization):
+- [colors]: bool -- Standardize colors (== Reset Diffuse of Materials with Textures). Asks user if None
 
-Output: PMX File '[filename]_cleaned.pmx'
+[Output]: PMX File '[filename]_cleaned.pmx'
 """
 	###############
 	###### ---- materials
@@ -154,19 +164,17 @@ Output: PMX File '[filename]_cleaned.pmx'
 		mat_idx = name_mat
 		if type(name_mat) == str:
 			mat_idx = find_mat(pmx, name_mat, False)
-			if mat_idx == None: return
+			if mat_idx == -1: return
 		if no_tex_only:
 			if pmx.materials[mat_idx].tex_idx != -1:
 				return
-		pmx.materials[mat_idx].alpha = 0.0
-		pmx.materials[mat_idx].edgesize = 0
-		pmx.materials[mat_idx].flaglist[4] = False
-	#disable_mat("Bonelyfans (Instance)")
-	#disable_mat("Bonelyfans")
-	#disable_mat("Bonelyfans*1")
-	#disable_mat("Standard (Instance) (Instance)") ## Exists with kedama (?)
-	#disable_mat("acs_m_kedama (Instance) (Instance)")
-	kk_re = re.compile(r" ?\(Instance\)_?(\([-0-9]*\))?")
+		_mat = pmx.materials[mat_idx]
+		_mat.comment = util.updateCommentRaw(_mat.comment, "[:Disabled:]")
+		_mat.alpha = 0.0
+		_mat.edgesize = 0
+		_mat.flaglist[4] = False
+	
+	kk_re = re.compile(r"( ?\(?Instance\)?)*(_\([-0-9]*\))?")
 	flag = opt.get("colors", None)
 	if flag is None: flag = util.ask_yes_no("Standardize Colors")
 	for mat in pmx.materials:
@@ -183,23 +191,25 @@ Output: PMX File '[filename]_cleaned.pmx'
 		### KK Materials with own texture rarely use the diffuse color
 		### So replace it with [1,1,1] to make it fully visible
 		skip = ["[0.0, 0.0, 0.0]", "[1.0, 1.0, 1.0]"]
+		
 		if (mat.tex_idx != -1 and not re.search("cf_m_mayuge", mat.name_jp)):
 			if str(mat.diffRGB) not in ["[0.5, 0.5, 0.5]", "[1.0, 1.0, 1.0]"]:
-				mat.comment = mat.comment + "\r\n[Old Diffuse]: " + str(mat.diffRGB)
+				mat.comment = util.updateCommentRaw(mat.comment, "[Old Diffuse]:", str(mat.diffRGB))
 				mat.diffRGB = [1,1,1]
 		elif mat.diffRGB != [1,1,1]:
 			## Otherwise replicate it into specular to avoid white reflection
 			skip_r = skip + [str(mat.diffRGB)]
 			if str(mat.specRGB) not in skip_r:
-				mat.comment = mat.comment + "\r\n[Old Specular]: " + str(mat.specRGB)
+				mat.comment = util.updateCommentRaw(mat.comment, "[Old Specular]:", str(mat.specRGB))
 			mat.specRGB = mat.diffRGB
 		else:
 			if str(mat.specRGB) not in skip:
-				mat.comment = mat.comment + "\r\n[Old Specular]: " + str(mat.specRGB)
+				mat.comment = util.updateCommentRaw(mat.comment, "[Old Specular]:", str(mat.specRGB))
 			mat.specRGB = [0,0,0]
 		
 	#-------
 	disable_mat("cf_m_emblem", no_tex_only=True)
+	disable_mat("cf_m_noseline_00", no_tex_only=True)
 	#-------
 	## Make sure that all materials have unique names
 	names = []
@@ -227,37 +237,65 @@ Output: PMX File '[filename]_cleaned.pmx'
 	
 	idx = find_mat(pmx, "cf_m_tang", False)
 	if idx != -1: pmx.materials[idx].diffRGB = [1, 0.6985294, 0.6985294]
-	
+
+	### Clothes-to-Accessories cleanup (clones a full body mesh per asset)
+	#- but the materials are attached to the real bones & vertices, so they can be safely deleted
+	def cleanup_CTA():
+		from _prune_unused_bones import apply_bone_remapping
+		from _prune_unused_vertices import newval_from_range_map, delme_list_to_rangemap
+		def collect_CTA(_arr, flag=False):
+			arr = []
+			skipArr = set()
+			for _idx,_item in enumerate(_arr):
+				n = _item.name_jp
+				if n.startswith("CTA"):
+					## Keep these bones because we need them for the json generator
+					if flag and (n == "CTA_cf_o_root_" or _item.parent_idx in skipArr):
+						skipArr.add(_idx)
+					else: arr.append(_idx)
+			return arr
+		bone_dellist  = collect_CTA(pmx.bones, True)
+		rigid_dellist = collect_CTA(pmx.rigidbodies)
+		joint_dellist = collect_CTA(pmx.joints)
+		
+		do_bones  = len(bone_dellist) > 0
+		do_bodies = len(rigid_dellist) > 0
+		do_joints = len(joint_dellist) > 0
+		if not (do_bones or do_bodies or do_joints): return
+		
+		# build the rangemap to determine how index references will be modified from this deletion
+		if do_bones: bone_shiftmap  = delme_list_to_rangemap(sorted(bone_dellist))
+		if do_bodies: rigid_shiftmap = delme_list_to_rangemap(sorted(rigid_dellist))
+		# actually delete the items
+		for f in reversed(joint_dellist): pmx.joints.pop(f)
+		for f in reversed(rigid_dellist): pmx.rigidbodies.pop(f)
+		for f in reversed(bone_dellist): pmx.bones.pop(f)
+		# apply remapping scheme to all remaining bones + rigidbodies, fix joints
+		if do_bones: apply_bone_remapping(pmx, bone_dellist, bone_shiftmap)
+		if not do_bodies: return
+		for idx, joint in enumerate(pmx.joints):
+			joint.rb1_idx = newval_from_range_map(joint.rb1_idx, rigid_shiftmap)
+			joint.rb2_idx = newval_from_range_map(joint.rb2_idx, rigid_shiftmap)
+	cleanup_CTA()
 	###############
 	###### ---- bones
-	def rename_bone(org, newJP, newEN):
-		tmp = find_bone(pmx, org, False)
-		if tmp is not None:
-			if newJP is not None: pmx.bones[tmp].name_jp = newJP
-			if newEN is not None: pmx.bones[tmp].name_en = newEN
-	def bind_bone(arr):
-		### Enclose in [] to make a bone optional
-		test = [type(x) == type([]) for x in arr]
-		if any(test):
-			_arr = []
-			for i,x in enumerate(arr):
-				if not test[i]: _arr.append(x)
-				elif find_bone(pmx, x[0], False) != -1: _arr.append(x[0])
-			arr = _arr
-		
-		while len(arr) > 1:
-			parent = find_bone(pmx, arr[0], False)
-			child = find_bone(pmx, arr[1], False)
-			#print(f"Linking {arr[0]:10}={parent:3} to {arr[1]:10}={child:3}")
-			if parent != -1 and child != -1:
-				pmx.bones[parent].tail_usebonelink = True
-				pmx.bones[parent].tail = child
-			arr.pop(0)
+	rename_bone = lambda org, newJP, newEN: util.rename_bone(pmx, org, newJP, newEN)
+	bind_bone   = lambda arr: util.bind_bone(pmx, arr)
 	def __bones():
 		## rename Eyes: [両目x] to [両目], [左目x] to [左目], [右目x] to [右目]
 		rename_bone("両目x", "両目", "Viewangle")
 		rename_bone("左目x", "左目", "Eye_L")
 		rename_bone("右目x", "右目", "Eye_R")
+		
+		## rename shoulder solo bones (might be useful for some motions)
+		# cf_s_shoulder02_L	左肩Solo	cf_s_shoulder02_L	shoulder_L_solo
+		# cf_s_shoulder02_R	右肩Solo	cf_s_shoulder02_R	shoulder_R_solo
+		rename_bone("cf_d_shoulder_L", "cf_d_shoulder_L", "shoulderL_raise")
+		rename_bone("cf_d_shoulder_R", "cf_d_shoulder_R", "shoulderR_raise")
+		rename_bone("cf_d_shoulder02_L", "左肩Solo", "shoulder_L_solo")
+		rename_bone("cf_d_shoulder02_R", "右肩Solo", "shoulder_R_solo")
+		
+		rename_bone("cf_j_spine03", "cf_j_spine03", "UpperChest") ## Based on Unity EXP
 		
 		## Attempt to patch weird eyesight
 		if find_bone(pmx, "cf_J_Eye_rz_L", False) != -1:
@@ -269,7 +307,6 @@ Output: PMX File '[filename]_cleaned.pmx'
 			right = pmx.bones[find_bone(pmx, "右目")]
 			right.pos = [-left.pos[0], left.pos[1], left.pos[2]]
 			right.inherit_ratio = 0.05
-		
 		
 		## Rename and bind fingers (先 = tip, end) -- Translation is added later anyway
 		rename_bone("cf_j_thumb04_L",  "左親指先", ""); rename_bone("cf_j_thumb04_R",  "右親指先", "")
@@ -287,9 +324,23 @@ Output: PMX File '[filename]_cleaned.pmx'
 			pmx.bones[bone].has_visible = False
 		bind_bone(["左親指２", "左親指先"]); bind_bone(["右親指２", "右親指先"])
 		
+		## Provide convenient grab
+		if find_bone(pmx, "cf_pv_hand_L", False) != -1:
+			## Rename "center of hand" & parent to hand bone
+			left  = rename_bone("cf_pv_hand_L", "左指Grab", "FingerL Base")
+			right = rename_bone("cf_pv_hand_R", "右指Grab", "FingerR Base")
+			pmx.bones[left].parent_idx = find_bone(pmx, "cf_s_hand_L")
+			pmx.bones[right].parent_idx = find_bone(pmx, "cf_s_hand_R")
+			## Set parent of fingers (except thumb) respectively
+			for item in fingers:
+				if item[1] == "親指": continue
+				root = left if item[0] == "左" else right
+				bone = find_bone(pmx, "".join([item[0], item[1], "０"]))
+				pmx.bones[bone].parent_idx = root
+		
 		## Bind Arms
-		bind_bone(["cf_d_shoulder_L", "cf_j_shoulder_L", "左肩"]); bind_bone(["左腕", ["左腕捩"], "左ひじ", ["左手捩"], "左手首"])
-		bind_bone(["cf_d_shoulder_R", "cf_j_shoulder_R", "右肩"]); bind_bone(["右腕", ["右腕捩"], "右ひじ", ["右手捩"], "右手首"])
+		bind_bone(["cf_d_shoulder_L", "左肩", "左腕"]); bind_bone(["左腕", ["左腕捩"], "左ひじ", ["左手捩"], "左手首"])
+		bind_bone(["cf_d_shoulder_R", "右肩", "右腕"]); bind_bone(["右腕", ["右腕捩"], "右ひじ", ["右手捩"], "右手首"])
 		## Bind Body
 		bind_bone(["上半身", "上半身2", "cf_j_spine03", "首", "頭"])
 		bind_bone(["cf_j_hips", "下半身", "cf_j_waist02"])
@@ -297,10 +348,25 @@ Output: PMX File '[filename]_cleaned.pmx'
 		bind_bone(["左足", "左ひざ", "左足首", "左つま先"])
 		bind_bone(["右足", "右ひざ", "右足首", "右つま先"])
 		
-		## Fix Feet
+		## Patch Knees
+		def patchKnee(name, target):
+			bone   = find_bone(pmx, name, False)
+			parent = find_bone(pmx, target, False)
+			if bone == -1 or parent == -1: return
+			bone = pmx.bones[bone]
+			bone.deform_layer       = 1
+			bone.inherit_rot        = True
+			bone.inherit_parent_idx = parent
+			bone.inherit_ratio      = 0.5
+			bone.has_fixedaxis      = True
+			bone.fixedaxis          = [0.5, 0, 0]
+		patchKnee("cf_d_kneeF_L", "左足"); patchKnee("cf_s_kneeB_L", "左足")
+		patchKnee("cf_d_kneeF_R", "右足"); patchKnee("cf_s_kneeB_R", "右足")
+		
+		## Fix Feet -- Pull the ankle upwards to match standard TDA style
 		def tmp(A, B, C):
 			ankle = find_bone(pmx, A, False)
-			if ankle is not None:
+			if ankle != -1:
 				posY = pmx.bones[ankle].pos[1]
 				foot = find_bone(pmx, B, False)
 				pmx.bones[foot].pos[1] = posY
@@ -309,8 +375,7 @@ Output: PMX File '[filename]_cleaned.pmx'
 				pmx.bones[ik].tail = [0, 0, 1.3]
 		tmp("cf_d_leg03_L", "左足首", "左足ＩＫ")
 		tmp("cf_d_leg03_R", "右足首", "右足ＩＫ")
-		## add [グルーブ][groove] at [Y +0.2] between [center] and [BodyTop] :: Add [MVN], [no VIS] head optional
-		## add [腰][waist] at ??? between [upper]/[lower] and [cf_j_hips]
+		
 		########
 		pass ###
 	__bones()
@@ -384,6 +449,8 @@ Output: PMX File '[filename]_cleaned.pmx'
 				pmxstruct.PmxMorphItemBone(find_bone(pmx, "左腕", False), [0,0,0], [0,0,-35]),
 			]))
 		
+		if util.is_univrm(): return
+		
 		### Adjust some of the morphs
 		def addGroupItem(arr): return [pmxstruct.PmxMorphItemGroup(find_morph(pmx, name), 1) for name in arr if find_morph(pmx, name, False) != -1]
 		def replaceItems(name, arr):
@@ -405,7 +472,9 @@ Output: PMX File '[filename]_cleaned.pmx'
 			morph[0].value = 0.32
 			morph[1].value = 0.32
 			morph[2].value = 0.66
-
+		
+		## Add a morph to configure heels
+		kkmorph.add_heels_morph(pmx)
 		
 		########
 		pass ###
@@ -461,14 +530,38 @@ Output: PMX File '[filename]_cleaned.pmx'
 			if idx in _frames: continue
 			pmx.frames[disp].items.append([0, idx])
 	
+	addIfNot("腕", ["shoulderL_raise", "shoulder_L_solo", "shoulderR_raise", "shoulder_R_solo"]) ## Add more Shoulder bones to Arms
 	addIfNot("体(上)", ["cf_s_spine03", "cf_s_spine02", "cf_s_spine01"]) ## spine to Upper Body
+	##: Probably provide Renaming to "Scale (Spine)" \\ "Scale (Chest)" \\ "Scale (UpperChest)"
 	addIfNot("体(下)", ["腰", "cf_j_waist02"]) ## waist to Lower Body
+	addIfNot("足", ["cf_d_kneeF_L", "cf_s_kneeB_L", "cf_d_kneeF_R", "cf_s_kneeB_R"]) ## knee to legs
+	addIfNot("足", ["左つま先", "右つま先", "cf_j_toes_L", "cf_j_toes_R"]) ## toes to legs
 	
-	### Clean up invalid dispframes
+	### Resort Fingers to be less confusing [UNTESTED]
+	def sortFingers():
+		disp = find_disp(pmx, "指", False)
+		if disp == -1:
+			disp = len(pmx.frames)
+			pmx.frames.append(pmxstruct.PmxFrame("指", "Fingers", False, []))
+		else:
+			pmx.frames[disp].items = []
+		from itertools import product
+		fingers = product(["左","右"], ["親指", "人指", "中指", "薬指", "小指"],["０", "１", "２", "３"])
+		for item in sorted(fingers, key=lambda x: x[0]):
+			bone = find_bone(pmx, ''.join(item), False)
+			if bone == -1: continue
+			pmx.frames[disp].items.append([0, bone])
+	sortFingers()
+	kkmorph.sort_bones_into_frames(pmx)
+	
+	### Clean up invalid dispframes (which can crash MMD)
 	for disp in pmx.frames:
 		disp.items = list(filter(lambda x: x[1] not in [-1,None], disp.items))
 	
-	### Clean up invalid morphs
+	## Maybe make a DisplayFrame with all the "other useful" bones
+	## and then one where to add all of the k_f, slots, etc
+	
+	### Clean up invalid morphs (which can crash MMD)
 	vert_len = len(pmx.verts)
 	for morph in pmx.morphs:
 		if morph.morphtype != 1: continue
@@ -507,7 +600,9 @@ There are some additional steps that cannot be done by a script; They will be me
 	## ask if doing new model per step or only one at the end
 	write_model = util.ask_yes_no("Store individual steps as own model (will copy into main file regardless)", "y")
 	moreinfo = util.ask_yes_no("Display more details in some cases","n")
+	has_univrm = util.is_univrm();
 	all_yes = util.ask_yes_no("Do all yes","y")
+	util.global_state["all_yes"] = all_yes
 	
 	## rename input_filename_pmx to "_org"
 	orgPath = input_filename_pmx[0:-4] + "_org.pmx"
@@ -525,60 +620,74 @@ There are some additional steps that cannot be done by a script; They will be me
 	if all_yes or util.ask_yes_no("Convert filenames in local folder","y"):
 		ask_to_rename_extra(pmx, input_filename_pmx)
 	## run cleanup_texture --- [0] because it renames the materials as well
-	path = cleanup_texture(pmx, input_filename_pmx, write_model, {"colors": True})
+	
+	path = cleanup_texture(pmx, input_filename_pmx, write_model, {"colors": not has_univrm})
 	if write_model: util.copy_file(path, input_filename_pmx)
 	#-------------#
-	section("Plugin File")
-	## ask for parser file
-	if all_yes or util.ask_yes_no("Using data generated by associated JSONGenerator Plugin of KK"):
-		if GenerateJsonFile(pmx, input_filename_pmx):
-			## run parseMatComments
-			#>> <<< ask for base path
-			_opt = {"apply": True if all_yes else None}
-			path = PropParser.parseMatComments(pmx, input_filename_pmx, write_model, moreinfo=moreinfo, opt=_opt)
-			if write_model and path != input_filename_pmx: util.copy_file(path, input_filename_pmx)
-	#-------------#
-	section("Rigging")
-	## run cleanup_texture --- after [1] because it utilizes Parser Comments
-	path = kkrig.run(pmx, input_filename_pmx, moreinfo=moreinfo, write_model=write_model, _opt={"mode":0})
-	if write_model: util.copy_file(path, input_filename_pmx)
+	## Ask for parser file (except in UniVRM mode)
+	if not has_univrm:
+		section("Plugin File")
+		if all_yes or util.ask_yes_no("Using data generated by associated JSONGenerator Plugin of KK"):
+			if GenerateJsonFile(pmx, input_filename_pmx):
+				## run parseMatComments
+				#>> <<< ask for base path
+				_opt = {"apply": True if all_yes else None}
+				path = PropParser.parseMatComments(pmx, input_filename_pmx, write_model, moreinfo=moreinfo, opt=_opt)
+				if write_model and path != input_filename_pmx: util.copy_file(path, input_filename_pmx)
 	#-------------#
 	#-- Before either Plugin or Morphs so that you can see the two "Skip" lines 
 	#-- After Plugin so that it can also clean up "color only" materials
 	section("Remove invisible faces")
-	if all_yes or util.ask_yes_no("Remove invisible faces from materials","y"):
+	if (not has_univrm and all_yes) or util.ask_yes_no("Remove invisible faces from materials","y"):
 		delete_invisible_faces(pmx, input_filename_pmx, write_model=write_model, moreinfo=moreinfo)
 		if write_model: util.copy_file(path, input_filename_pmx)
+	#-------------#
+	section("Rigging")
+	## run Rigging --- after [1] because it utilizes Parser Comments -- after [Prune] so that it can remove obsolete rigging
+	path = kkrig.run(pmx, input_filename_pmx, moreinfo=moreinfo, write_model=write_model, _opt={"mode":0})
+	if write_model: util.copy_file(path, input_filename_pmx)
 	#-------------#
 	section("Material Morphs")
 	## ask to run make_material_morphs --- [3rd] to make use of untranslated names for sorting
 	# ++ Clears and fills the [Facials] Frame with own morphs, which is again repopulated by sorting[5]
 	if all_yes or util.ask_yes_no("Generate Material Morphs", "y"):
 		## -- run make_material_morphs
-		_opt = {"body": True if all_yes else None}
+		_opt = {"body": True if all_yes else None, "group": False if has_univrm else None}
 		path = make_material_morphs(pmx, input_filename_pmx, write_model, moreinfo=moreinfo, opt=_opt)
 		if write_model: util.copy_file(path, input_filename_pmx)
 	#-------------#
 	section("Emotion Morphs")
-	if all_yes or util.ask_yes_no("Add Emotion Morphs", "y"):
+	## Even if no morphs, we still want to sort them
+	if all_yes or util.ask_yes_no("Fix Morph-Panels" if has_univrm else "Add Emotion Morphs", "y"):
 		path = emotionalize(pmx, input_filename_pmx, write_model, moreinfo=moreinfo)
 		if write_model: util.copy_file(path, input_filename_pmx)
 	#-------------#
-	section("Sort Textures (will make a backup of all files)")
-	## run [core] sort textures (which edits in place) --- [2nd] to also sort the property files
-	import file_sort_textures
-	if not write_model: pmxlib.write_pmx(input_filename_pmx, pmx, moreinfo=moreinfo)
-	print(">> Recommended: 2 (No) \\ 2 (only top-level) \\ 1 (Yes) ")
-	print("")
-	# Tell options: 2(No) \\ 2(only top-level) \\ 1(Yes) <<<<<<<<<<<<<<<<<<<<<<<<<
-	file_sort_textures.__main(input_filename_pmx, moreinfo)
-	if write_model:
-		end(None, input_filename_pmx, "_sorted", "Sorted all texture files")
-		path = core.get_unused_file_name(input_filename_pmx[0:-4] + "_sorted.pmx")
-		util.copy_file(input_filename_pmx, path)
-	print("-- Reparsing sorted model")
-	pmx = pmxlib.read_pmx(input_filename_pmx, moreinfo=False) # Re-Import *.pmx bc no pmx argument
+	if not has_univrm: ## Imports are never cluttered
+		section("Sort Textures (will make a backup of all files)")
+		if util.ask_yes_no("Sort textures into subfolders", "y"):
+			## run [core] sort textures (which edits in place) --- [2nd] to also sort the property files
+			import file_sort_textures
+			if not write_model: pmxlib.write_pmx(input_filename_pmx, pmx, moreinfo=moreinfo)
+			print(">> Recommended: 2 (No) \\ 2 (only top-level) \\ 1 (Yes) ")
+			print("")
+			# Tell options: 2(No) \\ 2(only top-level) \\ 1(Yes) <<<<<<<<<<<<<<<<<<<<<<<<<
+			file_sort_textures.__main(input_filename_pmx, moreinfo)
+			if write_model: ## Kinda should skip this if sort was canceled, but _sorted exists regardless
+				end(None, input_filename_pmx, "_sorted", "Sorted all texture files")
+				path = core.get_unused_file_name(input_filename_pmx[0:-4] + "_sorted.pmx")
+				util.copy_file(input_filename_pmx, path)
+			print("-- Reparsing sorted model")
+			pmx = pmxlib.read_pmx(input_filename_pmx, moreinfo=False) # Re-Import *.pmx bc no pmx argument
 	#-------------#
+	if has_univrm and not util.ask_yes_no("Do some general cleanup", "n", extra="This may break some things needed for reexporting"):
+		import _translate_to_english as pmxTL
+		## Todo: Correctly disable that Google stuff from polluting the log
+		print(">>>> Adding missing English names")
+		pmxTL.translate_to_english(pmx, moreinfo)
+		pmxTL.end(pmx, input_filename_pmx)
+		path = input_filename_pmx[0:-4] + "_translate.pmx"
+		util.copy_file(path, input_filename_pmx)
+		return ## Cleanup will remove all of the original Render anchors
 	section("General Cleanup")
 	## run [core] general cleanup
 	import model_overall_cleanup
@@ -586,11 +695,18 @@ There are some additional steps that cannot be done by a script; They will be me
 	path = input_filename_pmx[0:-4] + "_better.pmx"
 	util.copy_file(path, input_filename_pmx)
 	#-------------#
+	if has_univrm: return ## Never makes sense in this mode
+	print("")
+	print("== All changes are stored, this is optional ==")
+	print("")
 	section("Fixing material bleed-through")
+	
 	print("Warning: Depending on the model size and the chosen bounding box, this can take some time.")
-	if util.ask_yes_no("Execute bleed-through scanner(y) or doing it later(n)"):
+	print("-- Be reminded that there is a morph for retracting the chest if it cuts through the clothing, so try that out first.")
+	if util.ask_yes_no("Execute bleed-through scanner(y) or doing it later(n)", "n"):
 		print(f"The following changes will be stored in a separate PMX file, so you can terminate at any point by pressing CTRL+C.")
-		runOverhang(pmx, input_filename_pmx, moreinfo=moreinfo)
+		_opt = {"all_yes": all_yes}
+		runOverhang(pmx, input_filename_pmx, moreinfo=moreinfo, _opt=_opt)
 	## Tell to perform [bounce] (with steps)
 	print("Do not forget to apply the additional fixes as explained above.")
 	print("""
@@ -636,15 +752,18 @@ def __append_itemmorph_sub(items, idx): # Subtracts 1 to hide a hidden material 
 		arrZero4, arrZero4, arrZero4 ## Keep Texture
 	))
 ## Build MorphItem; If [name] is not None, items is [pmx] and item is added as PmxMorph \\ otherwise added directly to items
-def __append_bonemorph(items, idx, move, rot, name, arr=None): ## morphtype: 2
-	if idx == None: return
+def __append_bonemorph(items, idx, move=None, rot=None, name=None, arr=None): ## morphtype: 2
 	if arr is None:
+		if idx == None: return
 		item = pmxstruct.PmxMorphItemBone(idx, move, rot)
 		if name != None:
 			items.morphs.append(pmxstruct.PmxMorph(name, name, 4, 2, [ item ]))
 		else:
 			items.append(item)
-	else: items.morphs.append(pmxstruct.PmxMorph(name, name, 4, 2, [ item ]))
+	else:
+		mm = pmxstruct.PmxMorph(name, name, 4, 2, arr)
+		if util.is_valid_index(idx, items.morphs): items.morphs[idx] = mm
+		else: items.morphs.append(mm) ## from [ item ] which was NONE anyway
 def __append_vertexmorph(items, idx, move, name, arr=None): ## morphtype: 1
 	"""
 	:[items] [PMX or list] -- The list to append to (will use *.morphs when [name] is not None)
@@ -680,15 +799,15 @@ jpAccs = ['グローブ','チョーカー','ブーツ','帽子','頭リボン','
 #>> パーカー(Parker), スカート(Skirt), パンツ(Pantsu)
 #### EN originals
 enMats =  ['Head','Face','Teeth','Eyes?','Tng','Tongue','Lash','(^|_)Ears?','Hair','Horns?','Neck']
-enMats += ['Skin','Chest','Tummy','Foot','Feet','Body','Tail','breasts?']
+enMats += ['Skin','Chest','Tummy','Foot','Feet','Body','Tail','breasts?','Wings?', 'Torso', 'Thighs?']
 enAccs = ['Accessories','Bracelet','Crown','Armband','Scrunchie','Headband','Flowers']
 enAccs += ['decor', 'bow', 'Ribbon']
 #### KK-Models
 ## All core mats
-baseMats = ['body', 'mm', 'face', 'hair', 'noseline', 'tooth', 'eyeline', 'mayuge', 'sirome', 'hitomi', 'tang']
-baseMats += ['expression']
+baseMats = ['body', 'face', 'hair', 'noseline', 'tooth', 'eyeline', 'mayuge', 'sirome', 'hitomi', 'tang']
+baseMats += ['expression', 'cf_m_mm']
 ## Aux parts that should always stay
-accMatsNoHair = ['tail','acs_m_mimi_','kedama','mermaid','wing','cattail','cat_ear'] ## Hair & Kemomimi
+accMatsNoHair = ['tail','acs_m_mimi_','kedama','mermaid','wing','cattail','cat_ear', 'fox'] ## Hair & Kemomimi
 accMatsNoHair += ['aku01_tubasa', 'back_angelwing'] ## Vanilla wings
 #>	acs_m_mermaid ++ Fins
 #>	acs_m_hair_*  -- Hair decoration
@@ -713,7 +832,7 @@ slot_dict = {
 	"face":   ["a_n_megane", "a_n_earrings_L", "a_n_earrings_R", "a_n_nose", "a_n_mouth"],
 	"body":   ["a_n_neck", "a_n_bust_f", "a_n_bust", "a_n_nip_L", "a_n_nip_R"],
 	"lower":  ["a_n_back", "a_n_back_L", "a_n_back_R", "a_n_waist", "a_n_waist_f", "a_n_waist_b", "a_n_waist_L", "a_n_waist_R", "a_n_leg_L", "a_n_leg_R", "a_n_knee_L", "a_n_knee_R"],
-	"foot":   ["a_n_ankle_L", "a_n_ankle_R", "a_n_heel_L", "a_n_heel_R"],
+	"foot":   ["a_n_ankle_L", "a_n_ankle_R", "a_n_heel_L", "a_n_heel_R", "cf_j_toes_L", "cf_j_toes_R"],
 	"upper":  ["a_n_shoulder_L", "a_n_shoulder_R", "a_n_elbo_L", "a_n_elbo_R", "a_n_arm_L", "a_n_arm_R"],
 	"hand":   ["a_n_wrist_L", "a_n_wrist_R", "a_n_hand_L", "a_n_hand_R", "a_n_ind_L", "a_n_ind_R", "a_n_mid_L", "a_n_mid_R", "a_n_ring_L", "a_n_ring_R"],
 	"nether": ["a_n_dan", "a_n_kokan", "a_n_ana"],
@@ -763,20 +882,21 @@ Mode Interactions:
 - Uses [JSONGenerator] Data if available -- "[:Slot:]"
 - Overrides morphs if they already exist
 
-Options (for Automization):
-- body:  bool -- False to ignore 'Body part' materials. Prompts if [None]
-- group: bool -- True to group by accessory slot. False to generate one morph per material. Prompts if [None]
+[Options] (for Automization):
+- [body]:  bool -- False to ignore 'Body part' materials. Prompts if [None]
+- [group]: bool -- True to group by accessory slot. False to generate one morph per material. Prompts if [None]
 
-Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
+[Output]: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
  """
 	moreinfo = moreinfo or DEBUG
 	itemsCloth = []
 	itemsAcc = []
+	itemsBAcc = []
 	itemsSlots = { "always": [], "mostly": [], "med": [], "full": [], "slotMatch": False }
 	f_body = opt.get("body", None)
 	f_slots = opt.get("group", None)
 	if f_body is None: f_body = util.ask_yes_no("Emit morphs for body-like materials", "n")
-	if f_slots is None: f_slots = util.ask_yes_no("Group by accessory slots", "y")
+	if f_slots is None: f_slots = util.ask_yes_no("Group by accessory slots", "y")		## Instead group by a_n_ slot, because some things make no sense in solo.
 	f_solo = not f_slots
 	##########################
 	frame = []
@@ -807,6 +927,10 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 	for idx, mat in enumerate(pmx.materials):
 		### Filter out what we do not want
 		if re.search(rgxSkip, mat.name_jp): continue
+		### Create searcher
+		l_readValue = lambda t: util.readFromComment(mat.comment, t)
+		l_hasMatValue = lambda t: util.readFromComment(mat.comment, t, exists=True)
+		
 		### Set some flags
 		name_both = f"'{mat.name_jp}'  '{mat.name_jp}'"
 		isBody = re.search(rgxBase, name_both, re.I) is not None
@@ -814,18 +938,35 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 		isDisabled = re.search(r'\[:Disabled?:\]', mat.comment) is not None
 		isDelta    = re.search(r'_delta$', mat.name_jp) is not None
 		isHidden   = mat.alpha == 0
+		isBodyAcc  = False
+		
+		## Just for completeness sake, because they rarely have an own entry
+		if re.search(r"(cf_m_sirome_00)|(cf_m_tooth)", name_both, re.I):
+			mat.comment = util.updateComment(mat.comment, "Slot", "ct_head", True)
 		
 		### Check if comments contain Slot names (added by Plugin Parser)
-		if re.search(r'\[:Slot:\]', mat.comment):
+		m = util.readFromComment(mat.comment, 'Slot')
+		if m is not None:
 			itemsSlots["slotMatch"] = True
-			m = re.search(r'\[:Slot:\] (\w+)', mat.comment)[1]
 			if m in slotBody   : isBody = True
 			if m in slotCloth  : isBody = False
 			
 			## Things like to be named body, so only count them if they are proper.
 			if re.search("body", name_both, re.I): isBody = m in slotBody
 			
-			## === match is not empty and not(ignoreBody but isBody): 
+			## Hard override if we have an appropriate TypeString
+			typeStr = util.readFromComment(mat.comment, 'MatType')
+			if typeStr:
+				mt = util.MatTypes
+				if typeStr == mt.BODY.value: isBody = True
+				elif typeStr == mt.HAIR.value: isBody = True
+				elif typeStr == mt.CLOTH.value: isBody = False
+				elif typeStr == mt.BODYACC.value: isBody = True; isBodyAcc = True
+				elif isBody: ## Setting to BODY is just information for the User at this point
+					typeStr = mt.BODY.value
+					mat.comment = util.updateComment(mat.comment, 'MatType', typeStr, _replace=True)
+
+			## === match is not empty and not(ignoreBody and isBody): 
 			#	yesBody    + isBody: True and True = True > False
 			if m is not None and len(m) > 0 and not (not f_body and m in slotBody):
 				dictSlots[m] = dictSlots.get(m, [])
@@ -834,10 +975,16 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 				### Add extra slots for ct_clothesTop
 				# ct_clothesTop, ct_top_parts_A, ct_top_parts_B, ct_top_parts_C
 				if m == 'ct_clothesTop':
-					mm = re.search(r'\[:TopId:\] (\w+)', mat.comment)
+					mm = util.readFromComment(mat.comment, 'TopId')
 					if mm is not None:
-						dictSlots[mm[1]] = dictSlots.get(mm[1], [])
-						appender(dictSlots[mm[1]], idx)
+						dictSlots[mm] = dictSlots.get(mm, [])
+						appender(dictSlots[mm], idx)
+			##-- Remap 
+			# Move isBody with ACCS into BODYAUX
+			# back -> Wings ++ a_n_wings
+			# head -> Kemomimi ++ a_n_keno
+			# waist -> Tail ++ a_n_tail
+			#if isBodyAcc and not isDisabled: __append_itemmorph_add(itemsSlots["always"], idx)
 			## Don't add disabled mats to the "Show X" morphs
 			if not isDisabled:
 				if m in slotAlways : __append_itemmorph_add(itemsSlots["always"], idx)
@@ -860,7 +1007,7 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 		if isHidden: __append_itemmorph_add(items, idx)
 		else: __append_itemmorph_mul(items, idx)
 		### Make sure the morph has a proper name anyway
-		name_en = translate_name(mat.name_jp, mat.name_en)
+		name_en = util.translate_name(mat.name_jp, mat.name_en)
 		
 		name_jp = re.sub(r'( \(Instance\))+', '', mat.name_jp)
 		name_en = re.sub(r'^cf_m_+|^acs_m_+|( \(Instance\))+', '', name_en)
@@ -872,9 +1019,6 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 		if re.search(rgxAcc, name_both, re.I): appender(itemsAcc, idx)
 		else: appender(itemsCloth, idx)
 	#############
-	
-	do_ver3_check(pmx)
-	do_rated_check(pmx)
 	#### Add slot morphs
 	# ask first to add, then use name "{slot}" as name
 	if f_slots: [addMatMorph(key,  dictSlots[key], frame) for key in dictSlots.keys()]
@@ -886,6 +1030,8 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 	if find_morph(pmx, "Move Body downwards", False) == -1:
 		__append_bonemorph(pmx, find_bone(pmx,"センター",False), [0,-5,0], [0,0,0], "Move Body downwards")
 	
+	from kkpmx_special import scan_for_special
+	scan_for_special(pmx)
 	#### Add special morphs
 	if itemsSlots.get("slotMatch", False):
 		addMatMorph("Show:Head Acc",   itemsSlots["always"], frame)
@@ -905,101 +1051,6 @@ Output: PMX file '[modelname]_morphs.pmx' -- only if 'write_model' is True
 		pmx.frames[1].items = [[1,i] for i in core.flatten(frame)] + _tmp
 	
 	return end(pmx if write_model else None, input_filename_pmx, "_morphs", log_line)
-
-def do_ver3_check(pmx):
-	"""
-	Checks for the existence of the naming scheme from a very specific group of models
-	"""
-	if find_mat(pmx, "【M2】上半身", False) < 0: return
-	ver3List = [x.name_jp for x in pmx.materials]
-	ver3Dict = { key: idx for (idx, key) in enumerate(ver3List) }
-	
-	def addMorphs(name, indices=None):
-		## get all values
-		names = list(filter(lambda x: x.startswith(name), ver3Dict.keys()))
-		if len(names) == 0: return
-		if indices == None: indices = [ver3Dict[key] for key in names]
-		core.MY_PRINT_FUNC(f"-- Trying to add {name} morph...")
-		### Add "Toggle On"
-		items = []
-		for idx in indices: __append_itemmorph_add(items, idx)
-		pmx.morphs.append(pmxstruct.PmxMorph(name, f"Toggle {name} (On)", 4, 8, items))
-		### Add "Toggle Off"
-		items = []
-		for idx in indices: __append_itemmorph_sub(items, idx)
-		pmx.morphs.append(pmxstruct.PmxMorph(name + "2", f"Toggle {name} (Off)", 4, 8, items))
-	#################
-	addMorphs("【M1】"); addMorphs("【M2】"); addMorphs("【M3】")
-	addMorphs("【C1】"); addMorphs("【C2】"); addMorphs("【C3】")
-	##
-	last = ver3Dict[list(filter(lambda x: x.startswith("【"), ver3Dict.keys()))[-1]]
-	prefix = os.path.commonprefix([pmx.materials[last+1].name_jp, pmx.materials[last+3].name_jp])
-	addMorphs(prefix, [ver3Dict[key] for key in ver3List[last+1:]])
-	#################
-	name = ""
-	idx = 0
-	core.MY_PRINT_FUNC("-- Trying to add [hadaka] morph...")
-	try: ### Add morph to hide all parts
-		items = []
-		start = len(pmx.materials)-1
-		while True:
-			name = pmx.materials[start].name_jp
-			if (name.startswith("【M2") or name == "生際"): break
-			if start == 0: raise Exception("Could not find stop material.")
-			start = start - 1
-		for idx in range(start+1, len(pmx.materials)):
-			__append_itemmorph_mul(items, idx)
-		### Add these because some (wc__gym) tend to use custom materials and have these off
-		__append_itemmorph_add(items, find_mat(pmx, "【M2】ボディ胸中下着用--------"))
-		__append_itemmorph_add(items, find_mat(pmx, "【M2】上半身消し", False))
-		__append_itemmorph_add(items, find_mat(pmx, "【M2】上半身"))
-		__append_itemmorph_add(items, find_mat(pmx, "【M2】下半身"))
-		__append_itemmorph_add(items, find_mat(pmx, "【M2】下半身消し", False))
-		__append_itemmorph_add(items, find_mat(pmx, "【M2】"))
-		pmx.morphs.append(pmxstruct.PmxMorph("裸", "Toggle [All]", 4, 8, items))
-	except Exception as ee:
-		print(ee)
-		print("idx was " + str(idx) + " with name = " + str(name))
-		core.MY_PRINT_FUNC("Could not add [hadaka] morph!")
-	
-	core.MY_PRINT_FUNC("-- Trying to add [body switch] morph...")
-	try: ### Add body toggle if found
-		items = []
-		if find_mat(pmx, "【M1】") > -1:
-			__append_itemmorph_sub(items, find_mat(pmx, "【M2】ボディ胸中下着用--------"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M2】上半身消し", False))
-			__append_itemmorph_sub(items, find_mat(pmx, "【M2】上半身"))
-			__append_itemmorph_sub(items, find_mat(pmx, "【M2】下半身"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M2】下半身消し", False))
-			__append_itemmorph_sub(items, find_mat(pmx, "【M2】"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M1】ボディ胸中下着用--------"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M1】上半身"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M1】下半身"))
-			__append_itemmorph_add(items, find_mat(pmx, "【M1】"))
-			pmx.morphs.append(pmxstruct.PmxMorph("ボディ1<>2", "Toggle [Body]", 4, 8, items))
-		else:
-			core.MY_PRINT_FUNC("No [M1] found to add.")
-	except Exception as ee:
-		print(ee)
-		core.MY_PRINT_FUNC("Could not add [body] morph!")
-
-def do_rated_check(pmx):
-	name = "OwO Morph"
-	if find_morph(pmx, name, False) == -1:
-		if find_bone(pmx, "cf_J_Vagina_L.001", False) == -1: return
-		pmx.morphs.append(pmxstruct.PmxMorph(name, name, 4, 2, [
-			pmxstruct.PmxMorphItemBone(find_bone(pmx, "cf_J_Vagina_F",     False), [ 0.00,0,0], [-45,0,0]),
-			pmxstruct.PmxMorphItemBone(find_bone(pmx, "cf_J_Vagina_L.001", False), [ 0.15,0,0], [  0,0,0]),
-			pmxstruct.PmxMorphItemBone(find_bone(pmx, "cf_J_Vagina_L.002", False), [ 0.15,0,0], [  0,0,0]),
-			pmxstruct.PmxMorphItemBone(find_bone(pmx, "cf_J_Vagina_L.003", False), [ 0.10,0,0], [  0,0,0]),
-			pmxstruct.PmxMorphItemBone(find_bone(pmx, "cf_J_Vagina_L.004", False), [ 0.05,0,0], [  0,0,0]),
-			pmxstruct.PmxMorphItemBone(find_bone(pmx, "cf_J_Vagina_L.005", False), [ 0.05,0,0], [  0,0,0]),
-			pmxstruct.PmxMorphItemBone(find_bone(pmx, "cf_J_Vagina_R.005", False), [-0.05,0,0], [  0,0,0]),
-			pmxstruct.PmxMorphItemBone(find_bone(pmx, "cf_J_Vagina_R.004", False), [-0.05,0,0], [  0,0,0]),
-			pmxstruct.PmxMorphItemBone(find_bone(pmx, "cf_J_Vagina_R.003", False), [-0.10,0,0], [  0,0,0]),
-			pmxstruct.PmxMorphItemBone(find_bone(pmx, "cf_J_Vagina_R.002", False), [-0.15,0,0], [  0,0,0]),
-			pmxstruct.PmxMorphItemBone(find_bone(pmx, "cf_J_Vagina_R.001", False), [-0.15,0,0], [  0,0,0]),
-		]))
 
 ###########################
 ### Vertex manipulation ###
@@ -1133,15 +1184,16 @@ Note: Unless there is an explicit need to keep them separate, Step [3] and [5] c
 
 def delete_invisible_faces(pmx, input_filename_pmx, write_model=True, moreinfo=True): ## [15]
 	"""
-	Detects unused vertices and invisible faces and removes them accordingly, as well as associated VertexMorph entries.
-	An face is invisible if the corresponding texture pixel(== UV) of all three vertices has an alpha value of 0%.
-	If the material is defined by less than 50 vertices, it will be ignored to avoid breaking primitive meshes (like cubes or 2D planes)
-	If all faces of a given material are considered invisible, it will be ignored and reported to the user for manual verification.
+Detects unused vertices and invisible faces and removes them accordingly, as well as associated VertexMorph entries.
+An face is invisible if the corresponding texture pixel(== UV) of all three vertices has an alpha value of 0%.
+If the material is defined by less than 50 vertices, it will be ignored to avoid breaking primitive meshes (like cubes or 2D planes)
+If all faces of a given material are considered invisible, it will be ignored and reported to the user for manual verification.
 
-Output: name + "_pruned"
-Logging: Logs which materials have been skipped and which were too small
-	"""
-	import cv2, os
+[Output]: PMX file '[modelname]_pruned.pmx'
+
+[Logging]: Logs which materials have been skipped and which were too small
+"""
+	import cv2, os, re
 	from _prune_invalid_faces import delete_faces
 	from _prune_unused_vertices import prune_unused_vertices
 	moreinfo = moreinfo or DEBUG
@@ -1157,11 +1209,28 @@ Logging: Logs which materials have been skipped and which were too small
 	### Outside so that it still runs even if no material triggers it.
 	print("\n=== Remove any vertices that belong to no material in general")
 	prune_unused_vertices(pmx, moreinfo)
+	## Slots which usually contain only one-dimensional meshes
+	careful_mats = '|'.join(["ct_bra", "ct_shorts", "ct_socks", "ct_panst"])
+	def get_uv(w,h,v): return [int(h * (v.uv[1] % 1)), int(w * (v.uv[0] % 1)), 3]
 	
 #> foreach in materials
 	for mat_idx in materials: ## Index because materials can have the same name, and find_mat will only return the first
 		mat = pmx.materials[mat_idx]
-		print("\n=== Scanning " + mat.name_jp)
+		print(f"\n=== Scanning [{mat_idx:2}]({mat.faces_ct:5}) " + mat.name_jp)
+		isPrim = util.is_primmat(mat)
+		
+		if mat.faces_ct == 0:
+			print(f"> Material has no faces, skipping...")
+			continue
+		
+		## Remove Bonelyfans, c_m_shadowcast if they have any vertices
+		if any([x in mat.name_jp for x in ["Bonelyfans", "shadowcast"]]):
+			print(f"> Deleting useless material...")
+			faces = from_material_get_faces(pmx, mat_idx, True, moreinfo=False)
+			delete_faces(pmx, faces)
+			changed = True
+			continue
+			
 	#>	get file
 		if mat.tex_idx == -1:
 			print("> Material has no texture, skipping")
@@ -1170,6 +1239,12 @@ Logging: Logs which materials have been skipped and which were too small
 		if not os.path.exists(path):
 			print("> No file found at this path, skipping")
 			continue
+	#>	ignore head assets, because missing vertices in these basically ruin most expressions
+		if re.search("ct_head", mat.comment) or mat.name_jp in ["cf_m_body", "cm_m_body", "cf_m_mm"]:
+			print("> Material should never be checked, skipping")
+			continue
+		isCareful = re.search(careful_mats, mat.comment) is not None
+		isCareful |= isPrim
 		img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
 		if img.shape[2] < 4:
 			print("> Texture has no alpha, cannot determine invisibility")
@@ -1180,31 +1255,61 @@ Logging: Logs which materials have been skipped and which were too small
 	#>	vertices = get_vertices_for_material
 		old_faces = from_material_get_faces(pmx, mat_idx, False, moreinfo=False)
 		if len(old_faces) < 50:
-			print(f"> Face count too small({len(old_faces)}), no need to reduce (also could cut away too much). Skipped")
+			if isPrim: print(f"> Skipping because 2D image mesh")
+			else: print(f"> Face count too small, no need to reduce (also could cut away too much). Skipped")
 			small.append(mat_idx)
 			continue
 		
 		vert_idx = from_faces_get_vertices(pmx, old_faces, True, moreinfo=moreinfo)
 		old_verts = [pmx.verts[vert] for vert in vert_idx]
 		new_verts = []
+		vert_uv = {} ## Store UV for use in careful calc
 	#>	foreach in vertices
 		for idx,vert in enumerate(old_verts):
 		#>	coord = (w * UV.x, h * UV.y) -- UV can be bigger than 1, but this only repeats the texture inbetween
 			coord = [int(h * (vert.uv[1] % 1)), int(w * (vert.uv[0] % 1)), 3]
 			#print(f"[{vert_idx[idx]}] w:{w}, h:{h} -- UV.x: {w * vert.uv[0]}, UV.y: {h * vert.uv[1]}")
 		#>	if [img(coord).Alpha == 0]: add idx to list
-			if (img[coord[0], coord[1], coord[2]] == 0): new_verts.append(vert_idx[idx])
+			if (img[coord[0], coord[1], coord[2]] == 0):
+				new_verts.append(vert_idx[idx])
+				vert_uv[vert_idx[idx]] = coord
 		#>	#if any in list:
 		if len(new_verts) > 0:
 			#>	Collect Faces that contain at least one of the vertices
 			faces = from_vertices_get_faces(pmx, new_verts, -1, True, full=True)
+			#> Bail out when none of them are connected
+			if len(faces) == 0: continue
 			cnt = (len(old_faces) - len(faces))
 			if cnt == 0:
 				print(">!! Trying to delete all faces of this material, please verify manually. Skipped.")
 				verify.append(mat_idx)
 				continue
-			if abs(cnt) < 10: print(">* Less than 10 faces will remain of this material.")
-			
+			ratio = abs((cnt / len(old_faces)))
+			if ratio < 0.1:
+				if not util.ask_yes_no("> Cutting away more than 90% of this material, proceed?"):
+					continue
+			elif moreinfo: print(f"> Detected {(1 - ratio) * 100}% to cut away")
+			if abs(cnt) < 20: print(">* Less than 20 faces will remain of this material.")
+			### Special treatment for certain texture types
+			if isCareful:
+				new_faces = []
+				def avgCheck(vA, vB):
+					coord = util.arrAvg(vA, vB, True)
+					#print(coord)
+					return img[coord[0], coord[1], coord[2]] != 0
+				print(f"> Slot with careful texture, doing detailed search on all {len(faces) * 3} edges.")
+				for face_idx in faces:
+					face = pmx.faces[face_idx]
+					# Fetch the UV to check the center of each
+					[v1,v2,v3] = [vert_uv[face[0]], vert_uv[face[1]], vert_uv[face[2]]]
+					if avgCheck(v1, v2) or avgCheck(v1, v3) or avgCheck(v2, v3): continue
+					new_faces.append(face_idx)
+				## Swap the list
+				if (len(faces) != len(new_faces)):
+					print(f">> Reduced delete count from {len(faces)} to {len(new_faces)}")
+				#(Idea): Could additionally smooth it out <Add lonely "Keep Face", remove lonely "Remove Face">
+				faces = new_faces
+			else: print(f">>> Deleting {len(faces)}...")
 			#>	push list to **.delete_faces(pmx, faces)
 			delete_faces(pmx, faces)
 			#>	call **.prune_unused_vertices(pmx, moreinfo)
@@ -1468,7 +1573,7 @@ def move_weights_to_new_bone__loop(pmx,mat_idx,target_idx,parent):
 		pmx.bones.append(newBone)
 	
 	newBone.parent_idx = target_idx if parent is None else parent
-	newBone.name_en = translate_name(newBone.name_jp, newBone.name_en)
+	newBone.name_en = util.translate_name(newBone.name_jp, newBone.name_en)
 	newBone.has_translate = True
 	
 	### Find Faces
@@ -1499,30 +1604,6 @@ def move_weights_to_new_bone__loop(pmx,mat_idx,target_idx,parent):
 		else:
 			raise NotImplementedError("weighttype '{}' not supported! ".format(vert.weighttype))
 
-##############
-### VRChat ###
-##############
-
-def convert_for_VRChat():
-	#### Eye Tracking & Blinking
-	## Rename Eyes for [Eye Track]: Head, Eye_L, Eye_R
-	## Make separate morphs for Left & Right Eye
-	## Make separate morphs for Left & Right Eyeline Low
-	#### Lip Sync
-	## Make a VertexMorph for A  (== Combine the Morphs)
-	## Make a VertexMorph for O  (== Combine the Morphs)
-	## Make a VertexMorph for CH (== Open Lips with Closed Teeth)
-	#### Decimate
-	## Rename Fingers for [Controls]
-	## Provide stats for Materials (recommended: "4") and Facials (recommended: 20000 - 30000)
-	## Ask: Remove all hidden(opacity=0) materials (saves X Materials with X Facials)
-	#### Other
-	## Ask: Remove non-used morphs [or] rename correctly
-	## Apply Diffuse (?)
-	## Purge all JP from Bones
-	pass
-
-
 ################
 ### Printers ###
 ################
@@ -1540,25 +1621,23 @@ def print_material_bones(pmx,_): ### [09] -- Print bones for material
 	Output: STDOUT -> Unique list of used bones (Format: id, sorted) <br/>
 	"""
 	def __valid_check(s): return True
-	text = core.MY_GENERAL_INPUT_FUNC(__valid_check, "Enter material idx or name (empty for 'cf_m_body'")
+	bodyName = util.find_bodyname(pmx)
+	text = core.MY_GENERAL_INPUT_FUNC(__valid_check, f"Enter material idx or name (empty for '{bodyName}'")
 	try:
 		name = pmx.materials[text]
 	except:
-		if text == None or len(text) == 0: name = "cf_m_body"
+		if text == None or len(text) == 0: name = bodyName
 		else: name = text
 	mat_idx = find_mat(pmx,name) ## return if invalid
 	
 	bones = from_material_get_bones(pmx, mat_idx, returnIdx=True)
 	print(str(bones))
 
+
 ###############
 ### Helpers ###
 ###############
 
-def translate_name(name_jp, name_en):
-	if not(name_en is None or name_en == ""):   return name_en
-	if not tlTools.needs_translate(name_jp):    return name_jp
-	return tlTools.local_translate(name_jp)
 def get_name_or_default(pmxArr, idx, default="", noField=False):
 	"""
 	:param pmxArr: The PMX list to read from
@@ -1584,6 +1663,7 @@ def ask_for_material(pmx, extra = None, default = "cf_m_body", returnIdx = False
 	[return] :: An PmxMaterial instance
 	"""
 	_valid_def = find_mat(pmx, default, False) not in [-1, None]
+	if default == "cf_m_body": default = util.find_bodyname(pmx)
 	
 	msg = "Enter material idx or name"
 	if _valid_def: msg += f" (empty for '{default}')"
@@ -1638,7 +1718,8 @@ def ask_to_rename_extra(pmx, base):
 		print(f"{base} does not exist")
 		return
 	
-	re_cut = re.compile(r" ?\(Instance\)_?(\([-0-9]*\))?|_Export_[\d\-]+_")
+	#re_cut = re.compile(r" ?\(Instance\)_?(\([-0-9]*\))?|_Export_[\d\-]+_")
+	re_cut = re.compile(r"( ?\(Instance\))|(_\([-0-9]*\))")
 	
 	idx = -1
 	names = []
@@ -1726,7 +1807,7 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 
 
 if __name__ == '__main__':
-	print("Cazoo - 2022-06-06 - v.1.8.4")
+	print("Cazoo - 2023-04-XX - v.2.0.0")
 	try:
 		if DEBUG or DEVDEBUG:
 			main()

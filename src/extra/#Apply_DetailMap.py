@@ -33,6 +33,8 @@ is_body         = data.get("is_body", False)  # Flag when doing Body
 is_face         = data.get("is_face", False)  # Flag when doing Face
 alpha           = data.get("alpha", 64 / 256) #<< add to docu (!)
 fix_body        = data.get("fix_body", True) # Remove a heart-shaped crest on the chest area
+tex_scale       = data.get("scale", None)
+tex_offset      = data.get("offset", None)
 #-------------
 _mask = None;imgAlpha = ""
 if (argLen > 4): imgAlpha = sys.argv[4]
@@ -118,6 +120,14 @@ if has_alpha and not has_detail: ## << Only apply Alpha-Mask
 	pass#--------------------
 
 
+#### Apply Scale and Offset
+if tex_offset is not None:
+	mask = imglib.roll_by_offset(mask, tex_offset, { "show": show })
+
+if tex_scale is not None:
+	mask = imglib.repeat_rescale(mask, tex_scale, { "show": show })
+###--------
+
 #-----------------------
 def extractChannel(src, chIdx):
 	### Extract channels and invert them
@@ -178,9 +188,10 @@ if not is_face: ## These lines are annoying in the face, perish them
 if True:
 	maskB = imglib.apply_alpha_BW(_opt, maskB).astype("uint8")
 	imglib.testOutModes_wrap(image, maskB, opt)
+	_alpha = alpha
 	if is_body: mode = "overlay"
-	if is_face: mode = "dodge"; alpha = alpha / 2
-	image = imglib.blend_segmented(mode, image, maskB, alpha).astype("uint8")
+	if is_face: mode = "dodge"; _alpha = alpha / 2
+	image = imglib.blend_segmented(mode, image, maskB, _alpha).astype("uint8")
 	#DisplayWithAspectRatio(opt, 'With maskB', image, 512)
 	DisplayWithAspectRatio(opt, 'With maskG+maskB', image, 512)
 #-----

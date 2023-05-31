@@ -62,7 +62,7 @@ GOOGLE_AUTODETECT_LANGUAGE = True
 
 # when this is true, it doesn't even attempt online translation. this way you can kinda run the script when
 # you run into google's soft-ban.
-DISABLE_INTERNET_TRANSLATE = False
+DISABLE_INTERNET_TRANSLATE = True # was False
 
 
 # to reduce the number of translation requests, a list of strings is joined into one string broken by newlines
@@ -87,11 +87,12 @@ jp_to_en_google = None
 try:
 	import googletrans
 except ImportError as eee:
-	print(eee)
-	print("ERROR: failed to import primary translation provider library 'googletrans'")
-	print("Please install this library with 'pip install googletrans'")
-	googletrans = None
-	DISABLE_INTERNET_TRANSLATE = True
+	if not DISABLE_INTERNET_TRANSLATE:
+		print(eee)
+		print("ERROR: failed to import primary translation provider library 'googletrans'")
+		print("Please install this library with 'pip install googletrans'")
+		googletrans = None
+		DISABLE_INTERNET_TRANSLATE = True
 
 
 category_dict = {0: "header", 4: "mat", 5: "bone", 6: "morph", 7: "frame"}
@@ -118,6 +119,7 @@ def init_googletrans():
 	global jp_to_en_google
 	global _DISABLE_INTERNET_TRANSLATE
 	_DISABLE_INTERNET_TRANSLATE = DISABLE_INTERNET_TRANSLATE  # create a second global var so I can reset this one to default each time it runs
+	if DISABLE_INTERNET_TRANSLATE: return
 	if googletrans is None:
 		core.MY_PRINT_FUNC("ERROR: Python library 'googletrans' not installed, translation will be very limited!!")
 		core.MY_PRINT_FUNC("Please install this library with 'pip install googletrans' in Windows Command Prompt")
