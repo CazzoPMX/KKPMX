@@ -2445,11 +2445,14 @@ def add_bone(pmx,
 			 ik_target_idx: int=None,                 ## "Target:"
 			 ik_numloops: int=None,                   ## "Loop:"
 			 ik_angle: float=None,                    ## "Angle:"
-			 ik_links=None                            ## < Link >
+			 ik_links=None,                           ## < Link >
+			 _solo=False
 			 ):
 	args = locals()
 	del args["pmx"]
+	del args["_solo"]
 	if name_en == "": args["name_en"] = name_jp
+	if _solo: return pmxstruct.PmxBone(**args)
 	pmx.bones.append(pmxstruct.PmxBone(**args))
 	return len(pmx.bones) - 1
 

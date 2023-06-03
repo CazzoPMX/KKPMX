@@ -851,7 +851,6 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 			#mat.diffRGB   = [0,0,0]#attr[Color_Shadow][:3] smt only for black types
 			#rgb = attr[Color_Shadow][:3]
 	#	mat.comment += "Make toon_shader: " + str(attr[Color_Shadow]) ## Multiply each by 255 before
-	#print(attr)
 	if META in attr:
 		meta = attr[META]
 		#### Shadows
@@ -905,8 +904,6 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 				mat.comment = re.sub("(\r\n)?\[:Slot:\] \w+",  "", mat.comment)
 				mat.comment = re.sub("(\r\n)?\[(:AccId:|:TopId:|:PrOrg:)\] \w+", "", mat.comment)
 				mat.comment = "\r\n".join([comment, mat.comment])
-	elif re.search(r"(cf_m_sirome_00)|(cf_m_tooth)", name_both, re.I):
-		mat.comment = util.updateComment(mat.comment, "Slot", "ct_head")
 
 def process_color_and_detail(pmx, mat, attr):
 	def replFN(elem, name): return os.path.join(os.path.split(elem)[0], name)
@@ -1523,6 +1520,11 @@ shader_dict = {
 	"KKUTSitem": "item",
 	"xukmi/MainAlphaPlusTess": "alpha", ## t__Alpha, t__Another, t__Detail, t__Emission, t__Line, t__Liquid, t__Main, t__NorMap, ...
 	"xukmi/MainOpaquePlusTess": "cloth", ## t__Alpha, t__Another, t__Detail, t__Emission, t__Line, t__Liquid, t__Main, t__NorMap, ...
+	"xukmi/MainOpaquePlus": "cloth", ## t__Alpha, t__Another, t__Detail, t__Emission, t__Line, t__Liquid, t__Main, t__NorMap, ...
+	"xukmi/HairFrontPlus": "hair",
+	"xukmi/SkinPlus": "item",
+	"xukmi/HairPlus": "hair",
+	
 	
 	"main_hair2": "hair2",
 	"main_hair_front2": "hair2",

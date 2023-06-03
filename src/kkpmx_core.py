@@ -1224,7 +1224,7 @@ If all faces of a given material are considered invisible, it will be ignored an
 			continue
 		
 		## Remove Bonelyfans, c_m_shadowcast if they have any vertices
-		if any([x in mat.name_jp for x in ["Bonelyfans", "shadowcast"]]):
+		if any([x in mat.name_jp for x in ["Bonelyfans", "shadowcast", "cf_m_eyeline_kage"]]):
 			print(f"> Deleting useless material...")
 			faces = from_material_get_faces(pmx, mat_idx, True, moreinfo=False)
 			delete_faces(pmx, faces)
@@ -1240,7 +1240,7 @@ If all faces of a given material are considered invisible, it will be ignored an
 			print("> No file found at this path, skipping")
 			continue
 	#>	ignore head assets, because missing vertices in these basically ruin most expressions
-		if re.search("ct_head", mat.comment) or mat.name_jp in ["cf_m_body", "cm_m_body", "cf_m_mm"]:
+		if re.search("ct_head", mat.comment) or mat.name_jp in ["cf_m_body", "cm_m_body", "cf_m_mm", "cf_m_tooth", "cf_m_tooth*1"]:
 			print("> Material should never be checked, skipping")
 			continue
 		isCareful = re.search(careful_mats, mat.comment) is not None
@@ -1315,13 +1315,14 @@ If all faces of a given material are considered invisible, it will be ignored an
 			#>	call **.prune_unused_vertices(pmx, moreinfo)
 			changed = True
 	log_line = []
-	if not changed: log_line += "> No changes detected."; print(log_line[0])
+	if not changed: log_line += "> No changes detected."; print(log_line[-1])
 	else:
 		print(""); prune_unused_vertices(pmx, moreinfo)
 		total_verts -= len(pmx.verts)
 		total_faces -= len(pmx.faces)
+		# With [moreinfo], Vertices are already logged. Avoid doing it twice.
 		log_line += [f"Pruned {total_verts} vertices and removed {total_faces} faces"]
-		print(log_line[0])
+		print(f"Also removed {total_faces} faces using at least one such vertex.")
 	if len(verify) > 0:
 		print("\nThese materials have been skipped because all UV pixels were transparent. Verify and delete manually.\n " + str(verify))
 		log_line += ["> Skipped(TooMany): " + str(verify)]
@@ -1807,7 +1808,7 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 
 
 if __name__ == '__main__':
-	print("Cazoo - 2023-04-XX - v.2.0.0")
+	print("Cazoo - 2023-06-03 - v.2.0.1")
 	try:
 		if DEBUG or DEVDEBUG:
 			main()

@@ -599,6 +599,9 @@ class Vector3():
 		result.Y = float(float(transformation.M12) * float(x) + float(transformation.M22) * float(y) + float(transformation.M32) * float(z));
 		result.Z = float(float(transformation.M13) * float(x) + float(transformation.M23) * float(y) + float(transformation.M33) * float(z));
 		return result;
+		
+	@staticmethod
+	def LerpS(x, y, s): return x + s * (y - x)
 	
 	###------ Operators
 	
