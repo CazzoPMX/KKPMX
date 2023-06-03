@@ -616,10 +616,10 @@ def parse_hair2(pmx, mat, attr): ## @open: t__Color, t__Detail, t__HairGloss, Co
 		_exe = os.path.splitext(_path[1])
 		return os.path.join(_path[0], _exe[0] + name + _exe[1])
 	process_color_and_detail(pmx, mat, attr) ## Seems to be skipped if Reuse is active
-		
-	if not set_new_texture(pmx, mat, attr, [attr[t__MainCol], "@" + attr[META][MT_SLOT] + ".png"],copyIfMissing=True):
+	
+	if not set_new_texture(pmx, mat, attr, [get_working_texture(attr), "@" + attr[META][MT_SLOT] + ".png"],copyIfMissing=True):
 		raise Exception("REEEEEE")
-		
+	
 	if Color_1 in attr:
 		mat.diffRGB = attr[Color_1][:3]
 		mat.specRGB = attr[Color_1][:3]
