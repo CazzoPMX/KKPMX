@@ -571,10 +571,11 @@ def write_entity(pmx, arr, json_tree, opt):
 	targetBase["available"] = opt.get(opt_texAvail, []) ## Build some map of {"t__Main": ["main_item", ...]} and do a filter over all included
 	targetBase["textures"] = opt.get(opt_texUse, [])
 	##-- Only exists in KKS
+	kks_tex = []
 	if mat.get("textures", None):
-		tmp = [x.lstrip('_') for x in mat["textures"]]
-		targetBase["available"] = tmp
-		targetBase["textures"]  = [x for x in targetBase["textures"] if x in tmp]
+		kks_tex = [x.lstrip('_') for x in mat["textures"]]
+		targetBase["available"] = kks_tex
+		targetBase["textures"]  = [x for x in targetBase["textures"] if x in kks_tex]
 	
 	
 	###------
@@ -587,7 +588,7 @@ def write_entity(pmx, arr, json_tree, opt):
 		if k.startswith("_"): targetBase[k.lstrip("_")] = v
 		else: print("[W] Unprocessed attribute " + k)
 	if local_state[opt_Mode] == "Clothes":
-		if targetBase[opt_Group] == "main_item" and t__Color in tmp:
+		if targetBase[opt_Group] == "main_item" and t__Color in kks_tex:
 			targetBase["textures"] += [t__Color]
 	#-----
 	##--- build object & add to [arr]
