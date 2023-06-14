@@ -35,7 +35,7 @@ Just to be clear, I extend the above terms to cover this project as well. If you
  - [PMXExport](https://github.com/TheOddball/KoikatsuPmxExporter/tree/master)
  - [MaterialEditor](https://www.patreon.com/posts/27881027)
 
-If you have any questions, feel free to hit me up on Twitter DMs (https://twitter.com/@KaizoSlime)
+If you have any questions, feel free to hit me up on ~~Twitter DMs~~ (Twitter seems to not like me getting DMs, so send me a DM on Discord (@thekaizo) I guess)
 
 I'd be open to convert cards for you at 5€ a piece, add 10€ for converting it to VRChat or VRM / VSeeFace.<br/>
 In the unlikely case that people actually make use of that offer, I reserve the right to increase if too many ask.
