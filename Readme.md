@@ -32,7 +32,7 @@ Just to be clear, I extend the above terms to cover this project as well. If you
 ## Links & Credits
 
  - [nuthouse01](https://github.com/Nuthouse01/PMX-VMD-Scripting-Tools)
- - [PMXExport](https://github.com/TheOddball/KoikatsuPmxExporter/tree/master)
+ - [PMXExport](https://github.com/TheOddball/KoikatsuPmxExporter/tree/master) (old legacy original)
  - [MaterialEditor](https://www.patreon.com/posts/27881027)
 
 If you have any questions, feel free to hit me up on ~~Twitter DMs~~ (Twitter seems to not like me getting DMs, so send me a DM on Discord (@thekaizo) I guess)
