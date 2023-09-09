@@ -646,6 +646,10 @@ def color_is_BW(_arr): ## https://www.rapidtables.com/convert/color/hsv-to-rgb.h
 	_arr = _arr[:3]
 	if _arr == [255,255,255]: return BWTypes.WHITE
 	if _arr == [  0,  0,  0]: return BWTypes.BLACK
+	#-------- Lazy Overrides
+	if _arr == [237, 212, 202]: return BWTypes.BRIGHT ## Skin-ish pink -- Is NORM otherwise
+	
+	#--------
 	_hsv = HSV_to_real_HSV(BGR_to_HSV(_arr))
 	# If Saturation(1) is 0 (== center), Hue is irrelevant
 	if _hsv[1] == 0: return BWTypes.WHITE if _hsv[2] >= 50 else BWTypes.BLACK

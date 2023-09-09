@@ -106,6 +106,7 @@ def main(moreinfo=True):
 		if not DEBUG: exit()
 		from kkpmx_internal import main2
 		main2(); 		exit()
+	elif idx == 6: exit()
 	else: print_help(idx)
 	# prompt PMX name
 	core.MY_PRINT_FUNC(">> The script can be terminated at any point by pressing Ctrl+C")
@@ -238,13 +239,15 @@ Which is why this also standardizes color and toon,
 	idx = find_mat(pmx, "cf_m_tang", False)
 	if idx != -1: pmx.materials[idx].diffRGB = [1, 0.6985294, 0.6985294]
 
+	####----- Cleanup bones ahead of time to reduce file size
 	### Clothes-to-Accessories cleanup (clones a full body mesh per asset)
 	#- but the materials are attached to the real bones & vertices, so they can be safely deleted
+	##:: While we are at it, we also collect all k_f_ bones and remove cm_* on non-male meshes
 	def cleanup_CTA():
 		from _prune_unused_bones import apply_bone_remapping
 		from _prune_unused_vertices import newval_from_range_map, delme_list_to_rangemap
 		def collect_CTA(_arr, flag=False):
-			arr = []
+			arr = set()
 			skipArr = set()
 			for _idx,_item in enumerate(_arr):
 				n = _item.name_jp
@@ -252,20 +255,35 @@ Which is why this also standardizes color and toon,
 					## Keep these bones because we need them for the json generator
 					if flag and (n == "CTA_cf_o_root_" or _item.parent_idx in skipArr):
 						skipArr.add(_idx)
-					else: arr.append(_idx)
+					else: arr.add(_idx)
 			return arr
 		bone_dellist  = collect_CTA(pmx.bones, True)
 		rigid_dellist = collect_CTA(pmx.rigidbodies)
 		joint_dellist = collect_CTA(pmx.joints)
+		
+		def collect_others():
+			arr = set()
+			isMale = util.is_male(pmx)
+			for _idx,_item in enumerate(pmx.bones):
+				n = _item.name_jp
+				if n.startswith("k_f_"): arr.add(_idx)
+				elif n.startswith("cm_") and not isMale: arr.add(_idx)
+			return arr
+		bone_dellist.update(collect_others())
 		
 		do_bones  = len(bone_dellist) > 0
 		do_bodies = len(rigid_dellist) > 0
 		do_joints = len(joint_dellist) > 0
 		if not (do_bones or do_bodies or do_joints): return
 		
+		#-- Turn into list for subsequent processing
+		bone_dellist  = sorted(list(bone_dellist))
+		rigid_dellist = sorted(list(rigid_dellist))
+		joint_dellist = sorted(list(joint_dellist))
+		
 		# build the rangemap to determine how index references will be modified from this deletion
-		if do_bones: bone_shiftmap  = delme_list_to_rangemap(sorted(bone_dellist))
-		if do_bodies: rigid_shiftmap = delme_list_to_rangemap(sorted(rigid_dellist))
+		if do_bones: bone_shiftmap  = delme_list_to_rangemap(bone_dellist)
+		if do_bodies: rigid_shiftmap = delme_list_to_rangemap(rigid_dellist)
 		# actually delete the items
 		for f in reversed(joint_dellist): pmx.joints.pop(f)
 		for f in reversed(rigid_dellist): pmx.rigidbodies.pop(f)
@@ -324,7 +342,6 @@ Which is why this also standardizes color and toon,
 			pmx.bones[bone].has_visible = False
 		bind_bone(["左親指２", "左親指先"]); bind_bone(["右親指２", "右親指先"])
 		
-		## Provide convenient grab
 		if find_bone(pmx, "cf_pv_hand_L", False) != -1:
 			## Rename "center of hand" & parent to hand bone
 			left  = rename_bone("cf_pv_hand_L", "左指Grab", "FingerL Base")
@@ -349,6 +366,11 @@ Which is why this also standardizes color and toon,
 		bind_bone(["右足", "右ひざ", "右足首", "右つま先"])
 		
 		## Patch Knees
+		# cf_d_kneeF_L -- ROT+ at 0.5 to leg_L \\ AxisLimit 1 0 0  -- Deform 1 << Think about if it should be merged
+		# cf_s_kneeB_L -- ROT+ at 0.5 to leg_L \\ AxisLimit 1 0 0  -- Deform 1 << Might cause the folder
+		# cf_d_kneeF_R -- ROT+ at 0.5 to leg_R \\ AxisLimit 1 0 0  -- Deform 1
+		# cf_s_kneeB_R -- ROT+ at 0.5 to leg_R \\ AxisLimit 1 0 0  -- Deform 1
+		#>> cf_s_leg01_L,R -- also affects the fold or may even be causing it
 		def patchKnee(name, target):
 			bone   = find_bone(pmx, name, False)
 			parent = find_bone(pmx, target, False)
@@ -464,17 +486,27 @@ Which is why this also standardizes color and toon,
 		
 		if find_morph(pmx, "まばたき", False) != -1:
 			morph = pmx.morphs[find_morph(pmx, "まばたき")].items
-			morph[0].value = 0.32
-			morph[1].value = 0.32
-			morph[2].value = 0.66
+			if len(morph) != 0:
+				morph[0].value = 0.32
+				morph[1].value = 0.32
+				morph[2].value = 0.66
 		if find_morph(pmx, "笑い", False) != -1:
 			morph = pmx.morphs[find_morph(pmx, "笑い")].items
-			morph[0].value = 0.32
-			morph[1].value = 0.32
-			morph[2].value = 0.66
+			if len(morph) != 0:
+				morph[0].value = 0.32
+				morph[1].value = 0.32
+				morph[2].value = 0.66
+		
+		### Actually.... rename them back because annoying later in [kkpmx_morphs]
+		for item in usedMorphs:
+			morph = find_morph(pmx, item[1], False)
+			if morph == -1: continue
+			#pmx.morphs[morph].name_jp = item[1] << Keep to allow less generic morph names
+			pmx.morphs[morph].name_en = item[0]
 		
 		## Add a morph to configure heels
 		kkmorph.add_heels_morph(pmx)
+		kkmorph.add_ground_morph(pmx)
 		
 		########
 		pass ###
@@ -515,7 +547,18 @@ Which is why this also standardizes color and toon,
 		src = find_bone(pmx, "cf_d_sk_top", False)
 		dst = find_bone(pmx, "cf_j_sk_07_05", False)
 		if src != -1 and dst != -1:
+			#-- Sort the skirt frames horizontally, e.g. by row
+			def sort_skirt(_item):
+				name = pmx.bones[_item[1]].name_jp
+				if name == "cf_d_sk_top": return 0
+				if name.startswith("cf_d"):
+					m = re.match(r"cf_d_sk_(\d+)_(\d+)", name)
+					return int(m[1])+1
+				# Turn 00_00 into (1st row, 1st segment) = 10
+				m = re.match(r"cf_j_sk_(\d+)_(\d+)", name)
+				return (int(m[2])+1)*10 + int(m[1])
 			frames = [[0,idx] for idx in range(src, dst+1)]
+			frames.sort(reverse=False, key=sort_skirt) # sort in-place
 			pmx.frames.append(pmxstruct.PmxFrame("SkirtGravity", "SkirtGravity", False, frames))
 	
 	def addIfNot(name, bone):
@@ -639,7 +682,14 @@ There are some additional steps that cannot be done by a script; They will be me
 	#-- After Plugin so that it can also clean up "color only" materials
 	section("Remove invisible faces")
 	if (not has_univrm and all_yes) or util.ask_yes_no("Remove invisible faces from materials","y"):
-		delete_invisible_faces(pmx, input_filename_pmx, write_model=write_model, moreinfo=moreinfo)
+		_opt = { "delDisp": False }
+		if all_yes or util.ask_yes_no("Delete disabled materials directly or automatic?"):
+			_opt["delDisp"] = True
+			if not write_model:
+				print("Creating backup before deleting disabled materials because we don't keep intermediate stages")
+				path = core.get_unused_file_name(input_filename_pmx[0:-4] + "_mat_backup.pmx")
+				pmxlib.write_pmx(path, pmx, moreinfo=moreinfo)
+		delete_invisible_faces(pmx, input_filename_pmx, write_model=write_model, moreinfo=moreinfo, opt=_opt)
 		if write_model: util.copy_file(path, input_filename_pmx)
 	#-------------#
 	section("Rigging")
@@ -693,6 +743,12 @@ There are some additional steps that cannot be done by a script; They will be me
 	import model_overall_cleanup
 	model_overall_cleanup.__main(pmx, input_filename_pmx, moreinfo)
 	path = input_filename_pmx[0:-4] + "_better.pmx"
+	util.copy_file(path, input_filename_pmx)
+	section("Final Physics Cleanup over the whole model")
+	#-- Do some post-processing cleanup
+	_opt = { "fullClean": all_yes if all_yes else None }
+	kkrig.cleanup_free_things(pmx, _opt)
+	path = end(pmx, input_filename_pmx, "_better2", "Cleaned up Physics")
 	util.copy_file(path, input_filename_pmx)
 	#-------------#
 	if has_univrm: return ## Never makes sense in this mode
@@ -830,6 +886,7 @@ rgxSkip = '|'.join(["Bonelyfans","shadowcast","Standard"])
 slot_dict = {
 	"hair":   ["a_n_hair_pony", "a_n_hair_twin_L", "a_n_hair_twin_R", "a_n_hair_pin", "a_n_hair_pin_R", "a_n_headtop", "a_n_headflont", "a_n_head", "a_n_headside"],
 	"face":   ["a_n_megane", "a_n_earrings_L", "a_n_earrings_R", "a_n_nose", "a_n_mouth"],
+	#: Neck is on [UpperChest.Neck:cf_s], Bust_F & Back on [UpperChest.cf_s:03], Nip on [UpperChest.Bust:cf_s]
 	"body":   ["a_n_neck", "a_n_bust_f", "a_n_bust", "a_n_nip_L", "a_n_nip_R"],
 	"lower":  ["a_n_back", "a_n_back_L", "a_n_back_R", "a_n_waist", "a_n_waist_f", "a_n_waist_b", "a_n_waist_L", "a_n_waist_R", "a_n_leg_L", "a_n_leg_R", "a_n_knee_L", "a_n_knee_R"],
 	"foot":   ["a_n_ankle_L", "a_n_ankle_R", "a_n_heel_L", "a_n_heel_R", "cf_j_toes_L", "cf_j_toes_R"],
@@ -939,6 +996,7 @@ Mode Interactions:
 		isDelta    = re.search(r'_delta$', mat.name_jp) is not None
 		isHidden   = mat.alpha == 0
 		isBodyAcc  = False
+		isTrueClo  = False
 		
 		## Just for completeness sake, because they rarely have an own entry
 		if re.search(r"(cf_m_sirome_00)|(cf_m_tooth)", name_both, re.I):
@@ -949,7 +1007,7 @@ Mode Interactions:
 		if m is not None:
 			itemsSlots["slotMatch"] = True
 			if m in slotBody   : isBody = True
-			if m in slotCloth  : isBody = False
+			if m in slotCloth  : isBody = False; isTrueClo = m not in slotMostly
 			
 			## Things like to be named body, so only count them if they are proper.
 			if re.search("body", name_both, re.I): isBody = m in slotBody
@@ -1014,9 +1072,15 @@ Mode Interactions:
 		if f_solo: addMatMorph([name_jp, name_en], items, frame)
 		
 		## Sort into Body, Accessories, Cloth
+		if isDisabled:
+			mat.ambRGB  = [1, 0, 0] ## Mark it red so that it can be spotted fast for deletion
+			## Remove their texture references so they don't count as used
+			mat.tex_idx = -1
+			mat.sph_idx = -1
+			if mat.toon_mode == 0: mat.toon_idx = -1
 		if isBody or isDisabled: continue
 		appender = __append_itemmorph_sub if isHidden else __append_itemmorph_mul
-		if re.search(rgxAcc, name_both, re.I): appender(itemsAcc, idx)
+		if re.search(rgxAcc, name_both, re.I) and not isTrueClo: appender(itemsAcc, idx)
 		else: appender(itemsCloth, idx)
 	#############
 	#### Add slot morphs
@@ -1182,7 +1246,7 @@ Note: Unless there is an explicit need to keep them separate, Step [3] and [5] c
 	log_line = [f"Cut along '{vert_file}'",f"Added two morphs '{oldName}' and '{newName}'"]
 	end(pmx, input_filename_pmx, "_cut", log_line)
 
-def delete_invisible_faces(pmx, input_filename_pmx, write_model=True, moreinfo=True): ## [15]
+def delete_invisible_faces(pmx, input_filename_pmx, write_model=True, moreinfo=True, opt={}): ## [15]
 	"""
 Detects unused vertices and invisible faces and removes them accordingly, as well as associated VertexMorph entries.
 An face is invisible if the corresponding texture pixel(== UV) of all three vertices has an alpha value of 0%.
@@ -1206,11 +1270,16 @@ If all faces of a given material are considered invisible, it will be ignored an
 	total_faces = len(pmx.faces)
 	verify = []
 	small = []
+	disabled = []
+	delDisp = opt.get("delDisp", False)
+	
 	### Outside so that it still runs even if no material triggers it.
 	print("\n=== Remove any vertices that belong to no material in general")
 	prune_unused_vertices(pmx, moreinfo)
 	## Slots which usually contain only one-dimensional meshes
 	careful_mats = '|'.join(["ct_bra", "ct_shorts", "ct_socks", "ct_panst"])
+	fragile_name = '|'.join(["acs_m_necktielong01", "mf_m_primmaterial", "necklace"])
+	breakin_name = ["acs_m_necklace_heart"]
 	def get_uv(w,h,v): return [int(h * (v.uv[1] % 1)), int(w * (v.uv[0] % 1)), 3]
 	
 #> foreach in materials
@@ -1224,10 +1293,18 @@ If all faces of a given material are considered invisible, it will be ignored an
 			continue
 		
 		## Remove Bonelyfans, c_m_shadowcast if they have any vertices
-		if any([x in mat.name_jp for x in ["Bonelyfans", "shadowcast", "cf_m_eyeline_kage"]]):
+		if any([x in mat.name_jp for x in ["Bonelyfans", "shadowcast"]]):
 			print(f"> Deleting useless material...")
 			faces = from_material_get_faces(pmx, mat_idx, True, moreinfo=False)
 			delete_faces(pmx, faces)
+			changed = True
+			continue
+		## If deleting disabled materials, do them here too
+		if delDisp and util.isDisabled(mat):
+			print(f">[!] Deleting disabled material...")
+			faces = from_material_get_faces(pmx, mat_idx, True, moreinfo=False)
+			delete_faces(pmx, faces)
+			disabled.append(mat_idx)
 			changed = True
 			continue
 			
@@ -1240,14 +1317,19 @@ If all faces of a given material are considered invisible, it will be ignored an
 			print("> No file found at this path, skipping")
 			continue
 	#>	ignore head assets, because missing vertices in these basically ruin most expressions
-		if re.search("ct_head", mat.comment) or mat.name_jp in ["cf_m_body", "cm_m_body", "cf_m_mm", "cf_m_tooth", "cf_m_tooth*1"]:
+		if re.search("ct_head", mat.comment) or mat.name_jp in ["cf_m_body", "cm_m_body", "cf_m_mm", "cf_m_eyeline_kage", "cf_m_tooth"]:
 			print("> Material should never be checked, skipping")
 			continue
+		if mat.name_jp in breakin_name: print("> Material always breaks, ignored"); continue
 		isCareful = re.search(careful_mats, mat.comment) is not None
-		isCareful |= isPrim
+		isFragile = (re.search(fragile_name, mat.name_jp) is not None)
+		isCareful |= isPrim or isFragile
+		recCareful = False
+		## Everything is filtered now
 		img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
 		if img.shape[2] < 4:
-			print("> Texture has no alpha, cannot determine invisibility")
+			if isPrim: print(f"> Primitive mesh without alpha layer, ignored")
+			else: print("> Texture has no alpha, cannot determine invisibility")
 			continue
 	#>	get width / height
 		w = img.shape[:2][1]
@@ -1277,17 +1359,20 @@ If all faces of a given material are considered invisible, it will be ignored an
 		if len(new_verts) > 0:
 			#>	Collect Faces that contain at least one of the vertices
 			faces = from_vertices_get_faces(pmx, new_verts, -1, True, full=True)
+			lenFaces = len(faces)
 			#> Bail out when none of them are connected
-			if len(faces) == 0: continue
+			if lenFaces == 0: continue
 			cnt = (len(old_faces) - len(faces))
 			if cnt == 0:
 				print(">!! Trying to delete all faces of this material, please verify manually. Skipped.")
 				verify.append(mat_idx)
 				continue
+			if lenFaces < 100: isFragile = True
 			ratio = abs((cnt / len(old_faces)))
 			if ratio < 0.1:
-				if not util.ask_yes_no("> Cutting away more than 90% of this material, proceed?"):
+				if not isCareful and not util.ask_yes_no("> Cutting away more than 90% of this material, proceed?"):
 					continue
+				isCareful = recCareful = True
 			elif moreinfo: print(f"> Detected {(1 - ratio) * 100}% to cut away")
 			if abs(cnt) < 20: print(">* Less than 20 faces will remain of this material.")
 			### Special treatment for certain texture types
@@ -1297,7 +1382,9 @@ If all faces of a given material are considered invisible, it will be ignored an
 					coord = util.arrAvg(vA, vB, True)
 					#print(coord)
 					return img[coord[0], coord[1], coord[2]] != 0
-				print(f"> Slot with careful texture, doing detailed search on all {len(faces) * 3} edges.")
+				if not recCareful:
+					if isFragile: print(f"> Delicate texture detected, doing detailed search on all {len(faces) * 3} edges.")
+					else: print(f"> Slot with careful texture, doing detailed search on all {len(faces) * 3} edges.")
 				for face_idx in faces:
 					face = pmx.faces[face_idx]
 					# Fetch the UV to check the center of each
@@ -1317,7 +1404,7 @@ If all faces of a given material are considered invisible, it will be ignored an
 	log_line = []
 	if not changed: log_line += "> No changes detected."; print(log_line[-1])
 	else:
-		print(""); prune_unused_vertices(pmx, moreinfo)
+		print(""); prune_unused_vertices(pmx, True)
 		total_verts -= len(pmx.verts)
 		total_faces -= len(pmx.faces)
 		# With [moreinfo], Vertices are already logged. Avoid doing it twice.
@@ -1329,6 +1416,9 @@ If all faces of a given material are considered invisible, it will be ignored an
 	if len(small) > 0:
 		print("\nThese materials have been skipped because they have less than 50 vertices.\n " + str(small))
 		log_line += ["> Skipped(TooSmall): " + str(small)]
+	if len(disabled) > 0:
+		print("\nThese disabled materials have been deleted because User-Input said yes.\n " + str(disabled))
+		log_line += ["> Disabled deleted: " + str(disabled)]
 	
 	end(pmx if changed and write_model else None, input_filename_pmx, "_pruned", log_line)
 

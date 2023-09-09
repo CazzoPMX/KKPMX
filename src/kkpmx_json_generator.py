@@ -12,6 +12,7 @@ from copy import deepcopy
 from kkpmx_utils import find_bone
 DEBUG = util.DEBUG or False
 DEVDEBUG = False
+genFiles = False and DEBUG
 
 ###############
 
@@ -113,6 +114,7 @@ ren_Shadows  = "shadows" ## Can cast shadows:    "On", "Off", "Two Sided", "Shad
 ren_Receive  = "receive" ## Can receive shadows: "On", "Off" --> "True","False"
 ren_Parent   = "parent"  ## The Slot note (ca_slot & ct_)
 ren_Render   = "render"  ## Original render name
+ren_Slot     = "slot"
 ren_Type     = "renType"
 ren_Material = "mat"     ## Array of materials
 ren_Target   = "target"  ## The converted / uniquefied material name (becomes render name and should match the PmxMaterial)
@@ -244,7 +246,7 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 		prDEBUG(k, f"------- End: {k} --- Parent={_parent}")
 		parent_tree.setdefault(_parent, [])
 		parent_tree[_parent].append(k)
-	#util.write_json(parent_tree, "_gen\#3Parents")
+	#if genFiles: util.write_json(parent_tree, "_gen\#3Parents")
 	
 	if DEBUG:
 		tmp = parent_tree["_blank"]
@@ -526,7 +528,10 @@ def write_entity(pmx, arr, json_tree, opt):
 	else: opt = {}
 	
 	targetBase = {}
-	_elem = filter(lambda kv: kv[0].startswith(name), json_tree.items())
+	_filter = re.compile(name + r'(#-\d+|\*\d+)?$')
+	#_elem = filter(lambda kv: kv[0].startswith(name), json_tree.items())
+	_elem = filter(lambda kv: _filter.match(kv[0]), json_tree.items())
+	#for x in _elem: print(x[0])### Verifyer
 	if not _elem:
 		print("[!] Could not find any match for " + name)
 		return
@@ -538,7 +543,7 @@ def write_entity(pmx, arr, json_tree, opt):
 	suffix = opt.get(opt_Iter, 0)
 	for x in range(suffix): elem = next(_elem)
 	#prDEBUG("-------------------------------")
-	prDEBUG(elem[0], elem[1])
+	prDEBUG(elem[0], f"> [{suffix}]: {reduceDictData(elem[1])}")
 	
 	#---#
 	token = re.sub(r"( \(Instance\))+", "", elem[0]) ## the full name that started with [name], without (instance)
@@ -626,6 +631,7 @@ def write_entity(pmx, arr, json_tree, opt):
 	### Generate the render entries that use that material
 	for (k,r) in render.items(): ## mat
 		key = r.get(ren_Target) ## Contains already *-suffix if any
+		prDEBUG(key, f"--> Material Key is {key}")
 		val = { }
 		val[ren_Enabled] = r.get(ren_Enabled, "False") == "True"
 		val[ren_Receive] = r.get(ren_Receive, "False") == "True"
@@ -643,12 +649,12 @@ def write_entity(pmx, arr, json_tree, opt):
 		
 		parent = r.get(ren_Parent)
 		if parent:
-			val[ren_Parent] = parent 
-			if name.startswith("ct_"):
-				val["slot"]   = parent
-			else:
+			val[ren_Parent] = parent
+			if name.startswith("ct_"): # If this is a "ct_" slot, use the parent as is
+				val[ren_Slot]   = parent
+			else: # Otherwise use the grandparent (== N_move -> ca_slot > a_n_*)
 				tmp = local_state[renTag_idxOvr].get(token, find_bone(pmx, parent)) ##[_f__IdxOvr]: Use Index Override if we declared one
-				val["slot"]   = pmx.bones[pmx.bones[tmp].parent_idx].name_jp
+				val[ren_Slot]   = pmx.bones[pmx.bones[tmp].parent_idx].name_jp
 			###---
 			# Body things will be in p_cf_body_00 under BodyTop
 			# Head things will be in ct_head under p_cf_head_bone
@@ -676,7 +682,7 @@ def Generate__main_cloth(arr, retObj):
 	cat    = retObj.get(ret_Cat)
 	meta   = { "render": render }
 	if cat:
-		meta["slot"] = cat
+		meta[ren_Slot] = cat
 		cat = cat_to_Title[cat]
 	com    = None
 	if name: com = Comment(name, idx=cat)
@@ -798,7 +804,7 @@ def generate_render_tree(pmx, tree, json_ren):
 	}
 	```
 	"""
-	#util.write_json(json_ren, "_gen\#1R00_json_ren", True)
+	if genFiles: util.write_json(json_ren, "_gen\#1R00_json_ren", True)
 	#DEBUG = True
 	
 	### Group by Parent
@@ -811,7 +817,8 @@ def generate_render_tree(pmx, tree, json_ren):
 		renArr[r[ren_Parent]].append(key) ## --> "Parent": { RENDER: BODY, ...}, ...
 		#if len(renArr[r[ren_Material]]) > 1:
 		#	print("[] Warning: Render '{}' contains multiple materials!".format(key))
-	#util.write_json(renArr, "_gen\#1R01_renArr", True) ### Dict of { "parent": [ "render", ...] }
+	if genFiles: util.write_json(renArr, "_gen\#1R01_renArr", True) ### Dict of { "parent": [ "render", ...] }
+	## "ca_slot00": [ <All Render with "parent"="ca_slot00"> ], ....
 	#::>>> Prints dict of slots with their Render Bones
 	
 	### Link to bone_idx
@@ -856,7 +863,7 @@ def generate_render_tree(pmx, tree, json_ren):
 					if storeIdx: local_state[renTag_idxOvr][i] = cArr[k]
 					continue
 	#util.write_jsonX(renToBone, "#renToBone.json", indent="\t", sort_keys=True)
-	#util.write_jsonX(renToBone, "_gen\#1R02_renToBone.json", indent="\t", sort_keys=True)
+	if genFiles: util.write_jsonX(renToBone, "_gen\#1R02_renToBone.json", indent="\t", sort_keys=True)
 	#if DEBUG: print(f"------------------")
 	return json.loads(json.dumps(renToBone, sort_keys=True))
 #
@@ -873,7 +880,7 @@ def generate_material_tree(pmx, tree, render_tree: dict, json_mats: dict):
 	-- Field 'render' which contains a copy of the corresponding item in [render_tree]
 	-- Said [render_tree] item having [generated.Render.Name] in 'target'
 	"""
-	#util.write_json(json_mats, "_gen\#2M00_json_mats", True)
+	if genFiles: util.write_json(json_mats, "_gen\#2M00_json_mats", True)
 	
 	#print("------ render_tree")
 	#util.__typePrinter_Dict(render_tree)
@@ -888,18 +895,32 @@ def generate_material_tree(pmx, tree, render_tree: dict, json_mats: dict):
 	
 	idxOvr = [x[0] for x in local_state[renTag_idxOvr].items()]
 	
+	## Collect Materials based on InstanceID
+	matIdDict = {}
+	for mat in pmx.materials:
+		m = util.readFromCommentRaw(mat.comment, '[MatId]:')
+		if not m is None: matIdDict[m] = mat.name_jp #mat.name_en if options[OPT_ENG] else mat.name_jp
+	
 	for ren in render_tree.items():
 		##== ('bone_idx', {'enabled': 'True', 'mat': ["", ...], 'parent': 'ca_slot00', 'receive': 'True', 'render': 'NAME in render_tree', 'shadows': 'On'})
 		try:
 			mats = ren[1][ren_Material]
 			_mat = mats[0]
 			_idx = int(ren[0])
-			prDEBUG(_mat, f"\n-- {_mat} --> {ren}")
+			prDEBUG(_mat, f"\n-- {_mat} --> {ren}") ## MAT#MATID --> ('bone_idx', { .... })
 			
 			if _idx in idxOvr: ##[_f__IdxOvr]: Connect if we set an override
 				local_state[renTag_idxOvr][_mat] = local_state[renTag_idxOvr][_idx]; ## Store the real Parent-Index for this Material
 				del local_state[renTag_idxOvr][_idx]                                 ## Delete the older Render Index
-			render_tree[ren[0]][ren_Target] = uniquefy_material(_mat, uniqueMats)
+#	###--- Find the correct render based on ID
+			## Reason why it is not added to name: Names can change, or sorted differently, etc.
+			## Reason why it did not work before: When descending the Bones for mapping, instances of same-name mats where not all bones are remapped might be swapped
+			_vXFlag_UseId = True
+			if not _vXFlag_UseId: render_tree[ren[0]][ren_Target] = uniquefy_material(_mat, uniqueMats)
+			else:
+				_matId = _mat.split('#')[-1]
+				if not _matId in matIdDict: util.throwIfDebug(DEBUG, f"ID '{_matId}' was supposed to exist but does not"); continue
+				render_tree[ren[0]][ren_Target] = matIdDict[_matId] #uniquefy_material(_mat, uniqueMats)
 			prDEBUG(_mat, f"-- ren_Target: {render_tree[ren[0]][ren_Target]}")
 #	### Map existing render to existing materials
 			if _mat in json_mats:
@@ -908,14 +929,15 @@ def generate_material_tree(pmx, tree, render_tree: dict, json_mats: dict):
 				prDEBUG(_mat, f"-- ren_Render: {json_mats[_mat]}")
 			if len(mats) == 1: continue
 			## This is the case if there are more "Material:" Rows than "Renderer:" Rows in the Material-Editor GUI
+			if DEBUG: print(f"--:: Found {len(mats[1:])} more Mats to associate for this Renderer, using extra-scan....")
 			matIdx = 0
 			_mats = mats
 			for mat in _mats[1:]:
 				matIdx += 1
 				if KAGE_MATERIAL in mat: continue
-				prDEBUG(_mat, f"-- MADE FOR: {json_mats[_mat]}")
+				prDEBUG2(_mat, f"-- MADE FOR: {reduceDictData(json_mats[_mat])}")
 				
-				prDEBUG(_mat, f"-- Extra: {mat}")
+				prDEBUG2(_mat, f"-- Extra: {mat}")
 				#--(1): Check if the name is identical -- Shared Material in Unity
 				if mat == _mat: json_mats[uniquefy_material(mat, uniqueMats)] = _mat
 				#--(2): Could also be copied in Material-Editor
@@ -925,6 +947,10 @@ def generate_material_tree(pmx, tree, render_tree: dict, json_mats: dict):
 					if mat in json_mats and ren_Render not in json_mats[mat]:
 						json_mats[mat].setdefault(ren_Render, {})
 						json_mats[mat][ren_Render][ren[0]] = deepcopy(ren[1])
+						### Set the Target to use the Unique extra key too (Verify: When did I not have to set it?)
+						json_mats[mat][ren_Render][ren[0]][ren_Target] = re.sub(r"[*#\-]+\d+","",mat)
+						
+						prDEBUG2(mat, f"Setting ren_Render to {json_mats[mat][ren_Render][ren[0]].get(ren_Target, '<<error>')}");
 					else: print(f"[W] Non-unique extra mat '{mat}' in '{_mat}'.Render")
 				#--(3): Last thing could be some weird Multi-Mesh-per-Material stuff (basically (1) but for Renderer)
 				else: 
@@ -933,7 +959,7 @@ def generate_material_tree(pmx, tree, render_tree: dict, json_mats: dict):
 					if matId:
 						matId = int(matId)
 						for xMat in [x for x in json_mats if json_mats[x].get(ren_Render, None) is None]:
-							prDEBUG(f">(3) Check extra mat '{xMat}' == '{matId}' ....")
+							prDEBUG2(f">(3) Check extra mat '{xMat}' == '{matId}' ....")
 							#### If we have an Asset with more (effective) materials than renders, then we have to duplicate the render instead.
 							## We also can't just add another item to the original object because we don't have a bone for that.
 							if json_mats[xMat].get(mat_MatId, "<<>>") == matId:
@@ -954,7 +980,7 @@ def generate_material_tree(pmx, tree, render_tree: dict, json_mats: dict):
 								#-- Also add a special attribute that makes you special, for later
 								json_mats[zMat][mat_Special] = True
 								prDEBUG(zMat, f"\n>(2c) Full mat: {json_mats[zMat]}\n")
-								prDEBUG(zMat, f">(1) Found '{xMat}' as '{zMat}' ....")
+								prDEBUG2(zMat, f">(1) Found '{xMat}' as '{zMat}' ....")
 								found = True
 								break
 					if found: continue
@@ -963,8 +989,9 @@ def generate_material_tree(pmx, tree, render_tree: dict, json_mats: dict):
 			print(f"\n---[!!]: Skipped the following material:")
 			print(ren)
 			print(f"> Error-Reason: {ex}")
-	#util.write_json(render_tree, "_gen\#2M01_render_tree", True)
-	#util.write_json(json_mats, "_gen\#2M02_json_mats", True)
+			if DEVDEBUG: raise ex
+	if genFiles: util.write_json(render_tree, "_gen\#2M01_render_tree", True)
+	if genFiles: util.write_json(json_mats, "_gen\#2M02_json_mats", True)
 	return json_mats
 #### By now, we only have existing materials and added render for which one exists.
 ## We also know which materials have no render and can auto-disable them
@@ -995,7 +1022,20 @@ def prDEBUG(token, text=None):
 	if not DEBUG: return
 	if text is None: print(token)
 	elif "hair*1" in str(token): print(text)
-	#elif "body" in str(token): print(text)
+	elif "cf_m_hair_f_08" in str(token): print(text)
+	elif "o_bot_skirt01" in str(token): print(text)
+def prDEBUG2(token, text=None):
+	if DEVDEBUG: prDEBUG(token if text is None else text, None)
+	else: prDEBUG(token, text)
+
+def reduceDictData(obj):
+	import copy
+	if not type(obj) in [dict]: return obj
+	_dict = copy.deepcopy(obj)
+	for k in _dict.keys():
+		if "Color" in k: _dict[k] = ["...."]
+		elif "textures" == k: _dict[k] = ["...."]
+	return _dict
 
 ##################
 ### Texture Tags

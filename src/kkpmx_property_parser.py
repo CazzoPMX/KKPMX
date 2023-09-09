@@ -142,6 +142,7 @@ Additional notes:
 [Output]: PMX file '[modelname]_props.pmx'
 """
 DEBUG = util.DEBUG or False
+TEST_EYES = False
 
 ## Todos: Root Path
 
@@ -166,6 +167,7 @@ msgsPre = "-- "
 EMPTY_TEXTURE = "."
 local_state = { }
 state_info = "showinfo"
+debug_file = "showinfoFile"
 state_SKIP = "state_SKIP"
 state_UNITY = "unity"
 state_SKIN = "sharedskin"
@@ -173,6 +175,8 @@ def _verbose(): return local_state.get(state_info, True)
 def _useImg():  return local_state.get(OPT_IMG, True)
 #def throwOrPrint(msg): pass
 
+DEBUG_RUN = False
+THROWERROR = True
 
 ################
 
@@ -184,6 +188,7 @@ def parseMatComments(pmx, input_file_name: str, write_model = True, moreinfo = F
 	
 	path = os.path.join(root, "#generateJSON.json") #@todo_note "<< Default file name >>"
 	local_state[state_info] = moreinfo or DEBUG
+	local_state[debug_file] = (moreinfo or DEBUG) and util.FILEDEBUG
 	local_state[ARGSTR] = {}
 	#### Load JSON
 	def callback(raw_data):
@@ -246,12 +251,15 @@ def __parse_json_file(pmx, data: dict, root: str):
 	
 	#ask_to_rename_extra(base)
 	
-	if not options[OPT_SKIP]: fix_material_names(pmx, data)
 	
 	hair_tabu = []
 	local_state[OPT_HAIR]  = {}
-	local_state[OPT_CACHE] = util.ask_yes_no("Enable Texture Cache", "y", extra="Reuse Textures that use the same parameters. [See above for more info] ")
-	local_state[OPT_IMG]   = not util.ask_yes_no("Skip images", "n")
+	if not DEBUG_RUN:
+		local_state[OPT_CACHE] = util.ask_yes_no("Enable Texture Cache", "y", extra="Reuse Textures that use the same parameters. [See above for more info] ")
+		local_state[OPT_IMG]   = not util.ask_yes_no("Skip images", "n")
+	else:
+		local_state[OPT_CACHE] = True
+		local_state[OPT_IMG]   = True
 	
 	print(local_state)
 	
@@ -274,12 +282,9 @@ def __parse_json_file(pmx, data: dict, root: str):
 		
 		if verbose: print("\n==== Processing " + mat.name_jp)
 		if len(attr) == 0: continue ## Catches {},[],"" #@todo_add "<< silent ignore of empty elements >>"
-		#if (mat.name_jp != "acs_m_xmasribon"): continue
-		#if not (mat.name_jp.startswith("cf_m_hair_b_05_00")): continue ## Orange
 		#if not (mat.name_jp.startswith("acs_")): continue
 		#if (mat.name_jp.startswith("acs_")): continue
-		#if (mat.name_jp.startswith("cf_m_hair")): continue
-		#if not (mat.name_jp.startswith("acs_head_hana_botan")): continue
+		if (mat.name_jp.startswith("cf_m_eyeline_kage")): continue
 		#if (mat.name_jp not in ["cloth", "cloth*1", "choker", "m_military_boots","cf_m_bot_high-waist_skirt"]): continue
 		#if ("hitomi" not in mat.name_jp): continue
 		if not verbose: print("\n==== Processing " + mat.name_jp)
@@ -374,16 +379,17 @@ def __parse_json_file(pmx, data: dict, root: str):
 			'alpha': parse_alpha, 'ignore': parse_pass, 'glass': parse_glass,
 			'main': parse_main, 'metal': parse_metal, 'hair2': parse_hair2,
 			}
-		#parseDict = { 'face': parse_face }
 		if attr[GROUP] in parseDict: parseDict[attr[GROUP]](pmx, mat, attr); #exit()
-		else:
+		elif not DEBUG_RUN:
 			msgs['no_action'].append(msgsPre + mat.name_jp + f" ({attr[GROUP]})")
 			print(">--> [MissingAction]: " + msgs['no_action'][-1])
 			#parseDict["item"](pmx, mat, attr)#; exit()
+		StoreTextureForUnity(attr, mat, pmx)
 		#if ("body" in mat.name_jp): print(attr)
 		
 		## Clear texture cache after every run when reuse is disabled
 		if not local_state[OPT_CACHE]: local_state[ARGSTR] = {}
+	StoreTextureForUnity_NonMats(pmx, root)
 	# idk some handler to make face & body have the same toon ?
 	#######
 	### Display summary for quick glance that something did not work
@@ -404,6 +410,7 @@ def __parse_json_file(pmx, data: dict, root: str):
 		arr.append('\n'.join(["Additionally, these textures failed to generate:", "\n".join(tmp)]))
 		arr.append("- To fix the above, provide the missing base file or remove it from the 'textures' element of the material")
 	if len(arr) > 0:                    print('\n'.join(["==========",'\n\n'.join(arr),"=========="]))
+	else:                               print("\n")
 	
 	## Actually add arr to LogLines
 	return ["=========="] + arr + ["=========="]
@@ -585,6 +592,7 @@ def parse_hair(pmx, mat, attr): ## @open: t__Color, t__Detail, t__HairGloss, Col
 	
 	# OPT_HAIR says if this render is the first of its material to be rendered
 	if attr[OPT_HAIR]:
+		calculate_reusable_textures(attr)
 		process_color_and_detail(pmx, mat, attr)
 	# otherwise load its final texture from local_state
 	elif attr[INHERIT] in local_state[OPT_HAIR]:
@@ -618,7 +626,7 @@ def parse_hair2(pmx, mat, attr): ## @open: t__Color, t__Detail, t__HairGloss, Co
 	process_color_and_detail(pmx, mat, attr) ## Seems to be skipped if Reuse is active
 	
 	if not set_new_texture(pmx, mat, attr, [get_working_texture(attr), "@" + attr[META][MT_SLOT] + ".png"],copyIfMissing=True):
-		raise Exception("REEEEEE")
+		if local_state[OPT_IMG]: util.throwIfDebug(DEBUG, "Uhh.... not supposed to happen I guess")
 	
 	if Color_1 in attr:
 		mat.diffRGB = attr[Color_1][:3]
@@ -877,33 +885,44 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 		#### Write TypeString into Comment
 		if MT_TYPE in meta: mat.comment = util.updateComment(mat.comment, "MatType", meta[MT_TYPE])
 		#### Add Slot into Comment (note: optimize this a bit later to also use updateComment but keep order)
-		
 		if MT_SLOT in meta:
-			#arr = []
+			cmtNew = []
+			def addComment(token, value): cmtNew.append(util.updateComment("", token, value))
 			comment = meta[MT_SLOT]
 			if comment in ["BodyTop","p_cf_head_bone"]: comment = meta[MT_PARENT]
-			#arr.append(("[:Slot:]", comment))
-			comment = "[:Slot:] " + comment
-			par = meta[MT_PARENT]
-			ren = meta[MT_RENDER]
+			if comment and len(comment) > 0: addComment("Slot", comment)
+			par = meta[MT_PARENT]; ren = meta[MT_RENDER]
 			### Add accessory slot as extra line
-			if re.match("ca_slot\d+", par):
-				comment += "\r\n[:AccId:] " + re.match("ca_slot(\d+)", par)[1]
+			if re.match("ca_slot\d+", par): addComment("AccId", re.match("ca_slot(\d+)", par)[1])
 				### [bra]: render=o_bra_a, parent=ct_bra, slot=BodyTop \\ CTA: CTA_o_bra_a, ca_slot, a_n
 				##if ren.startswith("CTA"):          comment += "\r\n[:CATId:] " + re.match("ca_slot(\d+)", par)[1]
 				
 			### Add Top sub slots as extra line
-			if re.match("ct_top_parts_", par): comment += "\r\n[:TopId:] " + par
+			if re.match("ct_top_parts_", par): addComment("TopId", par)
 			### Give some navigation for primmats
-			if attr[NAME].startswith("mf_m_primmaterial"): comment += "\r\n[:PrOrg:] " + meta[MT_RENDER]
-			
+			if attr[NAME].startswith("mf_m_primmaterial"): addComment("PrOrg", meta[MT_RENDER])
+			cmtNew = "\r\n".join(cmtNew)
 			if not mat.comment or len(mat.comment) == 0:
-				mat.comment = comment
-			else:
-				## Make sure that old comment tokens are removed before readding
-				mat.comment = re.sub("(\r\n)?\[:Slot:\] \w+",  "", mat.comment)
-				mat.comment = re.sub("(\r\n)?\[(:AccId:|:TopId:|:PrOrg:)\] \w+", "", mat.comment)
-				mat.comment = "\r\n".join([comment, mat.comment])
+				mat.comment = cmtNew
+			else:##-- This at least ensures a consistent order
+				def CopyCommentValue(cmtNew, token, isRaw=False):
+					funcIN  = util.readFromCommentRaw if isRaw else util.readFromComment
+					funcOUT = util.updateCommentRaw if isRaw else util.updateComment
+					if not funcIN(mat.comment, token, True): return cmtNew
+					return funcOUT(cmtNew, token, funcIN(mat.comment, token), _append=True)
+				cmtNew = CopyCommentValue(cmtNew, "MatType", False)
+				if util.isDisabled(mat): cmtNew = util.updateCommentRaw(cmtNew, "[:Disabled:]", _append=True)
+				cmtNew = CopyCommentValue(cmtNew, "[Old Diffuse]:", True)
+				cmtNew = CopyCommentValue(cmtNew, "[MatId]:", True)
+				if (len(mat.comment) != len(cmtNew)): cmtNew += mat.comment[len(cmtNew):]
+				mat.comment = cmtNew.strip()
+	###--------- Extra Attributes
+	_arr = []
+	for a in _extraAttributes:
+		if a in attr:
+			_arr.append(a)
+			mat.comment = util.updateComment(mat.comment, f"Extra[{a}]", attr[a], True)
+	if len(_arr) > 0: print(f"> Adding ExtraAttributes {_arr}")
 
 def process_color_and_detail(pmx, mat, attr):
 	def replFN(elem, name): return os.path.join(os.path.split(elem)[0], name)
@@ -940,10 +959,11 @@ def process_color_and_detail(pmx, mat, attr):
 		if noMain:
 			ff = getFN(attr[t__Color])
 			if (ff.startswith("mf_m_primmaterial")):
-				attr[t__Color] = replFN(attr[t__Color], "mf_m_primmaterial_ColorMask.png")
 				## By default it does not exist, so delete it to avoid a standard warning
-				if t__Detail in attr and not os.path.exists(attr[t__Detail]): del attr[t__Detail]
-			attr["altName"] = re.sub("_ColorMask","",ff) + "@" + attr[META][MT_PARENT]
+				if t__Detail in attr and not os.path.exists(attr[t__Detail]):
+					del attr[t__Detail]
+					detail_or_alpha = t__Alpha in attr and os.path.exists(attr[t__Alpha])
+			attr["altName"] = re.sub("_ColorMask","",ff) + "@" + attr[META][MT_PARENT] ##--- This prevents Detail Masks being reused across slots
 		else:
 			### Ignore mf_m_primmaterial if they have a MainTex
 			if (getFN(attr[t__Main]).startswith("mf_m_primmaterial")):
@@ -954,8 +974,15 @@ def process_color_and_detail(pmx, mat, attr):
 		if noMain: ff = replFN(attr[t__Color], attr["altName"])
 		attr[t__MainCol] = os.path.splitext(ff)[0] + suffix_Col + ".png"
 		##-- Remove a non-generated entry due to errors
-		if attr[t__MainCol] and not os.path.exists(attr[t__MainCol]): del attr[t__MainCol]
+		if attr[t__MainCol] and not os.path.exists(attr[t__MainCol]):
+			if t__Reuse in attr: attr[t__MainCol] = attr[t__Reuse] ##<< replace if we reuse from a diff. slot
+			else: del attr[t__MainCol]
+		elif ARGSTR in attr: ## as 2nd condition since diff. slot will never do this tbh
+			tmp = attr[ARGSTR]
+			if tmp not in local_state[ARGSTR]: local_state[ARGSTR][tmp] = attr[t__MainCol]
+		if t__Reuse in attr: print(f"> Reusing texture {get_relative_path(attr[t__Reuse])}")
 		executedOnce = attr.get(t__MainCol, None) is not None
+		executedOnce |= attr.get(t__Reuse, None) is not None ## Additional check
 
 	##[!!!] -- Could get an issue if Reuse is active but no DetailMask (?)
 	if attr.get(t__Main, None) == None and attr.get(t__MainCol, None) == None:
@@ -1028,7 +1055,7 @@ def handle_body_overtex1(pmx, attr):
 	arg1 = quote(get_working_texture(attr))
 	arg2 = quote(attr[t__overtex1])
 	js = { "color": attr[Color_Tex1], "nip":   attr["nip"], "size":  attr["nipsize"], "spec":  attr["nip_specular"] }
-	js[state_info] = local_state[state_info]
+	js[state_info] = local_state[debug_file]
 	arg3 = quoteJson(js)
 	call_img_scripts((pathBOver1, arg1, arg2, arg3), "body1", [3])
 
@@ -1068,9 +1095,10 @@ def handle_eye_highlight(pmx, attr): ## Actually uses all three colors, so color
 	if NO_FILES in attr: return
 	arg1 = quote(attr[t__Main])
 	js = { "highlight": attr.get("isHighLight", False) }
+	# TODO: Move Left Eye left, and right eye right, respectively
 	js["offset"] = attr.get("offset", "(0, 0)")
 	js["scale"] = attr.get("scale", "(1, 1)")
-	js[state_info] = local_state[state_info]
+	js[state_info] = local_state[debug_file] ## Always show full things here
 	arg2 = quoteJson(js)
 	#### offset(\d, \d), scale(\d,\d) overcolor1, overcolor2
 	if t__overtex1 in attr:
@@ -1090,6 +1118,7 @@ def handle_eye_highlight(pmx, attr): ## Actually uses all three colors, so color
 def handle_face_overtex2(pmx, attr): pass ## Do not merge, but try to add as extra ... material.... ._.
 
 def remove_face_alpha(pmx, attr):
+	if not _useImg(): return
 	import cv2, numpy as np
 	imgMain = attr[t__Main]
 	imgBack = attr[t__Main][0:-4] + "_bk.png"
@@ -1122,14 +1151,15 @@ def handle_acc_color(pmx, attr): ### @FIX: Add the slot name to avoid things bei
 		local_state[state_SKIP][t__Color] = True
 		return
 	
-	add_if_found(attr, data, "altName")             # Save with diff. name
 	if attr[GROUP] == "hair": data["hair"] = True   # Set flag if Hair
-	data[state_info]   = local_state[state_info]   # Verbosity flag
+	data[state_info]   = local_state[state_info]    # Verbosity flag
 	data["saturation"] = attr.get("saturation", 1)  # Allows adjustments to Hair-Tip saturation
+	arg6ArgStr = quoteJson(data) ## Since this is individual per slot, it prevents dupe detection
+	add_if_found(attr, data, "altName")             # Save with diff. name
 	arg6 = quoteJson(data)
 	
 	## Build reuse id, apply [Alpha] in case it exists (since it should only be reused if same alpha)
-	argStr = "color"+arg1+arg2+arg3+arg4+arg5+arg6 + attr.get(t__Alpha, "") ##[TODO] Redo-Reuse: Reuse ColorMask if same props
+	argStr = "color"+arg1+arg2+arg3+arg4+arg5+arg6ArgStr + attr.get(t__Alpha, "") ##[TODO] Redo-Reuse: Reuse ColorMask if same props
 	
 	attr[ARGSTR] = argStr
 	tmp = local_state[ARGSTR].get(argStr, None)
@@ -1140,7 +1170,6 @@ def handle_acc_detail(pmx, attr): ## Has @todo_add \\ @open: All the props affec
 	if NO_FILES in attr: return
 	# [t__Reuse] is set by ColorMask if happening -- Only do AlphaMask then
 	#---[TODO]: Revamp Reuse system to allow partial reuse if only Color is the same
-	if t__Reuse in attr: return handle_acc_alpha(pmx, attr)
 	if NotFound(attr, t__Detail): return handle_acc_alpha(pmx, attr)
 	
 	### Determine main texture & blend mode
@@ -1156,7 +1185,7 @@ def handle_acc_detail(pmx, attr): ## Has @todo_add \\ @open: All the props affec
 	if MODE in attr: mode = attr[MODE] ## << Can be set in generateJSON if you want to.
 
 	args = {}
-	arg1 = quote(main)
+	arg1 = quote(main) ## This is the altName without MainTex
 	arg2 = quote(attr[t__Detail])
 	
 	data = decorate_dimensions(attr, {}, t__Detail)
@@ -1164,7 +1193,7 @@ def handle_acc_detail(pmx, attr): ## Has @todo_add \\ @open: All the props affec
 		local_state[state_SKIP][t__Detail] = True
 		return
 	
-	data["moreinfo"] = _verbose()
+	data[state_info] = local_state[state_info]
 	data["is_main"]  = attr[t__Main] is not None
 	data["mode"]     = mode
 	if "alpha_detail" in attr: data["alpha"] = attr["alpha_detail"] ## @todo_note: Affects Alpha-ness of DetailMask, default 64 / 256
@@ -1179,13 +1208,15 @@ def handle_acc_detail(pmx, attr): ## Has @todo_add \\ @open: All the props affec
 		if len(arg4) > 0: print("> AlphaMask is not (yet) supported on 'cloth' type materials")
 		arg4 = ""
 	
-	if ARGSTR not in attr:
-		## This means we haven't done the ColorMask
-		argStr = "detail"+arg1+arg2+arg3+arg4
-		attr[ARGSTR] = argStr
-		tmp = local_state[ARGSTR].get(argStr, None)
-		## Special attribute: Never reuse texture for this one
-		if (tmp): attr[t__Reuse] = tmp; return
+	argStr = ""  ## This means we haven't done the ColorMask
+	if ARGSTR not in attr: argStr = "detail"+arg1+arg2+arg3+arg4
+	##				This means we have done the ColorMask (whose ARGSTR has t__Alpha already (but now should not anymore...))
+	else: argStr = attr[ARGSTR] + "detail"+arg2+arg3 ## Also discard the MainCol Name -- covered by ColorMask as well
+	attr[ARGSTR] = argStr
+	tmp = local_state[ARGSTR].get(argStr, None)
+	if (tmp): attr[t__Reuse] = tmp; return
+	## If did *not* reuse this (but did reuse ColorMask), then delete the field to mark it as new texture
+	if t__Reuse in attr: del attr[t__Reuse]
 	call_img_scripts((pathDetail, arg1, arg2, arg3, arg4), "detail")
 
 def handle_acc_alpha(pmx, attr): ## Has @todo_add \\ @open: All the props affecting t__Detail
@@ -1208,6 +1239,7 @@ def handle_acc_alpha(pmx, attr): ## Has @todo_add \\ @open: All the props affect
 	
 	data = { }
 	data["details"] = _verbose() ## argv3 -> details
+	data[state_info] = local_state[state_info]
 	data["is_main"] = attr[t__Main] is not None ## argv4 -> mainSize
 	data["mode"]    = mode                     ## argv5 -> mode
 	if attr[SHADER] == "body": data["is_body"] = True ## argv6 -> is_body
@@ -1225,11 +1257,15 @@ def handle_acc_alpha(pmx, attr): ## Has @todo_add \\ @open: All the props affect
 
 def call_img_scripts(args, target, isJson = []):
 	if not _useImg(): return
-	if DEBUG:
+	if DEBUG or util.FILEDEBUG:
+		##- Causes scripts to run in Main context which adds proper stacktrace
 		try:
-			if util.FILEDEBUG: print(' '.join(['"' + os.path.abspath(args[0]) + '"'] + list(args[1:])))
+			if DEBUG and util.FILEDEBUG: print(' '.join(['"' + os.path.abspath(args[0]) + '"'] + list(args[1:])))
 			os.system(' '.join(args))
-		except Exception as eee: print(eee)
+		except Exception as eee:
+			print(eee)
+			if not DEBUG and util.FILEDEBUG: print(' '.join(['"' + os.path.abspath(args[0]) + '"'] + list(args[1:])))
+			if THROWERROR: raise eee
 	else:
 		from unittest.mock import patch
 		import runpy, sys
@@ -1289,8 +1325,6 @@ def fix_material_names(pmx, data):
 			print(f"[*] {name} has no dedicated slot match"); continue
 		### Assign the first you find to these (???)
 		elem = arr[0]
-		mat.name_jp = elem
-		mat.name_en = elem
 		if weird: print(f"- {elem} <<<-- {arr}")
 		del matJsn[matJsn.index(elem)]
 	### Never report this because we use it for body color
@@ -1329,7 +1363,7 @@ def quoteColor(value):
 	return '"' + str(tmp).strip('"').strip("'") + '"'
 def quoteJson(value):
 	tmp = json.dumps(value)
-	if local_state.get(state_info, True): tmp = re.sub(r'"', r'\\"', tmp)
+	if local_state.get(debug_file, True): tmp = re.sub(r'"', r'\\"', tmp)
 	return '"' + tmp + '"'
 
 def extend_colors(attr, col_arr, dodefault = False):
@@ -1407,6 +1441,9 @@ def NotFound(attr, name, optional=False): ## Returns true if not found
 		print(f">--> [MissingFile({name})]: {get_relative_path(attr[name])}")
 		return True
 	return False
+
+def calculate_reusable_textures(attr):
+	pass #
 
 def get_relative_path(path, attr=None):
 	base = local_state[BASE]
@@ -1521,10 +1558,11 @@ shader_dict = {
 	"xukmi/MainAlphaPlusTess": "alpha", ## t__Alpha, t__Another, t__Detail, t__Emission, t__Line, t__Liquid, t__Main, t__NorMap, ...
 	"xukmi/MainOpaquePlusTess": "cloth", ## t__Alpha, t__Another, t__Detail, t__Emission, t__Line, t__Liquid, t__Main, t__NorMap, ...
 	"xukmi/MainOpaquePlus": "cloth", ## t__Alpha, t__Another, t__Detail, t__Emission, t__Line, t__Liquid, t__Main, t__NorMap, ...
-	"xukmi/HairFrontPlus": "hair",
-	"xukmi/SkinPlus": "item",
-	"xukmi/HairPlus": "hair",
-	
+	"xukmi/HairFrontPlus": "hair", 
+	"xukmi/SkinPlus": "item", 
+	"xukmi/MainItemAlphaPlus": "alpha", 
+	"xukmi/MainItemPlus": "item",
+	"xukmi/HairPlus": "hair", 
 	
 	"main_hair2": "hair2",
 	"main_hair_front2": "hair2",
@@ -1536,6 +1574,12 @@ shader_dict = {
 #	
 #}
 
+_extraAttributes = [
+	"DisplaceFull",        ## 
+	"DisplaceMultiplier",  ## 
+	"ShrinkVal",           ## 
+	"ShrinkVerticalAdjust" ## Y-Axis Adjustment
+	]
 
 ## shorthands:  __typePrinter_Dict
 if __name__ == '__main__': util.main_starter(parseMatComments)

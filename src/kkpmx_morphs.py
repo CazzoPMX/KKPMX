@@ -30,6 +30,12 @@ local_state = {}
 def _verbose(): return local_state.get("moreinfo", False)
 def _univrm(): return local_state.get("univrm", False)
 
+c_TrackVoiceName = "TrackVoice"
+c_AuxMorphName   = "AuxMorphs"
+cName_extraBones = "ExtraBones"
+cName_morebones  = "morebones"
+c_moremorphs     = "moremorphs" # By dispframe_fix
+
 #--- [Text]: How it appears in the exported morph name
 #--- [Morph]: The name how it should be displayed in MMD [== name_en]
 #--- [KK Name]: The Display name in the respective dropdown in KK
@@ -37,49 +43,50 @@ def _univrm(): return local_state.get("univrm", False)
 #--- [JP]: "name_jp" of the morph. Should reflect the phrase most commonly used in dance motions.
 prefixes = [ # ["Text", "", "", "EN"]
 	## Combos for convenience
-	["eye", "", "", "eye"],
-	["kuti", "", "", "mouth|teeth|canine|tongue"],
-	["mayuge", "", "", "eyebrow"],
+	["eye"        , "",     "", "eye"],
+	["kuti"       , "",     "", "mouth|teeth|canine|tongue"],
+	["mayuge"     , "",     "", "eyebrow"],
 	####
-	["eye_face"   , "", "", "eyes"],
-	["kuti_face"  , "", "", "mouth"],
-	["eye_nose"   , "", "", "eye.nose"],
-	["kuti_nose"  , "", "", "mouth.nose"],
-	["eye_siroL"  , "", "", "eye.siroL"],
-	["eye_siroR"  , "", "", "eye.siroR"],
-	["eye_line_u" , "", "", "eyeline_u"],
-	["eye_line_l" , "", "", "eyeline_l"],
+	["eye_face"   , "",     "", "eyes"],
+	["kuti_face"  , "",     "", "mouth"],
+	["eye_nose"   , "[N] ", "", "eye.nose"],
+	["kuti_nose"  , "[N] ", "", "mouth.nose"],
+	["eye_siroL"  , "[W] ", "", "eye.siroL"],
+	["eye_siroR"  , "[W] ", "", "eye.siroR"],
+	["eye_line_u" , "[U] ", "", "eyeline_u"],
+	["eye_line_l" , "[L] ", "", "eyeline_l"],
 #	["eye_naL"    , "", "", ""],
 #	["eye_naM"    , "", "", ""],
 #	["eye_naS"    , "", "", ""],
-	["kuti_ha"    , "", "", "teeth"],
-	["kuti_yaeba" , "", "", "canine"],
-	["kuti_sita"  , "", "", "tongue"],
-	["mayuge"     , "", "", "brow"],
+	["kuti_ha"    , "[Te] ", "", "teeth"],
+	["kuti_yaeba" , "[T2] ", "", "canine"],
+	["kuti_sita"  , "[Tg] ", "", "tongue"],
+	["mayuge"     , "",      "", "brow"],
 	]
 infixes  = [ # ["Text", "Morph", "KK Name", ".EN", "JP", ]		\t"\t, "\t
-	["_a"         , "Say 'A'"      ,  ".." 			, ".a"			, "あ"		],
-	["_e"         , "Say 'E'"      ,  ".." 			, ".e"			, "え"		],
-	["_i"         , "Say 'I'"      ,  ".." 			, ".i"			, "い"		],
-	["_o"         , "Say 'O'"      ,  ".." 			, ".o"			, "お"		],
-	["_u"         , "Say 'U'"      ,  ".." 			, ".u"			, "う"		],
-	["_n"         , "Say 'N'"      ,  ".." 			, ".n"			, "ん"		],
+	["_a"         , "'A'"          ,  ".." 			, ".a"			, "あ"		],
+	["_e"         , "'E'"          ,  ".." 			, ".e"			, "え"		],
+	["_i"         , "'I'"          ,  ".." 			, ".i"			, "い"		],
+	["_o"         , "'O'"          ,  ".." 			, ".o"			, "お"		],
+	["_u"         , "'U'"          ,  ".." 			, ".u"			, "う"		],
+	["_n"         , "'N'"          ,  ".." 			, ".n"			, "ん"		],
 	# [Infix]        [My name]       [KK Name/TL]    [EN Infix] []
 	## Mayuge only[B]	
 	##### All[X]
 	##### Eye or Mayuge only[E]
 	##### Mouth only[M]
 	["_akire"     , "Flustered"    ,  "Flustered"   , ".zzz", 		""   		],#[M] あせり		Haste
-	["_aseri"     , ""             ,  ""            , ".zzz", 		""   		],#[X] あせり		Haste
+	["_aseri"     , "Impatient"    ,  ""            , ".zzz", 		""   		],#[X] あせり		Haste
 	["_bisyou"    , "Grin"         ,  "Grin"        , ".zzz", 		""   		],#[X] びしょう		Smile
-	["_def"       , "default"      ,  "default"     , ".default",	""   		],#[X] デフォルト	
+	["_def"       , "Default"      ,  "default"     , ".default",	""   		],#[X] デフォルト	
 	["_doki"      , "Excited"      ,  ""            , ".zzz",		""   		],#[M] どき		
 	["_doya"      , "Smug"         ,  "Smug"        , ".zzz",		""   		],#[X] どや		
 	["_egao"      , "Smiling"      ,  "Smiling"     , ".smile",		""   		],#[X] えがお		
-	["_gag"       , ""             ,  ""            , ".zzz",		""   		],#[E] がが		
-	["_gyu"       , ""             ,  ""            , ".zzz",		""   		],#[E] ぎゅ		
-	["_gyul"      , ""             ,  ""            , ".zzz",		""   		],#[E] 			
-	["_gyur"      , ""             ,  ""            , ".zzz",		""   		],#[E] 			
+	["_gag"       , "xxx"          ,  ""            , ".zzz",		""   		],#[E] がが		< Circle Eyes >
+	["_gyu"       , "xxx"          ,  ""            , ".zzz",		""   		],#[E] ぎゅ		< Blank Eyes >
+	["_gyul"      , "xxx"          ,  ""            , ".zzz",		""   		],#[E] 			
+	["_gyur"      , "xxx"          ,  ""            , ".zzz",		""   		],#[E] 			
+	["_gimo"      , "Doubt"        ,  ""            , ".zzz",		""   		],#[B] 			
 	["_huan"      , "Confused"     ,  ""            , ".zzz",		""   		],#[B] 			
 	["_human"     , "Pouting"      ,  "Grumbling"   , ".zzz",		""   		],#[M] ふまん		
 	["_ikari"     , "Angry"        ,  "Angry"       , ".zzz",		""   		],#[X] いかり		
@@ -106,7 +113,7 @@ infixes  = [ # ["Text", "Morph", "KK Name", ".EN", "JP", ]		\t"\t, "\t
 	["_sinken"    , "Serious"      ,  "Serious"     , ".zzz",		""   		],#[X] しんけん	
 	["_tabe"      , "Eating"       ,  ""            , ".zzz",		""   		],#[M]
 	["_tere"      , "Shy"          ,  "Shy"         , ".zzz",		""   		],#[E] てれ		
-	["_tmara"     , ""             ,  ""            , ".zzz",		""   		],#[B] 			
+	["_tmara"     , "Bored"        ,  ""            , ".zzz",		""   		],#[B] 			
 	["_tumara"    , "Bored"        ,  "Bored"       , ".zzz",		""   		],#[E] つまら		
 	["_uresi"     , "Happy"        ,  "Happy"       , ".zzz",		""   		],#[M] うれし		
 	["_winkl"     , "Wink L"       ,  "Wink L"      , ".zzz",		""   		],#[E] うぃんく		
@@ -127,13 +134,15 @@ infixes  = [ # ["Text", "Morph", "KK Name", ".EN", "JP", ]		\t"\t, "\t
 	["_uresi_ss"  , "Happy"        ,  "Happy"       , ".zzz",		""   		],#[M] 			
 	]
 suffixes = [ # ["Text", "Morph", "", "EN"]
-	["_op" , ""            , "", ".open"],
-	["_cl" , " (closed)"   , "", ".close"],
-	["_s"  , " (small)"    , "", ".s"],
-	["_ss" , " (small 2)"  , "", ".s2"],
-	["_l"   , " (big)"     , "", ".l"],
-	["02"  , " 2"          , "", ".2"],
-	["03"  , " 3"          , "", ".3"],
+	["_op"    , ""            , "", ".open"],
+	["_cl"    , " (closed)"   , "", ".close"],
+	["_s"     , " (small)"    , "", ".s"],
+	#["_s_op"  , " (small)"    , "", ".s.op"],
+	["_ss"    , " (small 2)"  , "", ".s2"],
+	["_l"     , " (big)"      , "", ".big"],
+	["02"     , " 2"          , "", ".2"],
+	["03"     , " 3"          , "", ".3"],
+	#["02_op"  , " 2"          , "", ".2.op"],
 #	["l"   , " (Left)"     , "", ".left"],
 #	["r"   , " (Right)"    , "", ".right"],
 #	[""    , ""],
@@ -145,25 +154,33 @@ def genGroupItem(pmx, arr): ## only existing morphs are added
 def replaceItems(pmx, name, arr): ## Does nothing if [name] is not found
 	morph = find_morph(pmx, name, False)
 	if morph != -1: pmx.morphs[morph].items = genGroupItem(pmx, arr)
-def translateItem(name): ## Always input the untranslated name
-	parts = re.search("(\w+)\.[a-z]+\d+(_[a-z]+)(\w+)", name) ## \2\t\1 \3
+def translateItem(name, useEN=False): ## Always input the untranslated name
+	parts = re.search("(\w+)\.[a-z]+\d+(_[a-z]+)(\w+?)(_\w+)?$", name) ## \2\t\1 \3
 	if not parts: return name
-	if len(parts.groups()) != 4: return name
+	if len(parts.groups()) < 3: return name
 	dest = ""
+	arrIdx = 1 if useEN else 3
 	## Get Prefix
 	m = parts.group(1)
-	arr = [x[3] for x in prefixes if x[0] == m]
+	arr = [x[arrIdx] for x in prefixes if x[0] == m]
 	dest += arr[0] if len(arr) > 0 else m
 	## Get Infix
 	m = parts.group(2)
-	arr = [x[3] for x in infixes if x[0] == m]
-	dest += arr[0] if len(arr) > 0 else m
+	arr = [x[arrIdx] for x in infixes if x[0] == m]
+	tmp = arr[0] if len(arr) > 0 else m
+	tmp = ("."+m[1:]) if tmp == ".zzz" else tmp
+	dest += tmp
 	## Get Suffix
 	m = parts.group(3)
-	arr = [x[3] for x in suffixes if x[0] == m]
+	arr = [x[arrIdx] for x in suffixes if x[0] == m]
 	dest += arr[0] if len(arr) > 0 else m
-	if dest == parts.group(1) + parts.group(2) + parts.group(3): return name
+	if (parts.group(4)):
+		m = parts.group(4)
+		arr = [x[arrIdx] for x in suffixes if x[0] == m]
+		dest += arr[0] if len(arr) > 0 else m
+	
 	if len(dest) == 0: return name
+	if dest == parts.group(1) + parts.group(2) + parts.group(3): return name
 	return dest
 
 ## Create or find a given morph and write the given fields
@@ -273,7 +290,7 @@ Will override existing morphs, which allows "repairing" cursed Impact-Values.
 
 [Option]:
 -- Impact-Value: Between 0%-100%(=0..1), how strong the morphs should pull on the face.
--- -- Default is 0.75, but 0.66 is also common.
+-- -- Default is 0.66, but 0.75 is also common.
 
 [Side-effects]:
 -- Will rerun Morph-Validation, which ensures that [Display] has less than 250 morphs.
@@ -287,23 +304,25 @@ Will override existing morphs, which allows "repairing" cursed Impact-Values.
 	if not _univrm() and find_mat(pmx, "cf_m_face_00", True) == -1:
 		print(">> Skipping because model has no standard face texture.")
 		return input_file_name
-	putAuxIntoGroup(pmx)
 	####
 	CH__TDA = 0; CH__VRM = 1;
 	choices = [
-		("TDA                -- Try to assemble morphs resembling TDA", CH__TDA, add_TDA),
-		("UniVRM             -- Categorize morphs on imported model ", CH__VRM, sort_morphs_into_frames),
+		("TDA           -- Try to assemble morphs resembling TDA", CH__TDA, add_TDA),
+		#("UniVRM        -- Categorize morphs on imported model ", CH__VRM, sort_morphs_into_frames),
 		]
 	choice = CH__TDA#util.ask_choices("Select the target collection", choices)
 	if _univrm(): choice = CH__VRM
 	####
+	putAuxIntoGroup(pmx)
 	choices[choice][2](pmx);
+	sort_bones_into_frames(pmx)
+	sort_morphs(pmx)
 	
 	from _dispframe_fix import dispframe_fix
 	if moreinfo:
 		print("->> Making sure display isn't too big <<-")
 		print("->>> Will add all no-where added morphs first, so don't worry about the high number")
-	idx = find_disp(pmx, "moremorphs", False)
+	idx = find_disp(pmx, c_moremorphs, False)
 	if idx != -1: pmx.frames.remove(pmx.frames[idx])
 	dispframe_fix(pmx, moreinfo=moreinfo)
 	if moreinfo: print("--- >>  << ---")
@@ -341,22 +360,31 @@ def add_TDA(pmx): ## Note: Add specific morphs as empty placeholder (JP, EN="Pla
 		#はちゅ目横潰れ		… yokotsubure		Hort Squint		*	: ^ Squint Hor
 		pass
 	# def: Search all morphs with "_winkl" in their name -- Could also search for the alternative name in case it was renamed
-	eyeOpenness = util.ask_number("Set Impact Value for Eye-Morphs", 0.00, 1.00, 0.75)
+	eyeOpenness = util.ask_number("Set Impact Value for Eye-Morphs", 0.00, 1.00, 0.66)
 	local_state["eyeOpenness"] = eyeOpenness
 	
 	find_all_morphs_eyes = lambda prefix,infix,suffix,value=eyeOpenness: find_all_morphs(morphs, prefix, infix, suffix, value, exclude="_siro[LR]")
 	
-	## Suggestion: Add (Face[Smile / Blink]=0.125), respective, and set Sirome to 0.66
-	addOrReplaceEye("まばたき",   "Blink",  find_all_morphs_eyes("eye", "_def", [None,"_cl"]) )
-	addOrReplaceEye("笑い",   "Smile",    find_all_morphs_eyes("eye", "_egao", [None,"_cl"]) )
-	addOrReplaceEye("ウィンク",   "Wink",    find_all_morphs_eyes("eye", "_winkl$", None) )
-	addOrReplaceEye("ウィンク右", "Wink R",  find_all_morphs_eyes("eye", "_winkr$", None) )
 	addOrReplaceEye("hitomi-small", "hitomi-small",  [
 			find_one_morph(morphs, "hitomiX-small", 1),
-			find_one_morph(morphs, "hitomiy-small", 1),
+			find_one_morph(morphs, "hitomiY-small", 1),
 			])
 	
+	## Suggestion: Add (Face[Smile / Blink]=0.125), respective, and set Sirome to 0.66
+	# L = Lips \\ Z = Tongue \\ T = Teeth \\ X = Mouth Cavity \\ MC = Mouth Corners
+	# -- Tongue moves with jaw when Mouth is open
 	
+	#-# まばたき			mabataki			Blink			C	Close eyes (Up full = 100% 0%)
+	#-# 笑い				warai				Laughter		C	Close eyes (Lids meet at center = 50 50)
+	addOrReplaceEye("まばたき",   "Blink",  find_all_morphs_eyes("eye", "_def", [None,"_cl"]) )
+	addOrReplaceEye("笑い",   "Smile",    find_all_morphs_eyes("eye", "_egao", [None,"_cl"]) )
+	#-# ウィンク			winku				Wink			CO	Close left (5050)
+	#-# ウィンク右			winku R				Wink R			OC	Close right (5050)
+	addOrReplaceEye("ウィンク",   "Wink",    find_all_morphs_eyes("eye", "_winkl$", None) )
+	addOrReplaceEye("ウィンク右", "Wink R",  find_all_morphs_eyes("eye", "_winkr$", None) )
+	
+	#-# ウィンク２			Winku 2				Wink 2			CO	Close left (100 0)
+	#-# ｳｨﾝｸ２右			Winku 2 R			Wink 2 R		OC	Close right (0 100)
 	if generateWink(pmx):
 		morphs = [m.name_jp for m in pmx.morphs]
 		addOrReplaceEye("ウィンク２", "Wink 2", [
@@ -374,14 +402,24 @@ def add_TDA(pmx): ## Note: Add specific morphs as empty placeholder (JP, EN="Pla
 			find_one_morph(morphs, "eye_line_l.ell00_winkr02_cl", eyeOpenness),
 			])
 	
+	
+	#-# なごみ			nagomi				Softing			C	Close both (80 20) – Hor eyes
 	#addOrReplaceEye("なごみ", "...",  find_all_morphs(morphs, "eye", "_winkr", None, 0.8) )
+	#-# はぅ				ha					<emphasis>		C	">.<" – Upper brow from inside
 	#addOrReplaceEye("<ha>", "...",  find_all_morphs(morphs, "eye", "_winkr", None, 0.8) )
+	#-# びっくり			bikkuri				Surprise		O	“0.0” – Lids go outwards
+	#-# じと目			jitome				Disgust			O	Upper goes 33% (is hor)
+	
 	#-- Slightly inwards slanted eyes
 	addOrReplaceEye("じと目", "Disgust",  find_all_morphs_eyes("eye", "_keno", None) )
 	#-- Wide open eyes
 	addOrReplaceEye("! あせり", "BigEyes",  find_all_morphs_eyes("eye", "_aseri", None) )
 	addOrReplaceEye("! 切ない", "Sad (Eyes)",  find_all_morphs(morphs, "eye", "_setunai", None, 0.75) ) # 切ない = Pained
-	# kiri
+	
+	#-# ｷﾘｯ				kiri				“click”			O	Inner Angle pulled down
+	#-# はちゅ目			hachiyume			Hachu eyes		*	“White with fuzzy black border”
+	#-# はちゅ目縦潰れ		… tatetsubure		Vert. Squint	*	: ^ Squint Vert
+	#-# はちゅ目横潰れ		… yokotsubure		Hort Squint		*	: ^ Squint Hor
 	#############
 	def mouth():
 		#	あ				a					Say "A"			O	Open L+T for A
@@ -410,10 +448,17 @@ def add_TDA(pmx): ## Note: Add specific morphs as empty placeholder (JP, EN="Pla
 		#	歯無し下			hanashimoto			No DwT			C	Dw T is gone
 		#	ハンサム			hansamu				Handsome			Transform Chin
 		pass
-	defT_Op = find_one_morph(morphs, "kuti_ha.ha00_def_op") ## Default open teeth
+	defT_Op = find_one_morph(morphs, "kuti_ha.ha00_def_op")   ## Default open teeth
 	defY_Op = find_one_morph(morphs, "kuti_yaeba.y00_def_op") ## Default open canine
-	defZ_Op = find_one_morph(morphs, "kuti_sita.t00_def_op") ## Default Tongue
+	defZ_Op = find_one_morph(morphs, "kuti_sita.t00_def_op")  ## Default Tongue
 	
+	#-# あ				a					Say "A"			O	Open L+T for A
+	#-# い				I					Say "I"			*	Wide Op L for I
+	#-# う				u					Say "U"			O	Open L+T for U
+	#-# え				e					Say "E"			O	Open L+T for E
+	#-# お				o					Say "O"			O	Open L+T for O
+	#-# ん				n					Say “N”			C	MC for N
+	#-# *２				*2					Say "*" (big)	O	Open WIDE for *
 	addOrReplaceMouth("あ", "A",  find_all_morphs(morphs, "kuti", "_a", "_s", 1.0, True) )
 	addOrReplaceMouth("い", "I",  find_all_morphs(morphs, "kuti", "_i", "_s", 0.75, True) )
 	addOrReplaceMouth("う", "U",  find_all_morphs(morphs, "kuti", "_u", "_s", 0.75, True) + [ (defT_Op, 0.75), (defY_Op, 0.1) ])
@@ -425,36 +470,58 @@ def add_TDA(pmx): ## Note: Add specific morphs as empty placeholder (JP, EN="Pla
 	
 	addOrReplaceMouth("お", "O",  find_all_morphs(morphs, "kuti", "_o", "_s", 1.0, True)	+ [ (defT_Op, 0.75), (defY_Op, 0.5), (defZ_Op, 0.5) ])
 	addOrReplaceMouth("ん", "N",  find_all_morphs(morphs, "kuti", "_n", "_s", 1.0, True) )
-	addOrReplaceMouth("ああ", "A (Large)",  find_all_morphs(morphs, "kuti", "_a", "_l", 1.0, True) )
-	addOrReplaceMouth("いい", "I (Large)",  find_all_morphs(morphs, "kuti", "_i", "_l", 0.75, True) )
-	addOrReplaceMouth("うう", "U (Large)",  find_all_morphs(morphs, "kuti", "_u", "_l", 0.75, True) + [ (defT_Op, 0.75), (defY_Op, 0.1) ])
-	addOrReplaceMouth("ええ", "E (Large)",  find_all_morphs(morphs, "kuti", "_e", "_l", 1.0, True) )
-	addOrReplaceMouth("おお", "O (Large)",  find_all_morphs(morphs, "kuti", "_o", "_l", 1.0, True) + [ (defT_Op, 0.75), (defY_Op, 0.33), (defZ_Op, 0.5) ])
-	addOrReplaceMouth("▲", "°▲°",  find_all_morphs(morphs, "kuti", "_san", None, 0.5) + [(defT_Op, 1.0), (defY_Op, 1)])
+	addOrReplaceMouth("あ２", "A (Large)",  find_all_morphs(morphs, "kuti", "_a", "_l", 1.0, True) )
+	addOrReplaceMouth("い２", "I (Large)",  find_all_morphs(morphs, "kuti", "_i", "_l", 0.75, True) )
+	addOrReplaceMouth("う２", "U (Large)",  find_all_morphs(morphs, "kuti", "_u", "_l", 0.75, True) + [ (defT_Op, 0.75), (defY_Op, 0.1) ])
+	addOrReplaceMouth("え２", "E (Large)",  find_all_morphs(morphs, "kuti", "_e", "_l", 1.0, True) )
+	addOrReplaceMouth("お２", "O (Large)",  find_all_morphs(morphs, "kuti", "_o", "_l", 1.0, True) + [ (defT_Op, 0.75), (defY_Op, 0.33), (defZ_Op, 0.5) ])
+	
+	#-# ▲				*					°▲°				O	L as-such, X infront of T+Z	
+	addOrReplaceMouth("▲", "°▲°",  find_all_morphs(morphs, "kuti", "_san", None, 1) + [(defT_Op, 1.0), (defY_Op, 1), (defZ_Op, -0.6)])
+	
+	#-# ∧				*					°∧°				C	L as-such – T open, Z pulls back
 #	addOrReplaceMouth("∧", "°∧°",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
+	#-# □				*					°□°				O	Same as ▲
 #	addOrReplaceMouth("□", "°□°",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
-#	addOrReplaceMouth("ワ", "Wa",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
 	addOrReplaceMouth("□", "°□°[Placeholder]", [])
+	#-# ワ				*					Say “Wa”		O	Looks like :D with barely T
+#	addOrReplaceMouth("ワ", "Wa",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
 	addOrReplaceMouth("ワ", "Wa[Placeholder]", [])
+
+	#-# ω				*					[Form]			C	L into shape
 	addOrReplaceMouth("ω", "°ω°",  find_all_morphs(morphs, "kuti", "_neko", [None,"_cl"], 0.5) )
+	#-# ω□				*									O	L into shape, T behind L
 #	addOrReplaceMouth("ω□", "°ω° (Open)",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
-#	addOrReplaceMouth("にやり", "Disgust",  find_all_morphs(morphs, "kuti", "", None, 0.5) )
-#	addOrReplaceMouth("にやり２", "Disgust",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
+
+	#-# にやり			niyari				Grin			C	M widens (flat smile)
+	#-# にやり２			Niyari 2			Grin 2			C	Left MC high up
+	#--- Default does not expect eyes in it, remove them again
+	addOrReplaceMouth("にやり", "Grin",    [find_one_morph(morphs, "kuti_face.f00_bisyou_op", 1)])
+	addOrReplaceMouth("にやり２", "Grin 2", [find_one_morph(morphs, "kuti_face.f00_bisyou_op", 4)])
+	#-# にっこり			nikkori				Smirk			C	・‿・ (almost creepy smile)
 #	addOrReplaceMouth("にっこり	", "Disgust",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
+	addOrReplaceMouth("にっこり", "にっこり[Placeholder]", [])
+	#-# ぺろっ			pero				Lick			~~	T+L barely, Z out 50%
 #	addOrReplaceMouth("ぺろっ", "Licking",  find_all_morphs(morphs, "kuti", "_pero", None, 0.5) ) ##>> Fix or off
+	addOrReplaceMouth("ぺろっ", "ぺろっ[Placeholder]", [])
+	#-# てへぺろ			tehepero			Happy “bleh”	C	Venti “Tehe” (Like Grin2, but Z in it)
+	#-# てへぺろ２			tehepero2			Happy “bleh”	C	Same, but Z points down
 #	addOrReplaceMouth("てへぺろ", "Disgust",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
 #	addOrReplaceMouth("てへぺろ２", "Disgust",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
-	addOrReplaceMouth("にやり", "にやり[Placeholder]", [])
-	addOrReplaceMouth("にやり２", "にやり２[Placeholder]", [])
-	addOrReplaceMouth("にっこり", "にっこり[Placeholder]", [])
-	addOrReplaceMouth("ぺろっ", "ぺろっ[Placeholder]", [])
 	addOrReplaceMouth("てへぺろ", "てへぺろ[Placeholder]", [])
 	addOrReplaceMouth("てへぺろ２", "てへぺろ２[Placeholder]", [])
+	#-# 口角上げ			koukaku age			Raise MC		C	MC up
 	addOrReplaceMouth("口角上げ", "Be Happy", [find_one_morph(morphs, "kuti_face.f00_uresi_cl", 0.5)])
+	#-# 口角下げ			koukaku sage		Lower MC		C	MC down
 	addOrReplaceMouth("口角下げ", "Be Sad", [find_one_morph(morphs, "kuti_face.f00_ikari_cl", 1.0)])
+	#-# 口横広げ			kuchiyoko hiroge	Widen M			C	Very wide M
 #	addOrReplaceMouth("口横広げ", "Disgust",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
+	#-# 歯無し上			hanashijou			No UpT			C	Up T is gone
 #	addOrReplaceMouth("歯無し上", "Disgust",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
+	#-# 歯無し下			hanashimoto			No DwT			C	Dw T is gone
 #	addOrReplaceMouth("歯無し下", "Disgust",  find_all_morphs(morphs, "kuti", "_keno", None, 0.5) )
+	#-# ハンサム			hansamu				Handsome			Transform Chin
+
 	#############
 	addOrReplaceBrow("真面目", "Serious",  find_all_morphs(morphs, "mayuge", "_sinken", [None,"_cl"], 1) )
 	addOrReplaceBrow("困る", "Worried",  find_all_morphs(morphs, "mayuge", "_koma", [None, "_cl"], 1) )
@@ -483,22 +550,36 @@ def add_TDA(pmx): ## Note: Add specific morphs as empty placeholder (JP, EN="Pla
 		# Talking
 		"あ","い","う","え","お","ん",
 		"ああ","いい","うう","ええ","おお",
+		"あ２","い２","う２","え２","お２",
 		##----
 		"まばたき","笑い","ウィンク","ウィンク右","ウィンク２","ｳｨﾝｸ２右","じと目", # Eyes
-		"▲","ω","口角上げ","口角下げ","怒り", # Mouth
+		#"▲","ω","にやり","にやり２","口角上げ","口角下げ","怒り", # Mouth (Only existing)
+		"▲","∧","□","ワ","ω","ω□","にやり","にやり２","口角上げ","口角下げ","怒り", # Mouth (all.. or not)
+		"! あせり", "! 切ない", # Extra Mouth I guess... ?
 		"真面目","困る","上","下", # Mayuge
 		"哀しい", # Other
 		]
 	print("\n-- Add Vocals to combined group 'TrackVoice'...")
-	frames = [find_morph(pmx, name, True) for name in names]
+	frames = [find_morph(pmx, name, DEBUG) for name in names]
 	frames = [[1,idx] for idx in frames if idx != -1]
-	name = "TrackVoice"
+	name = c_TrackVoiceName
 	idx = find_disp(pmx, name, False)
 	if idx != -1: pmx.frames[idx].items = frames
 	else: pmx.frames.append(pmxstruct.PmxFrame(name, name, False, frames))
 	
-	#############
-	pass
+	### Just hide the Lines on these ones to make it look better by default
+	try:
+		pmx.materials[find_mat(pmx, "cf_m_face_00")].flaglist[4] = False
+		pmx.materials[find_mat(pmx, "cf_m_eyeline_00_up")].flaglist[4] = False
+		pmx.materials[find_mat(pmx, "cf_m_eyeline_down")].flaglist[4] = False
+	except: pass
+	
+	### Translate all items in the name_en
+	for morph in pmx.morphs:
+		morph.name_en = translateItem(morph.name_en, True)
+	
+	######
+	pass##
 ##############
 ### Assemble new Morphs
 ##############
@@ -556,15 +637,22 @@ def hotfix_generate_all_morphs(pmx, morphs, eyeOpenness):
 	
 	for infix in arr:
 		action("E", infix, find_all_morphs(morphs, "eye", infix, [None,"_op"], eyeOpenness, exclude="_siro[LR]"))
-		action("O", infix, [ find_one_morph(morphs, f"eye_line_u.elu00{infix}_op", eyeOpenness) ])
-	
-	for infix in arr:
+		#action("O", infix, [ find_one_morph(morphs, f"eye_line_u.elu00{infix}_op", eyeOpenness) ])
+		action("M", f"{infix}_op", find_all_morphs(morphs, "kuti", infix+"%", [None,"_op"], 1))
+		action("M", f"{infix}_cl", find_all_morphs(morphs, "kuti", infix+"%", [None,"_cl"], 1))
 		action("B", f"{infix}_op", find_all_morphs(morphs, "mayuge", infix+"%", [None,"_op"], 1))
 		action("B", f"{infix}_cl", find_all_morphs(morphs, "mayuge", infix+"%", [None,"_cl"], 1))
 	
-	for infix in arr:
-		action("M", f"{infix}_op", find_all_morphs(morphs, "kuti", infix+"%", [None,"_op"], 1))
-		action("M", f"{infix}_cl", find_all_morphs(morphs, "kuti", infix+"%", [None,"_cl"], 1))
+	#t_NameSep = "== Eyeline only =="#("eyelineSep", "== Eyeline only ==")
+	#if find_morph(pmx, t_NameSep, False) == -1:
+	#	## Give the morph some content to avoid it getting removed
+	#	pmx.morphs.append(pmxstruct.PmxMorph(t_NameSep, t_NameSep, 4, 2, [
+	#		pmxstruct.PmxMorphItemBone(find_bone(pmx, "右腕", False), [0,0,0], [0,0,35]),
+	#		pmxstruct.PmxMorphItemBone(find_bone(pmx, "左腕", False), [0,0,0], [0,0,-35]),
+	#	]))
+	#	for infix in arr: action("O", infix, [ find_one_morph(morphs, f"eye_line_u.elu00{infix}_op", eyeOpenness) ])
+	######
+	pass##
 
 def combine_standards(pmx):
 	rename_if_foundEN(pmx, "bounce",				"MMD-Pose")
@@ -591,33 +679,103 @@ def combine_standards(pmx):
 	######
 	pass##
 
+def sort_morphs(pmx):
+	""" Sort all morphs into groups and add separators """
+	exported  = []; nameExp = "== Export Morphs =="
+	vertices  = []; nameVrt = "== Vocal Components =="
+	groups    = []; nameGr1 = "== Vocals =="
+	groups2   = []; nameGr2 = "== Vocals 2 =="
+	materials = []; nameMat = "== Material Morphs =="
+	bones     = []; nameExt = "== Extras =="
+	oldMorphs = {}; names = [nameExt, nameGr1, nameGr2, nameMat, nameVrt]
+	
+	#: idk why these cause a KeyError, but lets skip them for now
+	errIdx = []
+	if find_morph(pmx, nameVrt, False) != -1:
+		errIdx.append(find_morph(pmx, nameExp, False))
+		errIdx.append(find_morph(pmx, nameVrt, False))
+		errIdx.append(find_morph(pmx, nameGr1, False))
+		errIdx.append(find_morph(pmx, nameGr2, False))
+		errIdx.append(find_morph(pmx, nameMat, False))
+		errIdx.append(find_morph(pmx, nameExt, False))
+		errIdx = [a for a in errIdx if a != -1]
+	
+	## Collect all
+	for i,m in enumerate(pmx.morphs):
+		if m.name_jp in names: continue
+		oldMorphs[m.name_jp] = [i, -1]
+		
+		if (m.morphtype == 0): # groups
+			if re.match("\[\w\]", m.name_jp): groups2.append(m)
+			else: groups.append(m)
+		elif (m.name_jp == "== Eyeline only =="): groups2.append(m)
+		elif (m.name_jp == "hitomi-small"): bones.append(m)
+		elif (m.morphtype == 1): # vertex
+			if re.match("vr[mc]\.", m.name_jp): exported.append(m)
+			else: vertices.append(m)
+		elif (m.morphtype == 8): materials.append(m) # materials
+		elif (m.morphtype == 9): groups.append(m) # flip
+		else: bones.append(m) # bone, UV, impulse
+
+	baseIdx = 0; newMorphs = []
+	## Order: VRC, A E I O U Blink, Material, slots, Extras, Vocals, Groups, Components
+	## List Export \\ Materials \\ Extras \\ Group
+	def sorter(baseIdx, _list, _sep = None):
+		if not _sep is None:
+			newMorphs.append(make_separator(pmx, _sep))
+			baseIdx += 1
+		for i,m in enumerate(_list):
+			newMorphs.append(m)
+			oldMorphs[m.name_jp][1] = baseIdx + i
+		baseIdx = len(newMorphs)
+		return baseIdx
+	baseIdx = sorter(baseIdx, exported)
+	baseIdx = sorter(baseIdx, materials, nameMat)
+	baseIdx = sorter(baseIdx, groups, nameGr1)
+	baseIdx = sorter(baseIdx, bones, nameExt)
+	baseIdx = sorter(baseIdx, groups2, nameGr2)
+	baseIdx = sorter(baseIdx, vertices, nameVrt)
+	
+	morphMap = {a[0]: a[1] for a in oldMorphs.values() if a[1] != -1}
+	for m in newMorphs:
+		if m.morphtype in [0, 9]:
+			for i in m.items: i.morph_idx = morphMap[i.morph_idx] #morphMap.get(i.morph_idx, i.morph_idx)
+	pmx.morphs = newMorphs
+	
+	## Fix Display Frames
+	for df in pmx.frames:
+		for item in df.items:
+			try:
+				if item[0] and not item[1] in errIdx: item[1] = morphMap[item[1]]
+			except KeyError as ke: util.throwIfDebug(DEBUG, f'{ke}')
+
 
 ##############
 ### Display Frames
 ##############
 
-def find_or_replace_disp(pmx, name):
 	idx = find_disp(pmx, name, False)
-	if idx == -1: idx = len(pmx.frames); pmx.frames.append(None)
+	if idx == -1: idx = len(pmx.frames); pmx.frames.append(pmxstruct.PmxFrame(name, name, False, []))
+	if not _frames is None: pmx.frames[idx].items = _frames
 	return idx;
+find_or_replace_disp.__doc__ = """ Return index of the requested Frame -- Append a new empty one if not found """
 
 def putAuxIntoGroup(pmx):
 	showWarning = not _univrm()
 	names = [
-		"bounce", "unbounce",
+		"bounce", "unbounce","Move for Shoes","Move to Barefeet",
 		"hitomiX-small", "hitomiY-small", "hitomiX-big", "hitomiY-big", 
-		"hitomi-up", "hitomi-down", "hitomi-left", "hitomi-right", 
+		"hitomi-up", "hitomi-down", "hitomi-left", "hitomi-right",
+		"hitomi-small",
 		"Move Model downwards", "Move Body downwards",
 		"chikubi_in", "chikubi_out", 
 	]
-	name = "AuxMorphs"
-	print(f"\n-- Add misc Morphs to combined group '{name}'...")
+	name = c_AuxMorphName
+	print(f"-- Add misc Morphs to combined group '{name}'...")
 	frames = [find_morph(pmx, name, showWarning) for name in names]
-	frames += [find_morph(pmx, "OwO Moprh", False)]
-	frames = [[1,idx] for idx in frames if idx != -1]
-	idx = find_disp(pmx, name, False)
-	if idx != -1: pmx.frames[idx].items = frames
-	else: pmx.frames.append(pmxstruct.PmxFrame(name, name, False, frames))
+	frames += [find_morph(pmx, "OwO Morph", False)]
+	frames = [[1,_idx] for _idx in frames if _idx != -1]
+	find_or_replace_disp(pmx, name, frames)
 
 def sort_morphs_into_frames(pmx): ## Intended for UniVRM models
 	eyes = ["smile", "wink", "^blink", "eyelid", "look", "grin", "highlight"] + ["jitome", "tsurime", "tareme", "hitomi", "doukou"] + ["><", "=="]
@@ -671,47 +829,73 @@ def sort_morphs_into_frames(pmx): ## Intended for UniVRM models
 		else:               morph.panel = 4
 	
 	#####
-	print("\n-- Add Vocals to combined group 'TrackVoice'...")
-	frames = [[1,idx] for idx in frames if idx != -1]
-	name = "TrackVoice"
-	idx = find_disp(pmx, name, False)
-	if idx != -1: pmx.frames[idx].items = frames
-	else: pmx.frames.append(pmxstruct.PmxFrame(name, name, False, frames))
+	name = c_TrackVoiceName
+	print(f"\n-- Add Vocals to combined group '{name}'...")
+	frames = [[1,_idx] for _idx in frames if _idx != -1]
+	find_or_replace_disp(pmx, name, frames)
 
 def sort_bones_into_frames(pmx):
 	used_bones = set()
-	for d,frame in enumerate(pmx.frames):
-		if frame.name_jp == "morebones": continue
+	curSlot = "global_slot"
+	for frame in pmx.frames:
+		if frame.name_jp == cName_morebones: continue
+		if frame.name_jp == cName_extraBones: continue
+		if frame.name_jp.startswith("a_n_"): continue
+		if frame.name_jp == curSlot: continue
 		for item in frame.items:
 			if not item[0]: used_bones.add(item[1])
 	
 	extra_bones = []
-	slot_bones = []
+	slot_bones = {}
 	
 	child_map = kkrig.get_children_map(pmx, None, True, False)
 	
 	reSkip = re.compile(r"cf_(hit|t|pv)_|a_n_|k_f_|KKS_")
+	# Vertex Bones and Any JP
+	reKeep = re.compile(r"cf_s_|[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]+", re.U)
+	
 	
 	for d,bone in enumerate(pmx.bones):
 		if d in used_bones: continue
-		if reSkip.match(bone.name_jp): continue
-		if bone.name_jp.startswith("ca_slot"):
+		name = bone.name_jp
+		if reSkip.match(name):
+			## Group by Slot-Parent
+			if name.startswith("a_n_"):
+				curSlot = name
+				slot_bones[curSlot] = [d]
+			continue
+		## Add respective Assets to their slots
+		if name.startswith("ca_slot"):
 			arr = [d] + child_map[d]
 			[used_bones.add(x) for x in arr]
-			slot_bones += arr
+			slot_bones[curSlot] += arr
 			continue
-		extra_bones.append(d)
+		## Group all remaining Vertex Bones
+		#if reKeep.match(name):
+		if name.startswith("cf_s_"):
+			extra_bones.append(d)
 	
-	idx = find_or_replace_disp(pmx, "extraBones")
-	pmx.frames[idx] = pmxstruct.PmxFrame(name_jp="extraBones", name_en="extraBones", is_special=False, items=[[0, x] for x in extra_bones])
+	## Create ExtraBones Frame
+	name = cName_extraBones
+	idx = find_or_replace_disp(pmx, name)
+	pmx.frames[idx] = pmxstruct.PmxFrame(name_jp=name, name_en=name, is_special=False, items=[[0, x] for x in extra_bones])
 	
-	idx = find_or_replace_disp(pmx, "slotBones")
-	pmx.frames[idx] = pmxstruct.PmxFrame(name_jp="slotBones", name_en="slotBones", is_special=False, items=[[0, x] for x in slot_bones])
+	## Create Slot-Morphs Frame
+	delIdx = []
+	for k,v in slot_bones.items():
+		idx = find_or_replace_disp(pmx, k)
+		if len(v) < 2: 
+			delIdx.append(idx)
+			continue
+		pmx.frames[idx] = pmxstruct.PmxFrame(name_jp=k, name_en=k, is_special=False, items=[[0, x] for x in v])
+	for idx in reversed(delIdx): del pmx.frames[idx]
 	
-	idx = find_disp(pmx, "morebones", False)
-	if idx != --1:
+	## Move 'remaining bones' Frame to end and filter out thsoe already added elsewhere
+	idx = find_disp(pmx, cName_morebones, False)
+	if idx != -1:
 		oldFrame = pmx.frames[idx]
 		del pmx.frames[idx]
+		oldFrame.items = list(filter(lambda x: x[1] not in used_bones, oldFrame.items))
 		pmx.frames.append(oldFrame)
 
 
@@ -723,6 +907,10 @@ def sort_bones_into_frames(pmx):
 def make_bone_morph(pmx, name, items=[], override=False): return make_any_morph(pmx, name, items, override, 2)
 def make_bone_item(pmx, name, pos, rot): return pmxstruct.PmxMorphItemBone(find_bone(pmx, name, False), pos, rot)
 ## =/BoneMorph,".+?",(".+?"),([\-\d\.]+,[\-\d\.]+,[\-\d\.]+),([\-\d\.]+,[\-\d\.]+,[\-\d\.]+)/ --> =/make_bone_item\(pmx, \1, [\2], [\3]\),/
+
+def make_separator(pmx, name):
+	item = make_bone_item(pmx, pmx.bones[0].name_jp, [0, -1, 0], [0, 0, 0])
+	return make_bone_morph(None, name, [ item ], False)
 
 def add_heels_morph(pmx):
 	make_bone_morph(pmx, "Move for Shoes", [
@@ -741,11 +929,41 @@ def add_heels_morph(pmx):
 	])
 
 
+def add_ground_morph(pmx):
+	morph_name = "Adjust for Ground"
+	bone_name = "ChestRigidRoot"
+	delta = -1
+	
+	idx = find_bone(pmx, "右つま先ＩＫ", False)
+	if idx != -1:
+		bone   = pmx.bones[idx]
+		pos_y  = bone.pos[1]
+		tail_y = 0.10 if bone.tail_usebonelink else abs(bone.tail[1]) # could also use Y-Pos of Bone-Link but lets wait if it ever changes
+		# Verify if this works consistently -- Expects that Toe IK points to a specific distance *below 0*, as opposed to a constant length
+		# By default this makes the model be perfectly on ground if barefeet
+		delta  = -2 * pos_y + tail_y # == (pos_y + (pos_y - tail_y)) * -1
+	
+	bone = kkrig.add_bone_default(pmx, bone_name)
+	bone.parent_idx = 0 # [[ test ]] this one (instead of -1)
+	
+	util.set_parent_if_found(pmx, "左胸操作接続", bone_name, is_rigid=True)
+	util.set_parent_if_found(pmx, "左胸操作衝突", bone_name, is_rigid=True)
+	util.set_parent_if_found(pmx, "右胸操作接続", bone_name, is_rigid=True)
+	util.set_parent_if_found(pmx, "右胸操作衝突", bone_name, is_rigid=True)
+
+	make_bone_morph(pmx, morph_name, [
+		make_bone_item(pmx, "センター",   [0, -delta, 0], [0, 0, 0]),
+		make_bone_item(pmx, "左足ＩＫ",   [0, -delta, 0], [0, 0, 0]),
+		make_bone_item(pmx, "右足ＩＫ",   [0, -delta, 0], [0, 0, 0]),
+		make_bone_item(pmx, bone_name, [0, -delta, 0], [0, 0, 0]),
+	])
 
 ##############
 ### VertexMorph
 ##############
 
+def make_vert_morph(pmx, name, items=[], override=False): return make_any_morph(pmx, name, items, override, 2)
+def make_vert_item(pmx, name, pos, rot): return pmxstruct.PmxMorphItemBone(find_bone(pmx, name, False), pos, rot)
 
 ##############
 ### More Morph Helpers
@@ -762,6 +980,7 @@ def rename_if_found(pmx, oldName, newNameEN, newNameJP):
 		if newNameJP: m.name_jp = newNameJP
 
 def make_any_morph(pmx, name, items=[], override=False, cat=0):
+	if pmx is None: return pmxstruct.PmxMorph(name, name, 4, cat, items)
 	morphIdx = find_morph(pmx, name, False)
 	if morphIdx != -1:
 		if not override: return
@@ -774,13 +993,21 @@ def make_any_morph(pmx, name, items=[], override=False, cat=0):
 	######
 	pass##
 
-def cleanup_invalid(pmx):
-	vert_len = len(pmx.verts)
+	vert_len  = len(pmx.verts)
+	mat_len   = len(pmx.materials)
+	bone_len  = len(pmx.bones)
+	morph_len = len(pmx.morphs)
 	for morph in pmx.morphs:
-		if morph.morphtype == 1:
-			morph.items = [m for (idx,m) in enumerate(morph.items) if m.vert_idx < vert_len]
+		if morph.morphtype == 0:
+			morph.items = [m for (idx,m) in enumerate(morph.items) if -1 < m.morph_idx < morph_len]
 		elif morph.morphtype == 2:
-			morph.items = [m for (idx,m) in enumerate(morph.items) if m.bone_idx != -1]
+			morph.items = [m for (idx,m) in enumerate(morph.items) if -1 < m.bone_idx < bone_len]
+		elif morph.morphtype == 8:
+			morph.items = [m for (idx,m) in enumerate(morph.items) if -1 < m.mat_idx < mat_len]
+		elif morph.morphtype == 9: pass
+		elif morph.morphtype == 10: pass
+		else: #if morph.morphtype in [1, 3, 4, 5, 6, 7]:
+			morph.items = [m for (idx,m) in enumerate(morph.items) if -1 < m.vert_idx < vert_len]
 
 
 #########

@@ -1,11 +1,35 @@
 
+# To compile it yourself
+
+
+To compile the project yourself, you need to install the following dependencies:
+
+ - Tool-Chain
+    - The tool was compiled and tested with Python 3.8+. (currently using 3.10)
+    - To use 'kkpmx_property_parse.py', you need to install ['numpy', 'opencv-python', 'blend_modes']
+    - To use 'kkpmx_handle_overhang.py', you need to install ['numpy', 'scipy', 'sympy']
+    - If scipy causes issues, install it manually from https://www.lfd.uci.edu/~gohlke/pythonlibs/#scipy
+    - I added all necessary files myself, but in case you are interested, they are based on [nuthouse01]'s tool (pre v6.0)
+       - If you do it yourself, copy the contents of KKPMX's 'src' folder into '[nuthouse01]/python', overwrite if necessary. The changes in question are:
+       - [morph_scale.py] `get_idx_in_pmxsublist()`: Extra argument to suppress 'Not found' warning to verify valid inputs when asking for materials.
+       - [nuthouse01_core.py] `prompt_user_filename()`: Ignore "" around File-Paths to allow drag-drop of files into the CommandWindow.
+       - [file_sort_textures.py] `main()`: Isolated initialization to allow calling with existing PMX instance.
+       - [model_overall_cleanup.py] `main()`: Isolated initialization to allow calling with existing PMX instance.
+       - [_alphamorph_correct.py] `template, template_minusone()`: Don't zero out morph colors.
+       - [_dispframe_fix.py.py] `dispframe_fix()`: Add additional morphs to a new 'moremorphs' display so that user-defined morphs are removed last when capping the list.
+ - KK Mod
+    - The Mod has been compiled and tested with .NET 3.5 (same as KK)
+    - All necessary packages can be installed by "Restore Packages".
+    - After compilation, put the *.dll into `{KK-Folder}/BepInEx/plugins`
+
 # JSON Structure
 
 
 
 
 
-All values must be either a dict {}, an array [], a number, or enclosed in "". The columns are `'Name': 'DataType' -- 'Description'`
+All values must be either a dict {}, an array [], a number, or enclosed in "".<br/>
+The Entries are read as `'Name': 'DataType' -- 'Description'`
 
 
 ## General terms
@@ -41,7 +65,7 @@ One Material entry consists of...
  - `<NAME_M>`: dict -- The actual Material.
    - `available`: array -- List of textures the shader supports in the game.
    - `textures`: array -- The textures actually used by the script.
-   - `shader`: string -- The processing mode to use inside the script. Look them up in the script for an overview.
+   - `shader`: string -- The processing mode to use inside the script. Look them up in the source-code if you want to know.
    - `<List of Parameters>`: &lt;varies> -- The Parameters as found in the corresponding entry within the raw \*.json file.
    - `<Texture overrides>`: string -- The entries of `[textures]` can be explicitly defined to provide custom texture paths, as opposed to auto-generated ones. Use two slashes `[\\]` instead of one..
        - Example: `"AlphaMask": "%PMX%\\MyAlphaTexture.png",` will use that AlphaMask instead of the generated default, which would be `"AlphaMask": "%PMX%\\extra\\" + NAME_M + "_AlphaMask.png",`.

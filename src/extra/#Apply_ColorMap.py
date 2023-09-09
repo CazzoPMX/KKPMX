@@ -3,6 +3,7 @@ import numpy as np
 import sys,os
 import json
 import blend_modes
+from copy import deepcopy
 
 try:
 	from kkpmx_image_lib import DisplayWithAspectRatio, DisplayWithAspectRatio_f
@@ -13,8 +14,22 @@ except ImportError as eee:
 	DisplayWithAspectRatio_f = imglib.DisplayWithAspectRatio_f
 
 todos="""
--- Support MainTex
--- Support colB_3Pink
+
+Mask-R loses Mask-B (if B is different color)
+Mask-B shows inverted color (if different color)
+Mask-G shows inverted color (if same color)
+
+if G and R have the same color, merge the masks and color both together
+: Otherwise there is a weird shaded border in Test1B & Final
+
+Still shows Test2A & Test3A if the Mask is full Black
+: as well as running the Mask calc to begin with
+:	Make sure that access to it is guarded by flags or turned into isAllSame
+
+If G has weird borders, they are visible on Test1B as well
+Rename the Test Windows to be better
+Figure out and redocument the ColorMask being resized
+: Also ignore doing that if all colors are the same anyway
 """
 
 argLen = len(sys.argv)
@@ -45,7 +60,7 @@ if argLen > 5:
 data = {}
 if (argLen > 6): data = imglib.TryLoadJson(sys.argv[6])
 mode            = data.get("mode", None)
-altname         = data.get("altName", "")
+altName         = data.get("altName", "")
 isHair          = data.get("hair", False)
 verbose         = data.get("showinfo", False)
 alphafactor     = data.get("saturation", 1)
@@ -53,7 +68,7 @@ tex_scale       = data.get("scale", None)
 tex_offset      = data.get("offset", None)
 EX_no_invert    = data.get("noInvert", False)
 #----------
-if len(altname.strip()) == 0: altname = None
+if len(altName.strip()) == 0: altName = None
 #----------
 
 args = sys.argv[1:]
@@ -115,7 +130,18 @@ isAllSame = False
 if flagRed and flagGreen and flagBlue:
 	isAllSame = colR_1Red == colG_2Yellow == colB_3Pink
 elif flagRed and not flagGreen and not flagBlue: isAllSame = True
+def cmpCol(arr1, arr2):
+	return arr1[0] == arr2[0] and arr1[1] == arr2[1] and arr1[2] == arr2[2]
 
+flagGreenIsRed = flagGreen and flagRed and cmpCol(colR_1Red, colG_2Yellow)
+flagBlueIsRed  = flagBlue and flagRed and cmpCol(colR_1Red, colB_3Pink)
+isAllSame = isAllSame or (flagGreenIsRed and flagBlueIsRed)
+isAllSame = isAllSame or (not flagBlue and flagGreenIsRed)
+##--[TODO] Nice and good, but I need to find a better solution later on.
+flagGreenIsRed   = False
+flagBlueIsRed    = False
+flagIsFullYellow = False
+flagIsFullPink   = False
 
 ### Read in pics
 raw_image = None
@@ -150,12 +176,15 @@ if tex_offset is not None:
 if tex_scale is not None:
 	mask = imglib.repeat_rescale(mask, tex_scale, { "show": show })
 ###--------
-
+channelSum = { 0: 0, 1: 0, 2: 0 }
 def extractChannel(src, chIdx):# Uses [image, cv2]
     ### Extract channels and invert them
-    maskCh = 255 - src[:,:,chIdx]
+    #maskCh = 255 - src[:,:,chIdx]
     ### ... or not. Tried at end again, and yes, no invert
     maskCh = src[:,:,chIdx]
+    mySum = np.sum(maskCh)
+    if show: print(f'{chIdx} has {mySum}')# 203.125.429 aka within 10
+    channelSum[chIdx] = mySum
     
     ### Stretch to same shape as imgMain
     if (maskCh.shape[:2] != image.shape[:2]):
@@ -163,8 +192,7 @@ def extractChannel(src, chIdx):# Uses [image, cv2]
         maskCh = cv2.resize(maskCh, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
     ### Widen into 3-Channel image again
     maskChX = cv2.merge([maskCh, maskCh, maskCh])
-    #DisplayWithAspectRatio(opt, 'Channel '+str(chIdx)+ ': ', maskChX) 
-
+    DisplayWithAspectRatio(opt, 'xChannel '+str(chIdx)+ ': ', maskChX, 256) 
     return maskChX
 #-----
 cv2.destroyAllWindows()
@@ -173,13 +201,28 @@ maskB = extractChannel(mask, 0) ## Pink   == Color 3
 maskG = extractChannel(mask, 1) ## Yellow == Color 2
 maskR = extractChannel(mask, 2) ## Red    == Color 1
 
+
+#----- Had some assets doing this kind of weirdness, so lets support it
+sumB_Pin = channelSum[0]
+sumG_Yel = channelSum[1]
+sumR_Red = channelSum[2]
+if sumB_Pin == 0: ## About 97% on 1024x1024
+	if (min([sumG_Yel, sumR_Red]) / max([sumG_Yel, sumR_Red])) > 0.95:
+		flagIsFullYellow = True
+elif sumG_Yel == 0:
+	## About 97% on 1024x1024
+	if (min([sumB_Pin, sumR_Red]) / max([sumB_Pin, sumR_Red])) > 0.95:
+		flagIsFullPink = True
+
 #### Apply color per channel
-bitmaskArr = []
+bitmaskArr = {}
+colMapArr = {}
+bwMapArr = {}
 showCol = show and True
 def getBMbyTag(tag):
-	if tag == "G": return bitmaskArr[0]
-	if tag == "R": return bitmaskArr[1]
-	if tag == "B" and flagBlue: return bitmaskArr[2]
+	if tag == "G": return bitmaskArr["G"]
+	if tag == "R": return bitmaskArr["R"]
+	if tag == "B" and flagBlue: return bitmaskArr["B"]
 
 colBW = {'B': -2, 'G': -2, 'R': -2}
 COLB = imglib.BWTypes.BLACK
@@ -223,8 +266,18 @@ def applyColor(_mask, _colArr, tag, invert=False, bitmaskOnly=False): ## read: [
 	bitmask[:,:] = (_mask[:,:,0] != 0)
 	bitmask = cv2.merge([bitmask*255, bitmask*255, bitmask*255])
 	if showCol: DisplayWithAspectRatio(opt, tag+'-bitmask', bitmask, 256) ## Where to add color
-	bitmaskArr.append(bitmask)
-	if bitmaskOnly: return None
+	bitmaskArr[tag] = bitmask
+	
+	##-- Interesting Effect when this line is commented out
+	if "G" in bwMapArr and tag == "R":
+		if flagGreenIsRed: _mask = _mask + bwMapArr["G"]
+		else: _mask = _mask - bwMapArr["G"] ## Also still hard cut on this one
+	if "B" in bwMapArr and tag == "R": 
+		if flagBlueIsRed: _mask = _mask + bwMapArr["B"]
+		else: _mask = _mask - bwMapArr["B"] ## Also still hard cut on this one
+	
+	bwMapArr[tag] = deepcopy(_mask)
+	if bitmaskOnly: return bitmask
 	
 	## Create an image of this color
 	colImg0 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[0]
@@ -232,9 +285,10 @@ def applyColor(_mask, _colArr, tag, invert=False, bitmaskOnly=False): ## read: [
 	colImg2 = np.ones(_mask.shape[:2], dtype="uint8") * _colArr[2]
 	colImg = cv2.merge([colImg2, colImg1, colImg0]) ## KK ColorMask is BGR
 	if showCol: DisplayWithAspectRatio(opt, tag+'-Color', colImg, 256)    ## A canvas of this Color
-	if showCol: DisplayWithAspectRatio(opt, tag+'-ColorMask', _mask, 256) ## How the channel looks
+	if showCol: DisplayWithAspectRatio(opt, tag+'-ColorMask', _mask, 256) ## How the channel looks (the Mask Channel but including Gradients)
 	#>> State: A BlackWhite Image of the DetailMap-Layer \\[HSV]: 'V' maps the corresponding Alpha
 	
+	colMapArr[tag] = deepcopy(colImg)
 	#imglib.testOutModes_wrap(colImg, _mask)
 	
 	_mask[:,:,0] = ((_mask[:,:,0] / 255) * (colImg[:,:,0]))
@@ -247,6 +301,7 @@ def applyColor(_mask, _colArr, tag, invert=False, bitmaskOnly=False): ## read: [
 	## Apply mask again to cut out any potential color artifacts
 	return np.bitwise_and(bitmask, _mask)
 
+##-- Old
 if not isAllSame:
 	maskG = applyColor(maskG, colG_2Yellow, "G", dev_invertG)
 	if showCol: DisplayWithAspectRatio(opt, 'Mask G', maskG, 256)
@@ -257,6 +312,7 @@ if not isAllSame:
 		maskB = applyColor(maskB, colB_3Pink, "B", dev_invertB)
 		if showCol: DisplayWithAspectRatio(opt, 'Mask B', maskB, 256)
 else:
+#if isAllSame:
 	## Just get the bitmask of the whole mask
 	#if (mask.shape[:2] != image.shape[:2]):
 	#	mask = cv2.resize(mask, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
@@ -282,8 +338,8 @@ else:
 # Grey where both same, B for B on W, W for W on B: GExtract
 ###
 ##-- Combine Masks to cut out parts that are unaffected in all channels
-bitmask = imglib.blend_segmented(blend_modes.addition, bitmaskArr[0], bitmaskArr[1], 1)
-if flagBlue: bitmask = imglib.blend_segmented(blend_modes.addition, bitmask, bitmaskArr[2], 1)
+bitmask = imglib.blend_segmented(blend_modes.addition, getBMbyTag("G"), getBMbyTag("R"), 1)
+if flagBlue: bitmask = imglib.blend_segmented(blend_modes.addition, bitmask, getBMbyTag("B"), 1)
 
 tmp = np.full(bitmask.shape, 255, dtype="uint8")
 #imglib.testOutModes_wrap(tmp, bitmask, msg="Tmp + BitMask")
@@ -319,6 +375,15 @@ inverted_RG = False
 overwriteMode = False
 isInBlue = False ## Basically means "Hairtip only"
 
+treatAsHair = isHair
+if not isHair:
+	nameCheck = altName if altName is not None else os.path.split(imgMask)[1]
+	tailArr = ["acs_m_fox", "arai_tail"]
+	for tail in tailArr:
+		if tail in nameCheck:
+			treatAsHair = True
+			break
+
 def handle_BW(_base, _mask, tag, tagB=None):
 	## Probably make Splitter with (all fields, anyNorm(DARK,NORM,BRIGHT,None), anyLow(BLACK,DARK), anyHigh(WHITE,BRIGHT))
 	isWhite = colBW[tag] == imglib.BWTypes.WHITE
@@ -346,8 +411,9 @@ def handle_BW(_base, _mask, tag, tagB=None):
 	if isWhite: _mode = blend_modes.screen
 	if isBlack: _mode = blend_modes.screen
 	if isDark and BisDark: _mode = blend_modes.screen ## Verified(Hair): Screen looks best
-	#print(f"::[Mask {tag}]: Mode={_mode}, Tag={colBW[tag]}, W={isWhite}, B={isBlack}")
-	#print(f"::[Base {tagB}]: Mode={_mode}, Tag={colBW.get(tagB, None)}, W={BisWhite}, B={BisBlack}")
+	if show:
+		print(f"::[Mask {tag}]: Mode={_mode}, Tag={colBW[tag]}, W={isWhite}, B={isBlack}")
+		print(f"::[Base {tagB}]: Mode={_mode}, Tag={colBW.get(tagB, None)}, W={BisWhite}, B={BisBlack}")
 		
 	##-- TODO: Do some things when both colors are exact equal
 	
@@ -417,11 +483,12 @@ def handle_BW(_base, _mask, tag, tagB=None):
 		_mask = imglib.invert(_mask)
 		#_base = imglib.invert(_base) ## By inverting Base as well, it works with Screen AND Difference
 		pass
-	elif isBrigt and BisNone and isHair and isInBlue:
+	elif isBrigt and BisNone and treatAsHair and isInBlue:
 		## [Lighten] on [base x maskInv] looks great, but color too bright
 		## [Lighten] on [baseInv x maskInv] looks great, and color is a bit darker but still too off
 		## --> Could be nice with finalInv + Mask with additional Lighten
 		## isHair ++ [240, 25, 100]<Pink> onto [84 32 85]<MintGreen> //Ref: BRIGHT<LazyHack+Inv=False> vs. None<default> ###TestPattern
+		## Pattern2: [237,212, 202]<Pink>: was NORM, now BRIGHT --> Should be inverted + Normal because background is unmasked black rest
 		_mask = imglib.apply_alpha_BW(opt, _mask).astype("uint8")
 		_mask = imglib.invert(_mask)
 		DisplayWithAspectRatio(opt, f'DEV: MASK ({isInBlue})', _mask, 256)
@@ -491,9 +558,67 @@ def handle_Same_R_G_with_B(_color, _bmA, _bmB):
 	_keeper = imglib.blend_segmented(blend_modes.multiply, image, inverted, 1)
 	_final = imglib.getColorImg(opt, maskR, colR_1Red, "All", True)
 
+
+"""
+:: Get Gradient of Color as BlackWhite within the Mask 
+there exists cv2.inRange(hsv, lower_limit, upper_limit) ## both as np.array of HSV colors
+>	which creates a mask of all pixels that are in range of these two
+>	then using bitwise_and of that with the mask to get what you want
+
+print cv2.cvtColor(np.uint8([[[0,255,0 ]]]),cv2.COLOR_BGR2HSV) --> [[[ 60 255 255 ]]] ## Green in BGR to HSV
+
+Able to mix two pictures with np.uint8(img[0] * mask[0] + img[1] * mask[1])
+
+"""
+if not isAllSame: ### New tests
+	tmpA = None
+	tmpB = None
+	doBMOnly = False
+	dev_invertG = False
+	dev_invertB = False
+	#print(bwMapArr.keys())
+	##### Hair Root
+	if flagGreenIsRed:
+		maskG = extractChannel(mask, 1).astype("uint8") ## Yellow == Color 2
+		bmGreen = applyColor(maskG, colG_2Yellow, "G", dev_invertG, True).astype("uint8")
+	elif flagGreen:
+		maskG = extractChannel(mask, 1).astype("uint8") ## Yellow == Color 2
+		bmGreen = applyColor(maskG, colG_2Yellow, "G", dev_invertG, doBMOnly).astype("uint8")
+		tmpA = bmGreen# * maskG
+		DisplayWithAspectRatio(opt, "Test2A", tmpA, 256)
+		tmpB = tmpA if tmpB is None else tmpB + tmpA
+	if tmpB is not None: DisplayWithAspectRatio(opt, "Test2B", tmpB.astype("uint8"), 256)
+	##### Hair Tips
+	if flagBlueIsRed:
+		maskB = extractChannel(mask, 0).astype("uint8") ## Pink   == Color 3
+		bmBlue = applyColor(maskB, colB_3Pink, "B", dev_invertB, True).astype("uint8")
+	elif flagBlue:
+		maskB = extractChannel(mask, 0).astype("uint8") ## Pink   == Color 3
+		bmBlue = applyColor(maskB, colB_3Pink, "B", dev_invertB, doBMOnly).astype("uint8")
+		tmpA = bmBlue# * maskB
+		DisplayWithAspectRatio(opt, "Test3A", tmpA, 256)
+		tmpB = tmpA if tmpB is None else tmpB + tmpA
+	if tmpB is not None: DisplayWithAspectRatio(opt, "Test3B", tmpB.astype("uint8"), 256)
+	##### Main Color
+	if flagRed and not (flagIsFullYellow or flagIsFullPink):
+		maskR = extractChannel(mask, 2).astype("uint8") ## Red    == Color 1
+		bmRed = applyColor(maskR, colR_1Red, "R", False, doBMOnly).astype("uint8")
+		#if flagBlue:
+		#	DisplayWithAspectRatio(opt, "Test1_R_A", bwMapArr["R"].astype("uint8"), 256)
+		#	tmpC = bwMapArr["R"] - bwMapArr["B"]
+		#	DisplayWithAspectRatio(opt, "Test1_R_B", tmpC.astype("uint8"), 256)
+		tmpA = bmRed#maskR * bmRed
+		DisplayWithAspectRatio(opt, "Test1A", tmpA, 256)
+		tmpB = tmpA if tmpB is None else tmpB + tmpA
+	if tmpB is not None: DisplayWithAspectRatio(opt, "Test1B", tmpB, 256)
+	#####
+	final = tmpB
+
+
+
 ## Verified
 # If [isAllSame=True], Results look fine if all 3 are same non-BW color with MainTex
-if not isAllSame:
+if not isAllSame and False:
 	##[Verified: With dev_invertG,B = True,False, Hat(WHITE xor WHITE xor RED) works fine]
 	# --> R to G == G to R, all three use difference -- R+G and Blue keep BlackArea from Mask, combine to be fine, result a bit darker than before
 	##[Verified: With dev_invertG,B = True,False, Pouch(WHITE xor RED xor RED) works ng]
@@ -553,10 +678,10 @@ if not isAllSame:
 		
 elif False:#elif noMainTex:### Works for: [acs_m_accZ4601: German Cross], only two colors
 	## Will look ugly on gradient colors
-	final = imglib.combineWithBitmask(opt, maskR, maskG, bitmaskArr[0])
+	final = imglib.combineWithBitmask(opt, maskR, maskG, getBMbyTag("G"))
 	if flagBlue:
 		if show: DisplayWithAspectRatio(opt, '[NT] Pre-Blue', final, 256)
-		final = imglib.combineWithBitmask(opt, final, maskB, bitmaskArr[2])
+		final = imglib.combineWithBitmask(opt, final, maskB, getBMbyTag("B"))
 
 ### If no MainTex exists, use the ColorMask directly
 if (noMainTex):
@@ -574,7 +699,8 @@ if has_alpha:
 	image = cv2.merge([image[:,:,0], image[:,:,1], image[:,:,2], imgAlpha.astype(float)])
 	keeper = cv2.merge([keeper[:,:,0], keeper[:,:,1], keeper[:,:,2], imgAlpha.astype(float)])
 	image = imglib.combineWithBitmask(opt, image, keeper, inverted)
-else:
+elif not isAllSame and False:
+	## smt a bit fuzzy here -- Repair that later
 	image = imglib.combineWithBitmask(opt, image.astype("uint8"), keeper, inverted)
 
 #DisplayWithAspectRatio(opt, 'Final_float', image, 256) ## OK
@@ -602,6 +728,6 @@ cv2.destroyAllWindows()
 ### Write out final image
 outName = imgMain[:-4] + "_pyCol.png"
 if noMainTex: outName = imgMask[:-4] + "_pyCol.png"
-if altname is not None: outName = os.path.join(os.path.split(outName)[0], altname + "_pyCol.png")
+if altName is not None: outName = os.path.join(os.path.split(outName)[0], altName + "_pyCol.png")
 cv2.imwrite(outName, image)
 print("Wrote output image at\n" + outName)

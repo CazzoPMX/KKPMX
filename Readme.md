@@ -2,7 +2,7 @@
 # KKPMX
 
 
-This package is a tool chain to perform necessary edits to exported Koikatsu (KK) Models to be more useful for MMD.
+This package is a tool chain to perform necessary edits to exported Koikatsu (KK / KKS) Models to be more useful for MMD.
 
 
 I made it to allow others exploring the possibility of using KK as alternative to searching the Internet for models (mainly Pixiv or booru). Half of the time, the model exists and may even be decently made. But you wouldn't be here if you were satisfied with that. This project might be what you want if any of the following applies to you:
@@ -12,7 +12,10 @@ I made it to allow others exploring the possibility of using KK as alternative t
  - You want an easy way to (re)create your OC* and making it move over the screen without having to learn / buy sophisticated modeling programs.
     - *... or any target-of-affection, be it waifu or husbando.
  - You already use KK and complain about any restrictions that CharaStudio has when compared with MMD.
- - You already use the Export Mod yourself but realize that a good model takes a lot of effort to just get the basics done.
+ - You already used the Export Mod in the past yourself but realize that it takes a lot of effort to just get the basics done.
+
+This mod should work with most versions of KK, Party, or Sunshine.
+
 ![Comparisons](img/Comparisons.png)
 
 Comparing 'Bare minimum', '5min of manual edits', 'running the script' (old pic from 2022-06, needs update)
@@ -21,7 +24,7 @@ Comparing 'Bare minimum', '5min of manual edits', 'running the script' (old pic 
 ## Legal (from nuthouse01)
 
 
-This code is free to use and re-distribute, but I cannot be held responsible for damages that it may or may not cause. You are permitted to examine and modify the code as you see fit, but I make no guarantees about the safety or quality of the result.<br/>
+This code is free to use, but I cannot be held responsible for damages that it may or may not cause. You are permitted to examine and modify the code as you see fit, but I make no guarantees about the safety or quality of the result.<br/>
 I take no responsibility for how you use this code: any damages, or copyright violations or other illegal activity are completely the fault of the user. These tools only gives you "the ability to read/edit", what you do with that ability is not my business and not my fault.<br/>
 You are free to use this for any commercial or non-commercial applications.<br/>
 Don't try to claim this work as yours. That would be a profoundly dick move.<br/>
@@ -31,14 +34,20 @@ Just to be clear, I extend the above terms to cover this project as well. If you
 
 ## Links & Credits
 
+
+Some obligatory credits for references.<br/>
+There is no need to download anything extra (apart from the usual ModdingAPI needed for everything), the release package on the right already provides everything needed.
+
  - [nuthouse01](https://github.com/Nuthouse01/PMX-VMD-Scripting-Tools)
- - [PMXExport](https://github.com/TheOddball/KoikatsuPmxExporter/tree/master) (old legacy original)
+ - [PMXExport](https://github.com/TheOddball/KoikatsuPmxExporter/tree/master)
  - [MaterialEditor](https://www.patreon.com/posts/27881027)
 
-If you have any questions, feel free to hit me up on ~~Twitter DMs~~ (Twitter seems to not like me getting DMs, so send me a DM on Discord (@thekaizo) I guess)
+If you have any questions, feel free to hit me up on Discord -- I set up a Server so that Message-Requests (@thekaizo) are less awkward: https://discord.gg/HUexfg6f9E
 
-I'd be open to convert cards for you at 5€ a piece, add 10€ for converting it to VRChat or VRM / VSeeFace.<br/>
+
+I'd be open to convert cards for you for $5+ depending on complexity, add 10 for converting it into a useable format for VRChat or VRM / VSeeFace.<br/>
 In the unlikely case that people actually make use of that offer, I reserve the right to increase if too many ask.
+
 
 ## Misc
 
@@ -50,17 +59,17 @@ Some less obvious things when working with Console applications
  - If the command offers a default value, it can be choosen by pressing enter without entering anything.
  - You can press the 'Up' arrow key to retrieve the most recent instruction(s)
     - To repeat the commands for multiple input requests: Go 'up' till the first -- Enter to execute it -- Now the 'next' previous command can be accessed by pressing 'down', and so on.
- - You can enter commands and press 'enter' while no input is asked for. That way you can provide commands in advance.
+ - You can enter commands / press 'enter' while no input is asked for. That way you can provide commands in advance.
+    - This only works if the Console Window stays open (by calling the *.exe from an already open window) or by using Powershell.
 
 ## FAQ
 
-[Issues.md](Issues.md)
-[Customize.md](Customize.md)
+[Troubleshooting](Issues.md)
+[Compile yourself](Customize.md)
+[Structure of JSON-Files](Customize.md)
 
 ## Recommended chain of actions
 
- 0. [until < 1.6.1] PMXExport has a weird quirk that messes up the Editor when started the first time after starting Koikatsu.<br/>
-Return to the Title Screen and re-enter the Editor to fix it.
  0. Load the desired character and costume.
  0. Change Pose, Expression, Clothing State, or Accessory Visibility as necessary.
     - Recommended: Pose='T-Pose' (one to the left), Blinking=Off, Looking at='Top' (Slider on 0%), Mouth=Neutral.<br/>
@@ -69,21 +78,17 @@ Any Eye and/or Mouth Position works, as long as the Eyes stay open and the mouth
     - While the Tool-Chain is indifferent of whatever pose is used, it might produce funny results in MMD.
     - The same goes for facial expressions, which are further morphed by MMD-Sequences.
  0. Click on [Export] in the upper left corner -- It may take a short moment depending on size.
-    - Will add a folder containing the *.pmx + main textures into `C:\koikatsu_model`, named with a random 4-digit number.
-       - See the next subsection for how to use the model immediately.
- 0. ~~Click on the 'Info' Tab (Heart) and then on [Generate JSON Data].~~
-    >[1.5.1+] Merged this into PmxExport, so it is now created with [Export]
-    - Will also add a file called `{CharName}.json` into the same folder, containing technical details for the *.exe.
- 0. ~~[Old] This step is (almost) entirely optional, but improves the quality of the textures a lot and requires the [MaterialEditor].<br/>
-The goal is to go through every asset (Body, Clothes, Accessory) and export the auxiliary textures (in most cases, ColorMask & DetailMask)<br/>
-See the [Help]-Section of [Scan Plugin File] for more details of which are currently supported.~~
-    >[1.3.1+] Older versions of [PmxExport] only export the Main-Textures.  
-    >I added an updated version which also exports all 'extra' textures into a folder called 'extra'
-    >So there is no need to manually export the textures anymore.
-    - See the [Help]-Section of [Scan Plugin File] for how to use a different name / path.
-    - Note: Some assets lack a Main-Texture (like the default Fox-Tail). In such cases, the ColorMask (if any) will be used instead as base texture.
+ - Will add a folder called `ModelFullName + Random 4-Digit number` under `C:\koikatsu_model` with the following contents
+    - The model.pmx file and the main textures associated with it
+    - A file called `{CharName}.json` which contains technical details for the KKPMX.exe
+    - A folder called `extra` which contains additional texture masks for Color, Detail, or Alpha.
+ - Note: Some assets lack a Main-Texture (like the default Fox-Tail). In such cases, the ColorMask (if any) will be used to generate a base texture later on.
+
+See the [next subsection](#tldr-minimum-steps-to-make-the-exported-model-work-immediately) for how to use the model immediately without having to use/wait for KKPMX_core.exe.<br/>
+Or the [one after](#what-i-do-when-working-on-a-model-aka-what-to-do-if-you-dont-know-what-to-do) if you want a more detailed step-by-step guide for how I usually do things with it.
+
  0. Start KKPMX_core.exe, select option [(5) All-in-one converter] and follow the steps.
-    - [Notes for Step(2)]: Recommended choices are: 2 (No) \ 2 (only top-level) \ 1 (Yes)
+    - When asked for input, the [bracket] option indicates the default used when pressing enter
 
 The model should be (almost) ready, but some last adjustments have to be done manually.
 
@@ -94,42 +99,23 @@ The model should be (almost) ready, but some last adjustments have to be done ma
 ## tl;dr: Minimum steps to make the exported model work immediately
 
 
-If you just want to test out some things with minimum set of work, perform these steps:
+If you just want to test out some things without having to wait for KKPMX to do its thing, then this is the minimum work to do to make the models usable.<br/>
+This (and a couple other things) is also done by selecting Option (1) within KKPMX, but you can always do them manually:
 
- 1. You only need the [PMXExport] Plugin for this. Do the first 4 Steps in the above list.
- 2. Open the *.pmx file and go to the Materials Tab
- 3. There are two assets called 'Bonelyfans' (one each for body and face); Set their Opacity to 0 & tick off [Edge Outline] (or delete them)
-    - If 'Standard' or 'Shadow' exists, do the same for these. 
- 4. Go to the 'Display' Tab
- 5. Go through all Display-Frames: Delete any '-1' Elements appearing in the right box
+ 0. Open the *.pmx file and go to the Materials Tab
+ 0. Delete any materials with the following names -- They just get in the way of most things
+    - Bonelyfans (usually one each for body and face)
+    - c_m_shadowcast
+    - Standard (seems to only exist for a couple specific assets)
+ 0. Tick off 'Edge (Outline)' for Materials with excessive amount of alpha texture (or lots of corners)
+ 0. Hide (Opacity=0) or delete Materials that look 'wrong' (usually because they were hidden in-game)
+ 0. Go to the 'Display' Tab
+ 0. Go through all Display-Frames: Delete any '-1' Elements appearing in the right box
 
-The model should now work properly in MMD, but may perform weird with most TDA Dances. To further fix that:
+The model should now work in MMD without crashing it, but testing with most Dance motions will still require the extra bones from above:
 
- 6. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
- 7. Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
-
-## To compile it yourself
-
-
-To compile the project yourself, you need to install the following dependencies:
-
- - Tool-Chain
-    - The tool was compiled and tested with Python 3.8+. (currently using 3.10)
-    - To use 'kkpmx_property_parse.py', you need to install ['numpy', 'opencv-python', 'blend_modes']
-    - To use 'kkpmx_handle_overhang.py', you need to install ['numpy', 'scipy', 'sympy']
-    - If scipy causes issues, install it manually from https://www.lfd.uci.edu/~gohlke/pythonlibs/#scipy
-    - I added all necessary files myself, but in case you are interested, they are based on [nuthouse01]'s tool (pre v6.0)
-       - If you do it yourself, copy the contents of KKPMX's 'src' folder into '[nuthouse01]/python', overwrite if necessary. The changes in question are:
-       - [morph_scale.py] `get_idx_in_pmxsublist()`: Extra argument to suppress 'Not found' warning to verify valid inputs when asking for materials.
-       - [nuthouse01_core.py] `prompt_user_filename()`: Ignore "" around File-Paths to allow drag-drop of files into the CommandWindow.
-       - [file_sort_textures.py] `main()`: Isolated initialization to allow calling with existing PMX instance.
-       - [model_overall_cleanup.py] `main()`: Isolated initialization to allow calling with existing PMX instance.
-       - [_alphamorph_correct.py] `template, template_minusone()`: Don't zero out morph colors.
-       - [_dispframe_fix.py.py] `dispframe_fix()`: Add additional morphs to a new 'moremorphs' display so that user-defined morphs are removed last when capping the list.
- - KK Mod
-    - The Mod has been compiled and tested with .NET 3.5 (same as KK)
-    - All necessary packages can be installed by "Restore Packages".
-    - After compilation, put the *.dll into `{KK-Folder}/BepInEx/plugins`
+ 0. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
+ 0. Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
 
 ## What I do when working on a model (aka What to do if you don't know what to do)
 
@@ -137,24 +123,27 @@ To compile the project yourself, you need to install the following dependencies:
     - This can also save some hassle in case something obvious isn't correct to re-export instead of wasting time.
     - And don't worry if things are visible which are hidden in KK -- This will be taken care of later.
  - Hiding materials that should stay hidden initially; They will receive a 'Show X' morph later (except if called Bonelyfans).
- - Combining identical textures used by multiple materials so that they all use the same file and removing the duplicate files.
-    - Doing this avoids them being processed multiple times and simply being reused on demand.
- - Run the 'All-in-one' mode
-    - Using the generated *.json when being asked for such.
- - Using a fitting processing option of [mode 4].
- - Opening 'model_cutScan.pmx' for additional edits.
-    - It would be 'model_better.pmx' when skipping [mode 4].
- - Going through Rigids, setting noisy ones to 'all green'.
- - Also detangling some chains if necessary (See [Rigging Mode 3])
+ - Run the 'All-in-one' mode, keeping defaults as needed
+    - On the first run, this will generate '{modelname}_org' as backup to preserve the original import (or load if it already exists)
+    - If asked, use the generated *.json (usually chosen automatically if the sole option).
+    - Sorting is optional, but helps reducing the clutter of textures
+ - Opening 'model_better.pmx' for additional edits.
+    - The script (except sorting) takes care to not overwrite any files and appends '_2', '_3' etc, so take care to use the latest version or delete anything not needed anymore.
+ - Checking / Cleaning up Physics that cause issues in TransformView:
+    - Going through Rigids, setting noisy ones to 'all green' (or deleting if not needed)
+    - Also detangling some chains if necessary (See [Rigging Mode 3])
+> Since there is no enforeced naming structure on the bones, sometimes it may fail to get auto-rigged and require manual edits.
     - This involves either removing Rigids + Joints -or- rewire bones & rigids to split chains
-    - Since I'm the dev, sometimes adding them, if possible, as pattern into the script. Only core KK assets or big enough mods are added, though.
- - Adjusting morph items that should always stay hidden / always stay visible
- - Reorder clothes into proper order
-    - Proper order means 'inside' is sorted before 'outside' (e.g. Socks before Shoes, Bra before Shirt before Jacket, etc.
- - Cleanup the [Display] Group from morphs I don't need for this model.
- - Going through materials to untick 'Edge (Outline)' in severe cases (those with lots of 'black textures')
-    - A lot of that should already be covered by [Prune invisible faces].
- - Apply opacity of 0.5 to glassy items
+ - Verifying Morphs (especially A E I O U & Blinking, again via TransformView):
+    - Adjusting morph items that should always stay hidden / always stay visible
+    - Combining other things as needed
+    - Cleanup the [Display] Group from morphs I don't need for this model.
+ - Adjusting Materials:
+    - Reorder clothes into proper order for alpha layering
+       - Proper order means 'inside' is sorted before 'outside' (e.g. Socks before Shoes, Bra before Shirt before Jacket, etc.
+    - Untick 'Edge (Outline)' in severe cases (those with lots of 'black textures')
+       - A lot of that should already be covered by [Prune invisible faces].
+ - Re-adjust the model to ground level
  - Adding the extra bones from 'Semi-Standard Bones Plugin (PMX)'
  - Applying the 'bounce' morph.
  - Saving as 'model.pmx'
@@ -507,7 +496,7 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  
 >  `[Option]`:
 >  - Impact-Value: Between 0%-100%(=0..1), how strong the morphs should pull on the face.
->    - Default is 0.75, but 0.66 is also common.
+>    - Default is 0.66, but 0.75 is also common.
 >  
 >  `[Side-effects]`:
 >  - Will rerun Morph-Validation, which ensures that `[Display]` has less than 250 morphs.

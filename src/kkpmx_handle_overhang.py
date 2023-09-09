@@ -158,6 +158,7 @@ def run_kk_defaults(pmx, input_filename_pmx, _opt = {}):
 		bone_idx = util.find_bone(pmx, name)
 		if bone_idx:
 			tmp = pmx.bones[bone_idx].pos[idx]
+			if pad is not None: bounds[key] += pad
 			bounds[key] = (bounds.get(key,0)+tmp)/2
 	
 	CH__DETAIL = 0; CH__BOX_SMALL = 1; CH__BOX_BIG = 3; CH__NO = 4; CH__BOX_MEDIUM=2; CH__BOX_MINI=5;
@@ -197,7 +198,7 @@ def run_kk_defaults(pmx, input_filename_pmx, _opt = {}):
 		addIfFound("cf_d_arm01_R", "minX", 0)
 		addIfFound("cf_d_arm01_L", "maxX", 0)
 		addIfFound("cf_s_spine02", "minY", 1)
-		addIfFound("cf_d_arm01_L", "maxY", 1)
+		addIfFound("cf_d_arm01_L", "maxY", 1, -0.2)
 		bounds["maxZ"] = 3
 		bounds["minZ"] = -3
 	elif choice == CH__BOX_MEDIUM:

@@ -35,7 +35,7 @@ else: print("\n === Running LineMask Script ")
 
 
 ### Apply Transparency of 30% ( = 64 of 255)
-alpha   = 64 / 255    ## For mask
+alpha   = 32 / 255    ## For mask
 beta    = 1.0 - alpha ## For main
 show    = False       ## Do cv2.imshow
 opt = imglib.makeOptions(locals())
@@ -99,8 +99,6 @@ colArr = image[0,0,:]
 _colImg = imglib.getColorImg(opt, maskB, colArr)
 
 colImg = _colImg#imglib.invert(_colImg)
-imglib.testOutModes_wrap(image, maskB, opt)
-imglib.testOutModes_wrap(image, colImg, opt)
 isOld = False
 #imglib.testOutModes(opt, image, maskB, _standardize=True)
 #imglib.testOutModes(opt, image, colImg, _standardize=True)
@@ -109,7 +107,7 @@ if (isOld):
 else:
 	image = imglib.blend_segmented(mode, image, maskB, alpha)#.astype("uint8")
 
-
+DisplayWithAspectRatio(opt, 'After B', image, 256)
 
 #####
 # [Adds Grey]: Not, Mul, GExtract, Darken \\ (Light): HardLight, GMerge
@@ -118,7 +116,6 @@ else:
 #
 #image = imglib.blend_segmented("overlay", image, maskB, alpha)#.astype("uint8")
 
-imglib.testOutModes_wrap(image, maskG, opt)
 #imglib.testOutModes(opt, image, maskG, _standardize=True)
 image = imglib.blend_segmented("overlay", image, maskG, linetexon).astype("uint8")
 

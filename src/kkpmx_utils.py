@@ -24,7 +24,7 @@ HAS_UNITY = "UNITY"
 OPT_WORKDIR = "WORKINGDIR"
 ALL_YES = "all_yes"
 
-VERSION_TAG = "2.0.0"
+VERSION_TAG = "2.1.0"
 
 def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
@@ -63,6 +63,15 @@ def load_json_file(path=None, extra=None):
 	@returns [None] in case of errors
 	"""
 	def fix_JSON(json_message=None): ## https://stackoverflow.com/a/37805536
+		work_msg = json_message
+		while True:
+			result = fix_JSON_loop(work_msg)
+			if result[0]:
+				#write_json(work_msg, "C:\koikatsu_model\TestTest")
+				return result[1]
+			if result[1] is None: return None
+			work_msg = result[1]
+	def fix_JSON_loop(json_message=None): ## https://stackoverflow.com/a/37805536
 		result = None
 		try:
 			result = json.loads(json_message)
@@ -70,7 +79,7 @@ def load_json_file(path=None, extra=None):
 			# Only continue on invalid escapes
 			if str(e).find("Invalid \escape") == -1:
 				print(e)
-				return None
+				return (False, None)
 			#print(e)
 			# Find the offending character index:
 			idx_to_replace = int(str(e).split(' ')[-1].replace(')', ''))
@@ -79,8 +88,8 @@ def load_json_file(path=None, extra=None):
 			json_message = list(json_message)
 			json_message[idx_to_replace] = ''
 			new_message = ''.join(json_message)
-			return fix_JSON(json_message=new_message)
-		return result
+			return (False, new_message)
+		return (True, result)
 	## Validate path
 	if path and (not os.path.exists(path)):
 		print(f">> Requested file '{path}' does not exist!")
@@ -121,6 +130,9 @@ def write_json(data, path, indent=True):
 	_indent = "\t" if indent else None
 	with open(path, "w") as f:
 		f.write(json.dumps(data, indent=_indent))
+
+def parse_Tuple(data, _def):
+	return _def if (re.match(r"\([\d,\.\- ]+\)", data) is None) else eval(data)
 
 ######
 ## Generic
@@ -221,6 +233,10 @@ def copy_file(src, dst): # https://stackoverflow.com/questions/123198
 			print(f"[!!] <FileNotFound> Failed to copy '{src}' to '{dst}'")
 		else: print(f"[!!] Failed to copy '{src}' to '{dst}'")
 
+def throwIfDebug(isDebug, text):
+	if isDebug: raise Exception(text)
+	print(f"[W]: {text}")
+
 ###############
 ### Globals ###
 ###############
@@ -311,6 +327,28 @@ def arrAvg(x, y, asInt=False):
 def arrInvert(x): return (-(Vector3.FromList(x))).ToList()
 def arrCmp(x, y): return Vector3.FromList(x) == Vector3.FromList(y)
 
+def addOrExt(d,key,val):
+	arr = d.getdefault(key,[])
+	arr.append(val)
+	d[key] = arr
+
+def unify_names(arr):
+	names = []
+	for a in arr:
+		name = a.name_jp; idx = 0
+		while name in names:
+			idx = idx+1
+			name = a.name_jp + f"*{idx}"
+		a.name_jp = name
+		names.append(name)
+
+class DictAppend(dict):
+	#__getitem__: https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence
+	def __missing__(self, key): ## Called by dict[key] if key is not in the mapü
+		#self.__setitem__
+		return []
+
+
 #############
 ### Texts ###
 #############
@@ -350,6 +388,10 @@ def translate_name(name_jp, name_en):
 	if not tlTools.needs_translate(name_jp):    return name_jp
 	return tlTools.local_translate(name_jp)
 
+def make_printer(flag):
+	if flag: return lambda text: print(text)
+	return lambda text: 1+1
+
 ######
 ## Finders
 ######
@@ -382,15 +424,24 @@ def find_all_in_sublist(name, arr, returnIdx=True):
 		result.append(idx if returnIdx else item)
 	return result
 
+def find_bones(pmx, arr, returnIdx=True):
+	result = []
+	for name in arr:
+		idx = find_bone(pmx, name, True)
+		if returnIdx: result.append(idx)
+		elif idx != -1: result.append(pmx.bones[idx])
+		else: result.append(None)
+	return result
+
 ######
 ## Common (4:Bones)
 #####
 
 def find_or_return_bone(pmx, nameOrIdx, errFlag=True):
-	""" if [nameOrIdx] is a string, return result of [find_bone], otherwise return directly. """
 	if type(nameOrIdx) == type(""):
 		return find_bone(pmx, nameOrIdx, errFlag)
 	return nameOrIdx
+find_or_return_bone.__doc__ = """ if [nameOrIdx] is a string, return result of [find_bone], otherwise return directly. """
 
 def rename_bone(pmx, org, newJP, newEN):
 	tmp = find_bone(pmx, org, False)
@@ -423,6 +474,18 @@ def bind_bone(pmx, _arr, last_link=False): ##-- TODO_Test(again): [rigging]
 		pmx.bones[arr[-1]].tail_usebonelink = False
 		pmx.bones[arr[-1]].tail = [0, 0, -0.1]
 
+def set_parent_if_found(pmx, childName, parent, is_rigid=False):
+	parent = find_or_return_bone(pmx, parent)
+	if parent == -1: return
+	if is_rigid:
+		idx = find_rigid(pmx, childName, False)
+		if idx == -1: return
+		pmx.rigidbodies[idx].bone_idx = parent
+	else:
+		idx = find_bone(pmx, childName, False)
+		if idx == -1: return
+		pmx.bones[idx].parent_idx = parent
+
 #:in [core]
 #	Find all bones starting with NAME and return all their children as indices
 #	Return all indices of the children of NAME
@@ -434,12 +497,14 @@ def bind_bone(pmx, _arr, last_link=False): ##-- TODO_Test(again): [rigging]
 ## Common (3:Materials)
 #####
 
-def updateComment(_comment:str, _token, _value=None, _replace=False):
+def updateComment(_comment:str, _token, _value=None, _replace=False, _append=False):
 	"""
 	Wraps [_token] into f"[:{_token}:]", then calls updateCommentRaw
 	"""
-	return updateCommentRaw(_comment, f"[:{_token}:]", _value, _replace)
-def updateCommentRaw(_comment:str, _token, _value=None, _replace=False):
+	return updateCommentRaw(_comment, f"[:{_token}:]", _value, _replace, _append)
+#def updateCommentRaw(_comment:str, _token, _value=None, _replace=False, _append=False):
+#	return _updateCommentRaw(_comment, f"[:{_token}:]", _value, _replace, _append)
+def updateCommentRaw(_comment:str, _token, _value=None, _replace=False, _append=False):
 	"""
 	_token will be regex escaped before search; _value is appended as-is (with ' ' inbetween)
 	Returns the comment without a previous occurence of [_token] and the new one at the start
@@ -453,20 +518,23 @@ def updateCommentRaw(_comment:str, _token, _value=None, _replace=False):
 		if readFromCommentRaw(_comment, _token, exists=True):
 			return re.sub(re.escape(_token) + r".*", f"{_str}", _comment)
 	else: _comment = re.sub(r"(\r?\n)?" + re.escape(_token) + r".*", "", _comment)
+	if _append: return "\r\n".join([_comment, _str])
 	return "\r\n".join([_str, _comment])
 
-def readFromComment(_comment:str, _term:str, exists:bool = False):
-	return readFromCommentRaw(_comment, r'\[:' + f"{_term}" + r':\]', exists)
-def readFromCommentRaw(_comment:str, _term:str, exists:bool = False):
+def readFromComment(_comment:str, _term:str, exists:bool = False):    return _readFromCommentRaw(_comment, r'\[:' + f"{_term}" + r':\]', exists)
+def readFromCommentRaw(_comment:str, _term:str, exists:bool = False): return _readFromCommentRaw(_comment, re.escape(_term), exists)
+def _readFromCommentRaw(_comment:str, _term:str, exists:bool = False):
 	try:
 		if exists:
 			return re.search(_term, _comment) is not None
-		m = re.search(_term + r' (\w+)', _comment)
+		m = re.search(_term + r' *([^\r\n]+)', _comment)
 		if not m: return None
 		return m[1]
 	except:
 		print(f"[!] Error while searching '{_term}' in '{_comment}'")
 		return None
+def isDisabled(mat): return re.search(r'\[:Disabled?:\]', mat.comment) is not None
+
 
 def find_all_mats_by_name(pmx, name, withName=False):
 	result = []
@@ -484,6 +552,7 @@ def find_all_mats_by_name(pmx, name, withName=False):
 
 def find_bodyname(pmx): return "cf_m_body" if find_mat(pmx, "cm_m_body", False) == -1 else "cm_m_body"
 def find_bodypar(pmx): return "p_cf_body_00" if find_mat(pmx, "cm_m_body", False) == -1 else "p_cm_body_00"
+def is_male(pmx): return find_bodyname(pmx) != "cf_m_body"
 
 def is_bodyMat(mat):
 	return re.search("ct_head", mat.comment) or \
@@ -509,6 +578,30 @@ def add_to_facials(pmx, name):
 #####
 
 #-- Split List of Vertices into Left and Right --> morphs.generateWink (by find_morph)
+
+def process_vertex_weights(verts, searchFor, replaceWith):
+	def replaceBone(target):
+		if target == searchFor: return replaceWith
+		return target
+	for vert in verts: process_weight(vert, replaceBone)
+def process_weight(vert, action):
+	if vert.weighttype == 0:
+		vert.weight[0] = action(vert.weight[0])
+	elif vert.weighttype == 1:
+		vert.weight[0] = action(vert.weight[0])
+		vert.weight[1] = action(vert.weight[1])
+	elif vert.weighttype == 2:
+		vert.weight[0] = action(vert.weight[0])
+		vert.weight[1] = action(vert.weight[1])
+		vert.weight[2] = action(vert.weight[2])
+		vert.weight[3] = action(vert.weight[3])
+
+def get_weightIdx(vert):
+	w = vert.weight
+	if vert.weighttype == 0: return [w[0]]
+	elif vert.weighttype == 1: return w[0:1]
+	elif vert.weighttype == 2: return w[0:3]
+	raise Exception("....")
 
 ######
 ## Constants
