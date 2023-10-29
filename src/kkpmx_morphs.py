@@ -283,7 +283,7 @@ def generateAlias(pmx, name, alias, alias_en):
 	pmx.morphs.append(morph)
 
 ###########################
-def emotionalize(pmx, input_file_name: str, write_model = True, moreinfo = False):
+def emotionalize(pmx, input_file_name: str, write_model = True, moreinfo = False, _opt = { }):
 	"""
 Utilizes the emotion morphs extracted from KK to construct TDA morphs.
 Will override existing morphs, which allows "repairing" cursed Impact-Values.
@@ -305,13 +305,8 @@ Will override existing morphs, which allows "repairing" cursed Impact-Values.
 		print(">> Skipping because model has no standard face texture.")
 		return input_file_name
 	####
-	CH__TDA = 0; CH__VRM = 1;
-	choices = [
-		("TDA           -- Try to assemble morphs resembling TDA", CH__TDA, add_TDA),
-		#("UniVRM        -- Categorize morphs on imported model ", CH__VRM, sort_morphs_into_frames),
-		]
-	choice = CH__TDA#util.ask_choices("Select the target collection", choices)
-	if _univrm(): choice = CH__VRM
+	CH__TDA = 0;
+	choice = CH__TDA
 	####
 	putAuxIntoGroup(pmx)
 	choices[choice][2](pmx);
@@ -360,7 +355,10 @@ def add_TDA(pmx): ## Note: Add specific morphs as empty placeholder (JP, EN="Pla
 		#はちゅ目横潰れ		… yokotsubure		Hort Squint		*	: ^ Squint Hor
 		pass
 	# def: Search all morphs with "_winkl" in their name -- Could also search for the alternative name in case it was renamed
-	eyeOpenness = util.ask_number("Set Impact Value for Eye-Morphs", 0.00, 1.00, 0.66)
+	if not util.is_auto():
+		eyeOpenness = util.ask_number("Set Impact Value for Eye-Morphs", 0.00, 1.00, 0.66)
+	else:
+		eyeOpenness = 0.66
 	local_state["eyeOpenness"] = eyeOpenness
 	
 	find_all_morphs_eyes = lambda prefix,infix,suffix,value=eyeOpenness: find_all_morphs(morphs, prefix, infix, suffix, value, exclude="_siro[LR]")
@@ -545,6 +543,8 @@ def add_TDA(pmx): ## Note: Add specific morphs as empty placeholder (JP, EN="Pla
 	## Think about renaming the items to have only the suffix in EN
 	
 	hotfix_generate_all_morphs(pmx, morphs, eyeOpenness)
+	##---- Fix [_gyu] to not have both "_gyu" and "_guy02"
+	## Set respective Eye on 50% less
 	
 	names = [
 		# Talking
@@ -654,7 +654,7 @@ def hotfix_generate_all_morphs(pmx, morphs, eyeOpenness):
 	######
 	pass##
 
-def combine_standards(pmx):
+def combine_standards(pmx): ## Replace EN Name for Standard Morphs.. (but most are Materials)
 	rename_if_foundEN(pmx, "bounce",				"MMD-Pose")
 	rename_if_foundEN(pmx, "unbounce",				"T-Pose")
 	rename_if_foundEN(pmx, "cf_m_face_00",			"Face")
@@ -739,7 +739,7 @@ def sort_morphs(pmx):
 	morphMap = {a[0]: a[1] for a in oldMorphs.values() if a[1] != -1}
 	for m in newMorphs:
 		if m.morphtype in [0, 9]:
-			for i in m.items: i.morph_idx = morphMap[i.morph_idx] #morphMap.get(i.morph_idx, i.morph_idx)
+			for i in m.items: i.morph_idx = morphMap.get(i.morph_idx, i.morph_idx) #morphMap.get(i.morph_idx, i.morph_idx)
 	pmx.morphs = newMorphs
 	
 	## Fix Display Frames
@@ -754,6 +754,7 @@ def sort_morphs(pmx):
 ### Display Frames
 ##############
 
+def find_or_replace_disp(pmx, name, _frames=None): ## Returns index
 	idx = find_disp(pmx, name, False)
 	if idx == -1: idx = len(pmx.frames); pmx.frames.append(pmxstruct.PmxFrame(name, name, False, []))
 	if not _frames is None: pmx.frames[idx].items = _frames
@@ -761,7 +762,7 @@ def sort_morphs(pmx):
 find_or_replace_disp.__doc__ = """ Return index of the requested Frame -- Append a new empty one if not found """
 
 def putAuxIntoGroup(pmx):
-	showWarning = not _univrm()
+	showWarning = False
 	names = [
 		"bounce", "unbounce","Move for Shoes","Move to Barefeet",
 		"hitomiX-small", "hitomiY-small", "hitomiX-big", "hitomiY-big", 
@@ -837,8 +838,9 @@ def sort_morphs_into_frames(pmx): ## Intended for UniVRM models
 def sort_bones_into_frames(pmx):
 	used_bones = set()
 	curSlot = "global_slot"
-	for frame in pmx.frames:
-		if frame.name_jp == cName_morebones: continue
+	moreIdx = []
+	for (d,frame) in enumerate(pmx.frames):
+		if frame.name_jp.startswith(cName_morebones): moreIdx.append(d); continue
 		if frame.name_jp == cName_extraBones: continue
 		if frame.name_jp.startswith("a_n_"): continue
 		if frame.name_jp == curSlot: continue
@@ -846,7 +848,7 @@ def sort_bones_into_frames(pmx):
 			if not item[0]: used_bones.add(item[1])
 	
 	extra_bones = []
-	slot_bones = {}
+	slot_bones = { "global_slot": [] }
 	
 	child_map = kkrig.get_children_map(pmx, None, True, False)
 	
@@ -856,24 +858,26 @@ def sort_bones_into_frames(pmx):
 	
 	
 	for d,bone in enumerate(pmx.bones):
-		if d in used_bones: continue
-		name = bone.name_jp
-		if reSkip.match(name):
-			## Group by Slot-Parent
-			if name.startswith("a_n_"):
-				curSlot = name
-				slot_bones[curSlot] = [d]
-			continue
-		## Add respective Assets to their slots
-		if name.startswith("ca_slot"):
-			arr = [d] + child_map[d]
-			[used_bones.add(x) for x in arr]
-			slot_bones[curSlot] += arr
-			continue
-		## Group all remaining Vertex Bones
-		#if reKeep.match(name):
-		if name.startswith("cf_s_"):
-			extra_bones.append(d)
+		try:
+			if d in used_bones: continue
+			name = bone.name_jp
+			if reSkip.match(name):
+				## Group by Slot-Parent
+				if name.startswith("a_n_"):
+					curSlot = name
+					slot_bones[curSlot] = [d]
+				continue
+			## Add respective Assets to their slots
+			if name.startswith("ca_slot"):
+				arr = [d] + child_map[d]
+				[used_bones.add(x) for x in arr]
+				slot_bones[curSlot] += arr
+				continue
+			## Group all remaining Vertex Bones
+			#if reKeep.match(name):
+			if name.startswith("cf_s_"):
+				extra_bones.append(d)
+		except: continue
 	
 	## Create ExtraBones Frame
 	name = cName_extraBones
@@ -890,12 +894,20 @@ def sort_bones_into_frames(pmx):
 		pmx.frames[idx] = pmxstruct.PmxFrame(name_jp=k, name_en=k, is_special=False, items=[[0, x] for x in v])
 	for idx in reversed(delIdx): del pmx.frames[idx]
 	
+	#########
+	# TODO: Resort other things correctly
+	#: 左腕捩, 左手捩, 右腕捩, 右手捩 into [Arms] if in [morebones]
+	#: Filter out cf_hit Bones into OtherPhysics
+	
 	## Move 'remaining bones' Frame to end and filter out thsoe already added elsewhere
 	idx = find_disp(pmx, cName_morebones, False)
 	if idx != -1:
 		oldFrame = pmx.frames[idx]
-		del pmx.frames[idx]
-		oldFrame.items = list(filter(lambda x: x[1] not in used_bones, oldFrame.items))
+		oldItems = []
+		for idx in reverse(moreIdx):
+			[oldItems.append(y) for y in list(filter(lambda x: x[1] not in used_bones, pmx.frames[idx]))]
+			del pmx.frames[idx]
+		oldFrame.items = oldItems
 		pmx.frames.append(oldFrame)
 
 
@@ -928,6 +940,10 @@ def add_heels_morph(pmx):
 		make_bone_item(pmx, "cf_j_toes_R", [0,0,0], [-21,0,0]),
 	])
 
+def add_finger_morph(pmx):
+	## add ROT.Z (-4 Left, +4 Right) for all 1st Finger Segments
+	## Call it "Straighen Fingers" to make all have same Y-Pos
+	pass
 
 def add_ground_morph(pmx):
 	morph_name = "Adjust for Ground"
@@ -993,6 +1009,7 @@ def make_any_morph(pmx, name, items=[], override=False, cat=0):
 	######
 	pass##
 
+def cleanup_invalid(pmx): ## Cleanup invalid morph_idx
 	vert_len  = len(pmx.verts)
 	mat_len   = len(pmx.materials)
 	bone_len  = len(pmx.bones)

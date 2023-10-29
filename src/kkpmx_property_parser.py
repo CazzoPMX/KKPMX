@@ -173,7 +173,6 @@ state_UNITY = "unity"
 state_SKIN = "sharedskin"
 def _verbose(): return local_state.get(state_info, True)
 def _useImg():  return local_state.get(OPT_IMG, True)
-#def throwOrPrint(msg): pass
 
 DEBUG_RUN = False
 THROWERROR = True
@@ -194,7 +193,6 @@ def parseMatComments(pmx, input_file_name: str, write_model = True, moreinfo = F
 	def callback(raw_data):
 		# replace Shorthand
 		raw_data = raw_data.replace("%PMX%", re.escape(root)) #@todo_note "<< explain %PMX% >>"
-		#raw_data = raw_data.replace("%PMX%", root.replace(r'\\', r'\\\\'))
 		raw_data = raw_data.replace("SpeclarHeight", "SpecularHeight")
 		raw_data = raw_data.replace("shadowcolor", Color_Shadow)
 		return raw_data
@@ -211,7 +209,7 @@ def parseMatComments(pmx, input_file_name: str, write_model = True, moreinfo = F
 		if os.path.isabs(tex):
 			pmx.textures[idx] = os.path.relpath(tex, root)
 	
-	if write_model:# and False:
+	if write_model:
 		flag = opt.get("apply", None)
 		if flag is None: flag = util.ask_yes_no("Apply changes")
 		if flag:
@@ -234,7 +232,6 @@ def __parse_json_file(pmx, data: dict, root: str):
 	local_state[BASE] = root
 	
 	data.setdefault(OPTIONS, {})
-	#options = defaults | data[OPTIONS] ## Python 3.9
 	options = {
 		BASE: base, # @todo_add "BASE can be defined alone or inside OPTIONS"
 		OPT_ENG: False, #@todo_note: "Using OPT_ENG, the display name (name_jp) in the editor must not match the filename segment"
@@ -249,17 +246,14 @@ def __parse_json_file(pmx, data: dict, root: str):
 		pmx.header.name_jp = name
 		pmx.header.name_en = name
 	
-	#ask_to_rename_extra(base)
-	
-	
 	hair_tabu = []
 	local_state[OPT_HAIR]  = {}
-	if not DEBUG_RUN:
-		local_state[OPT_CACHE] = util.ask_yes_no("Enable Texture Cache", "y", extra="Reuse Textures that use the same parameters. [See above for more info] ")
-		local_state[OPT_IMG]   = not util.ask_yes_no("Skip images", "n")
-	else:
+	if util.is_auto() or DEBUG_RUN:
 		local_state[OPT_CACHE] = True
 		local_state[OPT_IMG]   = True
+	else:
+		local_state[OPT_CACHE] = util.ask_yes_no("Enable Texture Cache", "y", extra="Reuse Textures that use the same parameters. [See above for more info] ")
+		local_state[OPT_IMG]   = not util.ask_yes_no("Skip images", "n")
 	
 	print(local_state)
 	
@@ -280,13 +274,9 @@ def __parse_json_file(pmx, data: dict, root: str):
 		attr = data[mat_name]
 		local_state[state_SKIP] = {}
 		
-		if verbose: print("\n==== Processing " + mat.name_jp)
+		if verbose: print("\n==== Processing (ALL) " + mat.name_jp)
 		if len(attr) == 0: continue ## Catches {},[],"" #@todo_add "<< silent ignore of empty elements >>"
-		#if not (mat.name_jp.startswith("acs_")): continue
-		#if (mat.name_jp.startswith("acs_")): continue
 		if (mat.name_jp.startswith("cf_m_eyeline_kage")): continue
-		#if (mat.name_jp not in ["cloth", "cloth*1", "choker", "m_military_boots","cf_m_bot_high-waist_skirt"]): continue
-		#if ("hitomi" not in mat.name_jp): continue
 		if not verbose: print("\n==== Processing " + mat.name_jp)
 		set_name(mat, attr)
 		
@@ -310,7 +300,6 @@ def __parse_json_file(pmx, data: dict, root: str):
 				print("[!] Did not find '{}' to inherit attributes from".format(org))
 				continue
 			print("> Extends " + org)
-			#attr = data[org] | attr ### New in py 3.9
 			tmp = copy.deepcopy(data[org])
 			tmp.update(attr)
 			attr = tmp
@@ -357,7 +346,6 @@ def __parse_json_file(pmx, data: dict, root: str):
 				## @todo_note: "if 'MainTex' is used but does not exist in BASE, use the one registered in the PmxMaterial, if any"
 				##-- This generates default paths for the supported textures
 				attr[texDict[tex]] = os.path.join(base, name + texSuffix[tex])
-				#print(f">> Generate: {attr[texDict[tex]]}")
 				if tex == t__Main and base_mat.tex_idx > -1:
 					if not os.path.exists(attr[texDict[tex]]):
 						attr[texDict[tex]] = os.path.join(root, pmx.textures[base_mat.tex_idx])
@@ -379,18 +367,19 @@ def __parse_json_file(pmx, data: dict, root: str):
 			'alpha': parse_alpha, 'ignore': parse_pass, 'glass': parse_glass,
 			'main': parse_main, 'metal': parse_metal, 'hair2': parse_hair2,
 			}
-		if attr[GROUP] in parseDict: parseDict[attr[GROUP]](pmx, mat, attr); #exit()
-		elif not DEBUG_RUN:
-			msgs['no_action'].append(msgsPre + mat.name_jp + f" ({attr[GROUP]})")
-			print(">--> [MissingAction]: " + msgs['no_action'][-1])
-			#parseDict["item"](pmx, mat, attr)#; exit()
-		StoreTextureForUnity(attr, mat, pmx)
-		#if ("body" in mat.name_jp): print(attr)
+		try:
+			if attr[GROUP] in parseDict: parseDict[attr[GROUP]](pmx, mat, attr); #exit()
+			elif not DEBUG_RUN:
+				msgs['no_action'].append(msgsPre + mat.name_jp + f" ({attr[GROUP]})")
+				print(">--> [MissingAction]: " + msgs['no_action'][-1])
+		except Exception as err:
+			print("--- Error while processing this Material")
+			for (k,v) in attr.items():
+				print(f"[{k}: {v}")
+			raise err
 		
 		## Clear texture cache after every run when reuse is disabled
 		if not local_state[OPT_CACHE]: local_state[ARGSTR] = {}
-	StoreTextureForUnity_NonMats(pmx, root)
-	# idk some handler to make face & body have the same toon ?
 	#######
 	### Display summary for quick glance that something did not work
 	arr = []
@@ -592,7 +581,7 @@ def parse_hair(pmx, mat, attr): ## @open: t__Color, t__Detail, t__HairGloss, Col
 	
 	# OPT_HAIR says if this render is the first of its material to be rendered
 	if attr[OPT_HAIR]:
-		calculate_reusable_textures(attr)
+		#calculate_reusable_textures(attr)
 		process_color_and_detail(pmx, mat, attr)
 	# otherwise load its final texture from local_state
 	elif attr[INHERIT] in local_state[OPT_HAIR]:
@@ -735,7 +724,11 @@ def script__draw_toon_shader(args):
 		frame[32:,:,2] = color[2]
 		#frame[:2,:,:] = 255
 	else: frame = draw_gradient_alpha_rectangle(frame, tuple(color), ((0,32), (64,64)))
-	cv2.imwrite(args[2], frame)
+	
+	path = args[2]
+	ext = os.path.splitext(path)[1]
+	is_success, im_buf_arr = cv2.imencode("."+ext, frame)
+	im_buf_arr.tofile(path)
 
 def add_toon_shader(pmx, mat, attr):
 	color = tuple(attr[Color_Shadow][:3])
@@ -972,7 +965,7 @@ def process_color_and_detail(pmx, mat, attr):
 		handle_acc_color(pmx, attr)
 		ff = attr[t__Color if attr[t__Main] is None else t__Main]
 		if noMain: ff = replFN(attr[t__Color], attr["altName"])
-		attr[t__MainCol] = os.path.splitext(ff)[0] + suffix_Col + ".png"
+		attr[t__MainCol] = re.sub(".png","",ff) + suffix_Col + ".png"
 		##-- Remove a non-generated entry due to errors
 		if attr[t__MainCol] and not os.path.exists(attr[t__MainCol]):
 			if t__Reuse in attr: attr[t__MainCol] = attr[t__Reuse] ##<< replace if we reuse from a diff. slot
@@ -1123,7 +1116,20 @@ def remove_face_alpha(pmx, attr):
 	imgMain = attr[t__Main]
 	imgBack = attr[t__Main][0:-4] + "_bk.png"
 	if not os.path.exists(imgBack): util.copy_file(imgMain, imgBack)
-	raw_image = cv2.imread(imgMain, cv2.IMREAD_UNCHANGED)
+	
+	raw_image = None
+	if util.is_ascii(imgMain): raw_image = cv2.imread(imgMain, cv2.IMREAD_UNCHANGED)
+	if raw_image is None:
+		try:
+			stream = open(imgMain, "rb")
+			bytes = bytearray(stream.read())
+			numpyarray = np.asarray(bytes, dtype=np.uint8)
+			raw_image = cv2.imdecode(numpyarray, cv2.IMREAD_UNCHANGED)
+		except Exception as err2:
+			print(err2)
+	if raw_image is None:
+		print("Unable to read Face Texture, please fix")
+		return
 	image = raw_image[:,:,:3]
 	cv2.imwrite(imgMain, image)
 
@@ -1377,6 +1383,7 @@ def extend_colors(attr, col_arr, dodefault = False):
 tex_mode_toon = "toon"
 tex_mode_main = "main"
 tex_mode_sphr = "sphere" ## [TODO] Redo-Reuse: Store Color & Detail reuse separately
+## [TODO]: Store Textures instead of [ID _pyCol... @ SLOT] as smt that is derived from Name + Slot + position (to allow reusing Materials for Debugging >.<)
 def set_new_texture(pmx, mat, attr, tex_names: list, tex_mode=tex_mode_main, skipped=False, copyIfMissing=False):
 	"""
 	:param  mat [PmxMaterial]  
@@ -1388,7 +1395,7 @@ def set_new_texture(pmx, mat, attr, tex_names: list, tex_mode=tex_mode_main, ski
 	isSphereMode = tex_mode == tex_mode_sphr
 	# [attr]: So that one can use "get_working_texture" but must not
 	if tex_mode != tex_mode_main: tex_name = tex_names[0]
-	else:  tex_name = os.path.splitext(tex_names[0])[0] + tex_names[1]
+	else:  tex_name = re.sub(".png", "", tex_names[0]) + tex_names[1] # Not splitext bc Names could have '.'
 	
 	if skipped:
 		msgs["skipped"].append(tex_name)
@@ -1441,9 +1448,6 @@ def NotFound(attr, name, optional=False): ## Returns true if not found
 		print(f">--> [MissingFile({name})]: {get_relative_path(attr[name])}")
 		return True
 	return False
-
-def calculate_reusable_textures(attr):
-	pass #
 
 def get_relative_path(path, attr=None):
 	base = local_state[BASE]
@@ -1501,42 +1505,51 @@ shader_dict = {
 	"toon_textureanimation": "ignore", ## gageye
 	"shadowcast": "ignore",
 	"Bonelyfans": "ignore",
-	"mnpb": "ignore",          ## cf_m_mnpb
+	"mnpb": "ignore",          ##[KK] WhiteOff \\ cf_m_mnpb
 	"Standard": "color",       ## -- Too much going on, just do colors for now.
-	# t__Glass, t__Main, t__NorMap ++ Color, Color4, *Sort,*Inverse,RimPower
-	"toon_glasses_lod0": "glass", ## cf_m_namida_00, c_m_gomu
+	# t__Glass, t__Main, t__NorMap ++ Color, Color4, ColorInverse, ColorSort, RimPower
+	"toon_glasses_lod0": "glass", ##[KK] .... \\  cf_m_namida_00, c_m_gomu
 	### Small
-	"toon_eyew_lod0": "color", ## t__Main ++ Color, shadowcolor \\ mayuge, sirome
+	"toon_eyew_lod0": "color", ##[KK] t__Main ++ Color, shadowcolor \\ mayuge, eyeline, kage, sirome
 	"main_eyew": "color",      ##[KKS] for mayuge, eyeline
-	"toon_eye_lod0": "eye",    ## t__Main, t__expression, t__overtex1, t__overtex2 ++ **
-	"toon_nose_lod0": "color", ## t__Main ++ Color
+	"toon_eye_lod0": "eye",    ##[KK] t__Main, t__expression, t__overtex1, t__overtex2 ++ exppower, isHighLight, rotation // hitomi
+	"toon_nose_lod0": "color", ##[KK] t__Main ++ Color
 	"main_nose": "color",      ##[KKS] for nose
-	"main_emblem": "color",    ## t__Main ++ shadowcolor
-	"main_color": "color",     ## Color
+	"main_emblem": "color",    ##2450 t__Main ++ shadowcolor
+	"main_color": "color",     ##2000 Color
+	#"main_item": "item",      ##[KK] \\ tongue
 	#"main_emblem_clothes": "color", ## t__Alpha, t__Main, Color, alphamaskuv ## Unused
 	#########
-	## "main_skin": --> "face","body" are special case
+	## "main_skin": --> "face","body" are special case and hardcoded as such.
 	#	"main_skin": "body", ## cm_m_dankon, cm_m_dan_f
+	"main_skin": "item", ## t__Alpha, t__Detail, t__Line, t__Liquid, t__Main, t__NorMap, t__NorMapDet, t__NorMask, t__overtex1+2+3, t__Texture2+3
+	#:++ overcolor1+2+3, Col_Shadow, Col_Spec :: alpha_a+b, DetailNormalMapScale, linetexon, nip, nip_specular, nipsize, notusetexspecular, rimpower, rimV, SE, SH, SP, SPN, tex1mask
 	
-	# t__Another, t__Color, t__Detail, t__Line, t__Main, t__NorMap
-	"main_item": "item",          ## AnotherRampFull, DetailBLineG, DetailRLineR, LineWidthS, ...
-	"main_item_studio": "item",   ## ++ PatternMask 1,2,3 \\ several uncommon attr
-	"main_item_studio_alpha": "item", ## ++ PatternMask 1,2,3 \\ several uncommon attr
-	"main_item_emission": "item", ##  ++ z__AnimationMask \\ z__EmissionPower
+	# 			t__Another, t__Color,	t__Detail, t__Line, 		t__Main, t__NorMap
+	"main_item": "item",              ##2450[KK,?_?] AnotherRampFull, DetailBLineG, DetailRLineR, LineWidthS, NUTS RP RV SE SEA SH SP
+	"main_item_studio": "item",       ##2450[KK,?_?] ++ Add [z__EmissionPower] \\ Add PatternMask things
+	"main_item_studio_alpha": "item", ##3000[KK,?_?] ++ Add [alpha, z__ambientshadowOFF, z__EmissionPower], Remove [LineWidthS] \\ Add PatternMask things
+	#:KK: PatternMask1+2+3 \\ Color 1_2,2,2_2,3,3_2, Patternuv1+3+4 \\ pattern(clamp,rotator)1+2+3
+	"main_item_emission": "item",     ##2450[KK,?_?] ++ z__AnimationMask \\ z__EmissionPower // Remove [SH SP]
+	#:KK: z__AnimationMask, t__Another, t__Color, t__Detail, t__Line, t__Main, t__NorMap
+	#>	\\ Color+2+3, Col_Shadow, AnotherRampFull, DetailBLineG, DetailRLineR, z__EmissionPower, LineWidthS, NUTS RP RV SE SEA, z__UPanner, z__VPanner
 	
-	# t__Alpha, t__Another, t__Detail, t__Line, t__liquid, t__Main, t__NorMap, 
-	"main_opaque": "cloth",
-	"main_opaque2": "cloth", #-- z__AlphaMaskuv
-	"main_alpha": "alpha", ## t__Alpha, t__Another, t__Detail, t__Liquid, t__Main, t__NorMap
+	# t__Alpha, t__Another, 			t__Detail, t__Line, t__liquid, t__Main, t__NorMap, 
+	"main_opaque": "cloth",	##2450 t__Alpha, t__Another, t__Detail, t__Line, t__Liquid, t__Main, t__NorMap, t__Texture2+3 ++ DetailBLineG, DetailRLineR, NUTS RP RV SE SEA SH SP SPN
+	"main_opaque2": "cloth", #--[^] z__AlphaMaskuv
+	"main_alpha": "alpha",	##3040 t__Alpha, t__Another, t__Detail, t__Liquid, t__Main, t__NorMap, t__Texture2+3
+	# ++ Col_Shadow, Col_Spec :: DetailBLineG, outline, rimpower, rimV, SE, SP
 	
 	# t__Alpha, t__Another, t__Color, t__Detail, t__HairGloss, t__Main, t__NorMap
-	"main_hair": "hair", ## ++ Color, Color2, Color3, LineColor, ShadowColor, rimpower, rimV, ShadowExtend
-	"main_hair_front": "hair", ## ++ [^] + SpecularHeight
+	"main_hair": "hair",       ##2000[KK,?_?] ++ Color, Color2, Color3, LineColor, ShadowColor, rimpower, rimV, ShadowExtend [KK]+ SpeclarHeight
+	"main_hair_front": "hair", ##3040[KK,?_?] ++ [^] + SpecularHeight
 	"KKUTShair": "hair",
 	
 	# t__Color, t__Detail, t__Line, t__Main, t__NorMap
-	"main_texture": "acc",  ## C+2+3+S, AnotherRampFull, DetailBLineG+RR, ShadowExtend(Another), SpeclarHeight
-	"main_texture_studio": "main", ## MainTex, Color, Patternuv1, Cutoff, CutoutClip, patternclamp1, patternrotator1
+	"main_texture": "acc",			##2450[KK,?_?] C+2+3+S, AnotherRampFull, DetailBLineG, DetailRLineR, SE SEA SH	//[KK]
+	"main_texture_studio": "main",	##[__,?_?] MainTex, Color, Patternuv1, Cutoff, CutoutClip, patternclamp1, patternrotator1
+	#----------------
+	"main_item_studio_add": "alpha",   ##3000[KK,?_?] t__Main \\ Color, Color2, Color3, alpha
 	#### KKS
 	"main_clothes_alpha": "alpha",
 	"main_clothes_opaque": "cloth",
@@ -1562,6 +1575,7 @@ shader_dict = {
 	"xukmi/SkinPlus": "item", 
 	"xukmi/MainItemAlphaPlus": "alpha", 
 	"xukmi/MainItemPlus": "item",
+	"xukmi/MainAlphaPlus": "alpha",
 	"xukmi/HairPlus": "hair", 
 	
 	"main_hair2": "hair2",

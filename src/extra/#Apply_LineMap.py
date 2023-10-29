@@ -41,8 +41,8 @@ show    = False       ## Do cv2.imshow
 opt = imglib.makeOptions(locals())
 
 ### Read in pics
-raw_image = cv2.imread(imgMain, cv2.IMREAD_UNCHANGED)
-mask = cv2.imread(imgMask)
+raw_image = imglib.TryLoadImage(imgMain, "MainTex")
+mask = imglib.TryLoadImage(imgMask, "LineMask")
 DisplayWithAspectRatio(opt, 'Org', raw_image, 256)
 
 ## Pull out the alpha for later
@@ -99,6 +99,8 @@ colArr = image[0,0,:]
 _colImg = imglib.getColorImg(opt, maskB, colArr)
 
 colImg = _colImg#imglib.invert(_colImg)
+#imglib.testOutModes_wrap(image, maskB, opt)
+#imglib.testOutModes_wrap(image, colImg, opt)
 isOld = False
 #imglib.testOutModes(opt, image, maskB, _standardize=True)
 #imglib.testOutModes(opt, image, colImg, _standardize=True)
@@ -116,6 +118,9 @@ DisplayWithAspectRatio(opt, 'After B', image, 256)
 #
 #image = imglib.blend_segmented("overlay", image, maskB, alpha)#.astype("uint8")
 
+#imglib.testOutModes_wrap(image, maskG, opt)
+#maskG = imglib.invert(maskG)
+#imglib.testOutModes_wrap(image, maskG, opt)
 #imglib.testOutModes(opt, image, maskG, _standardize=True)
 image = imglib.blend_segmented("overlay", image, maskG, linetexon).astype("uint8")
 
@@ -137,5 +142,5 @@ if show: k = cv2.waitKey(0) & 0xFF
 
 ### Write out final image
 outName = imgMain[:-4] + "_pyLin.png"
-cv2.imwrite(outName, image)
+imglib.TryWriteImage(outName, image)
 print("Wrote output image at\n" + outName)

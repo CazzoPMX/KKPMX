@@ -5,7 +5,7 @@ import sys
 import cv2
 import numpy as np
 import blend_modes
-import gc
+import gc, os
 
 def makeOptions(_opt):
 	return {
@@ -39,6 +39,44 @@ def TryLoadJson(val,_tuple=False, _array=False):
 			val = re.sub(r'<#@#>', r'[]', val)
 			print(f">  Fix broken JSON2:" + val)
 			return json.loads(val)
+
+def TryLoadImage(path, name="image file"):
+	if not path: 
+		print("Cannot load from empty path!")
+		return None
+	try:
+		if is_ascii(path):
+			img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+			if img is not None: return img
+	except Exception as err1:
+		print(err1)
+	print(f"[!] Could not load {name}, try alternate method...")
+	## cv2.imdecode(np.fromfile(path, dtype.np.uint8), cv2.IMREAD_UNCHANGED)
+	try:
+		stream = open(path, "rb")
+		bytes = bytearray(stream.read())
+		numpyarray = np.asarray(bytes, dtype=np.uint8)
+		bgrImage = cv2.imdecode(numpyarray, cv2.IMREAD_UNCHANGED)
+		return bgrImage
+	except Exception as err2:
+		print(err2)
+		return None
+
+def TryWriteImage(path, img, name="image file"):
+	import os
+	if is_ascii(path):
+		cv2.imwrite(path, img)
+	else:
+		ext = os.path.splitext(path)[1]
+		# encode the im_resize into the im_buf_arr, which is a one-dimensional ndarray
+		is_success, im_buf_arr = cv2.imencode("."+ext, img)
+		im_buf_arr.tofile(path)
+
+def is_ascii(s):
+	try:
+		s.encode('ascii'); return True
+	except UnicodeEncodeError:
+		return False
 
 ######
 ## Display

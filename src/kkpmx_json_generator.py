@@ -60,7 +60,7 @@ def _decoder(o, indent, lvl):
 			res.append(indent*lvl + key + value + ",")
 		res.append(indent*(lvl-1) + "}")
 		return "\n".join(res)
-	return json.dumps(o)
+	return json.dumps(o, ensure_ascii=False)
 
 helptext = """
 Parses the raw output from the [KKPMX] mod.
@@ -155,6 +155,7 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 	wdir = os.path.split(input_filename_pmx)[0]
 	path = os.path.join(wdir, "#generateJSON.json")
 	if os.path.exists(path):
+		if util.is_auto(): return path
 		if not util.ask_yes_no("Found existing #generateJSON file. Regenerate?", "n"):
 			return path
 
@@ -171,9 +172,11 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 	#### dict --> { name: True or False }
 	kk_re = re.compile(r" ?\(Instance\)_?(\([-0-9]*\))?")
 	kk_skip = re.compile('|'.join(["Bonelyfans","shadowcast","Standard"]))
+	mat_filter = {}
 	for (idx, name) in enumerate([m.name_jp for m in pmx.materials]):
 		suffix = 0
 		mat = kk_re.sub("", name)
+		mat_filter[mat] = mat_filter.get(mat, 0) + 1
 		if mat in mat_dict:
 			while True:
 				suffix += 1
@@ -181,7 +184,13 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 			#pmx.materials[idx].name_en = "{}*{}".format(mat.name_en, suffix)
 			mat = "{}*{}".format(mat, suffix)
 		mat_dict[mat] = kk_skip.match(name)
-	
+	##--- Verify Sanity check
+	mat_filter = [f'- {k}: x{v}' for (k,v) in mat_filter.items() if v > 1]
+	if len(mat_filter) > 0:
+		print("[!] WARNING: Material List is not unique-fyied! Please ensure the list of materials has no duplicate names")
+		print("\n".join(mat_filter))
+		return
+	##--- Write Header
 	arr = [ ]
 	arr.append(Comment("Generated with KKPMX v." + util.VERSION_TAG))
 	arr.append(Comment("Colors are RGBA mapped to [0...1]; Alpha is added if missing"))
@@ -272,10 +281,10 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 		with open(path+f"_{util.now()}", "a") as f: f.write(f"{arr}")
 		raise
 	try:
-		core.write_list_to_txtfile(path, output, True)
+		core.write_list_to_txtfile(path, output, False)
 	except RuntimeError:
 		print(">>:: Switching to UTF-8, may break file paths...")
-		core.write_list_to_txtfile(path, output, False)
+		core.write_list_to_txtfile(path, output, True)
 	return path
 GenerateJsonFile.__doc__ = helptext
 ########

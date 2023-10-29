@@ -17,14 +17,18 @@ import morph_scale
 
 ## Global Debug Flag
 DEBUG=False
-FILEDEBUG=False
+
+## Global Debug Flag for debugging Script-Files only
+FILEDEBUG=False	## PLEASE REMOVE THIS FROM RELEASE
+PRODUCTIONFLAG=True
 ## 
 global_state = { }
 HAS_UNITY = "UNITY"
 OPT_WORKDIR = "WORKINGDIR"
+OPT_AUTO = "automatic"
 ALL_YES = "all_yes"
 
-VERSION_TAG = "2.1.0"
+VERSION_TAG = "2.2.0"
 
 def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
@@ -133,6 +137,12 @@ def write_json(data, path, indent=True):
 
 def parse_Tuple(data, _def):
 	return _def if (re.match(r"\([\d,\.\- ]+\)", data) is None) else eval(data)
+
+def read_file(data, path):
+	return open(path, mode='r', encoding='utf-8').read()
+	
+def write_file_append(data, path):
+	with open(path, "a", encoding='utf-8') as f: f.write(data)
 
 ######
 ## Generic
@@ -250,6 +260,7 @@ def set_globals(workingdir):
 	path = os.path.join(path, "UNITY_MARKER");
 	if (os.path.exists(path)): global_state[HAS_UNITY] = True
 def is_allYes(): return global_state.get(ALL_YES, False)
+def is_auto(): return global_state.get(OPT_AUTO, False)
 
 # Maybe a printDEBUG(txt): if DEBUG: print(txt)
 
@@ -392,6 +403,12 @@ def make_printer(flag):
 	if flag: return lambda text: print(text)
 	return lambda text: 1+1
 
+def is_ascii(s):
+	try:
+		s.encode('ascii'); return True
+	except UnicodeEncodeError:
+		return False
+
 ######
 ## Finders
 ######
@@ -486,6 +503,12 @@ def set_parent_if_found(pmx, childName, parent, is_rigid=False):
 		if idx == -1: return
 		pmx.bones[idx].parent_idx = parent
 
+def replace_with_parent(pmx, boneName):
+	boneIdx = find_or_return_bone(pmx, boneName)
+	if boneIdx == -1: return
+	bone = pmx.bones[boneIdx]
+	grandparent = pmx.bones[bone.parent_idx].parent_idx
+	bone.parent_idx = grandparent
 #:in [core]
 #	Find all bones starting with NAME and return all their children as indices
 #	Return all indices of the children of NAME
@@ -580,10 +603,17 @@ def add_to_facials(pmx, name):
 #-- Split List of Vertices into Left and Right --> morphs.generateWink (by find_morph)
 
 def process_vertex_weights(verts, searchFor, replaceWith):
-	def replaceBone(target):
-		if target == searchFor: return replaceWith
-		return target
+	def replaceBone(target): return replaceWith if target == searchFor else target
 	for vert in verts: process_weight(vert, replaceBone)
+def process_weight_if_major(verts, main, removeIfFound):
+	if type(verts) != type([]): verts = [verts]
+	def replaceBone(target): return main if target == removeIfFound else target
+	for vert in verts:
+		if vert.weighttype == 1:
+			if vert.weight[2] > 0.5: process_weight(vert, replaceBone)
+		elif vert.weighttype == 2:
+			if vert.weight[4] > 0.5: process_weight(vert, replaceBone)
+
 def process_weight(vert, action):
 	if vert.weighttype == 0:
 		vert.weight[0] = action(vert.weight[0])
@@ -598,9 +628,15 @@ def process_weight(vert, action):
 
 def get_weightIdx(vert):
 	w = vert.weight
-	if vert.weighttype == 0: return [w[0]]
+	if vert.weighttype == 0:   return [w[0]]
 	elif vert.weighttype == 1: return w[0:1]
 	elif vert.weighttype == 2: return w[0:3]
+	raise Exception("....")
+def get_weightVal(vert):
+	w = vert.weight
+	if vert.weighttype == 0:   return [1]
+	elif vert.weighttype == 1: return [w[2], 1 - w[2]]
+	elif vert.weighttype == 2: return w[4:]
 	raise Exception("....")
 
 ######
@@ -692,7 +728,7 @@ class Vector3():
 		result.Y = float(float(transformation.M12) * float(x) + float(transformation.M22) * float(y) + float(transformation.M32) * float(z));
 		result.Z = float(float(transformation.M13) * float(x) + float(transformation.M23) * float(y) + float(transformation.M33) * float(z));
 		return result;
-		
+	
 	@staticmethod
 	def LerpS(x, y, s): return x + s * (y - x)
 	

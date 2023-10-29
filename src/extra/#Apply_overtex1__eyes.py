@@ -59,10 +59,10 @@ if hlOne == False and hlTwo == False: print("> No valid Highlights defined -- On
 #elif verbose: print(f"> Highlight State: HL1={hlOne} at {hlAlpha}, HL2={hlTwo*100}% at {hlAlpha2*100}%")
 #-------------
 
-image     = cv2.imread(pathMain, cv2.IMREAD_UNCHANGED)
+image     = imglib.TryLoadImage(pathMain, "MainTex")
 try:
 	if hlOne:
-		highlight = imglib.resize(cv2.imread(pathHL, cv2.IMREAD_UNCHANGED), image)
+		highlight = imglib.resize(imglib.TryLoadImage(pathHL, "Highlight 1"), image)
 		hlAlpha   = hlAlpha * hlPower
 		color     = imglib.getColorMask(opt, highlight, hlColor, "HL1")
 		highlight = imglib.blend_segmented(blend_modes.overlay, color, highlight, 1)
@@ -71,7 +71,7 @@ except:
 	hlOne = False
 try:
 	if hlTwo:
-		highlight2 = imglib.resize(cv2.imread(pathHL2, cv2.IMREAD_UNCHANGED), image)
+		highlight2 = imglib.resize(imglib.TryLoadImage(pathHL2, "Highlight 2"), image)
 		hlAlpha2   = hlAlpha2 * hlPower
 		color      = imglib.getColorMask(opt, highlight2, hlColor2, "HL2")
 		highlight2 = imglib.blend_segmented(blend_modes.overlay, color, highlight2, 1)
@@ -83,7 +83,6 @@ if hlOne: image = imglib.blend_segmented(blend_modes.normal, image, highlight, h
 if hlTwo: image = imglib.blend_segmented(blend_modes.normal, image, highlight2, hlAlpha2)
 
 DisplayWithAspectRatio(opt, 'Normal', image, 256)
-
 
 blackCorner = sum(image[0, 0, :])
 def check_if_black(_tmp, _hh, _ww, isVert):
@@ -244,5 +243,5 @@ DisplayWithAspectRatio(opt, 'Offset', image, 256)
 if show: k = cv2.waitKey(0) & 0xFF
 ### Write out final image
 outName = pathMain[:-4] + "_pyHL.png"
-cv2.imwrite(outName, image)
+imglib.TryWriteImage(outName, image)
 print("Wrote output image at\n" + outName)

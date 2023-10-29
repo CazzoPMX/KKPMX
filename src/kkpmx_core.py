@@ -103,10 +103,10 @@ def main(moreinfo=True):
 		core.MY_PRINT_FUNC(doc if doc is not None else (f"<< no help for '{choices[_idx][0]}' >>"))
 	if idx == 0: return [print_help(idx) for idx in range(1,len(choices))]
 	elif idx == 6:
-		if not DEBUG: exit()
-		from kkpmx_internal import main2
-		main2(); 		exit()
-	elif idx == 6: exit()
+		if not util.PRODUCTIONFLAG:
+			from kkpmx_internal import main2
+			main2();
+		sys.exit()
 	else: print_help(idx)
 	# prompt PMX name
 	core.MY_PRINT_FUNC(">> The script can be terminated at any point by pressing Ctrl+C")
@@ -342,6 +342,7 @@ Which is why this also standardizes color and toon,
 			pmx.bones[bone].has_visible = False
 		bind_bone(["左親指２", "左親指先"]); bind_bone(["右親指２", "右親指先"])
 		
+		## Provide convenient grab -- [UNTESTED] -- Is removed by Tool bc unused.... --> Parents are not set at all
 		if find_bone(pmx, "cf_pv_hand_L", False) != -1:
 			## Rename "center of hand" & parent to hand bone
 			left  = rename_bone("cf_pv_hand_L", "左指Grab", "FingerL Base")
@@ -641,10 +642,19 @@ There are some additional steps that cannot be done by a script; They will be me
 	secNum = {"s": -1}
 	def section(msg): secNum["s"] += 1; print(f"------\n> [{secNum['s']}] {msg}\n------")
 	## ask if doing new model per step or only one at the end
-	write_model = util.ask_yes_no("Store individual steps as own model (will copy into main file regardless)", "y")
-	moreinfo = util.ask_yes_no("Display more details in some cases","n")
-	has_univrm = util.is_univrm();
-	all_yes = util.ask_yes_no("Do all yes","y")
+	print("Press 'y'+Enter if you have no clue or don't care about options, else press 'n'")
+	speed_yes = util.ask_yes_no("Write your choice","n")
+	if speed_yes:
+		write_model = False
+		moreinfo    = False
+		has_univrm  = False
+		all_yes     = True
+		util.global_state[util.OPT_AUTO] = True
+	else:
+		write_model = util.ask_yes_no("Store individual steps as own model (will copy into main file regardless)", "y")
+		moreinfo    = util.ask_yes_no("Display more details in some cases","n")
+		has_univrm  = util.is_univrm();
+		all_yes     = util.ask_yes_no("Do most as yes","y")
 	util.global_state["all_yes"] = all_yes
 	
 	## rename input_filename_pmx to "_org"
@@ -702,14 +712,14 @@ There are some additional steps that cannot be done by a script; They will be me
 	# ++ Clears and fills the [Facials] Frame with own morphs, which is again repopulated by sorting[5]
 	if all_yes or util.ask_yes_no("Generate Material Morphs", "y"):
 		## -- run make_material_morphs
-		_opt = {"body": True if all_yes else None, "group": False if has_univrm else None}
+		_opt = {"body": True if all_yes else None, "group": False if has_univrm else None, "automatic": True }
 		path = make_material_morphs(pmx, input_filename_pmx, write_model, moreinfo=moreinfo, opt=_opt)
 		if write_model: util.copy_file(path, input_filename_pmx)
 	#-------------#
 	section("Emotion Morphs")
 	## Even if no morphs, we still want to sort them
 	if all_yes or util.ask_yes_no("Fix Morph-Panels" if has_univrm else "Add Emotion Morphs", "y"):
-		path = emotionalize(pmx, input_filename_pmx, write_model, moreinfo=moreinfo)
+		path = emotionalize(pmx, input_filename_pmx, write_model, moreinfo=moreinfo, _opt={ "automatic": True })
 		if write_model: util.copy_file(path, input_filename_pmx)
 	#-------------#
 	if not has_univrm: ## Imports are never cluttered
@@ -752,22 +762,28 @@ There are some additional steps that cannot be done by a script; They will be me
 	util.copy_file(path, input_filename_pmx)
 	#-------------#
 	if has_univrm: return ## Never makes sense in this mode
-	print("")
-	print("== All changes are stored, this is optional ==")
-	print("")
-	section("Fixing material bleed-through")
-	
-	print("Warning: Depending on the model size and the chosen bounding box, this can take some time.")
-	print("-- Be reminded that there is a morph for retracting the chest if it cuts through the clothing, so try that out first.")
-	if util.ask_yes_no("Execute bleed-through scanner(y) or doing it later(n)", "n"):
-		print(f"The following changes will be stored in a separate PMX file, so you can terminate at any point by pressing CTRL+C.")
-		_opt = {"all_yes": all_yes}
-		runOverhang(pmx, input_filename_pmx, moreinfo=moreinfo, _opt=_opt)
-	## Tell to perform [bounce] (with steps)
-	print("Do not forget to apply the additional fixes as explained above.")
+	if not speed_yes:
+		print("")
+		print("== All changes are stored, this is optional ==")
+		print("")
+		section("Fixing material bleed-through")
+		
+		print("Warning: Depending on the model size and the chosen bounding box, this can take some time.")
+		print("-- Be reminded that there is a morph for retracting the chest if it cuts through the clothing, so try that out first.")
+		if util.ask_yes_no("Execute bleed-through scanner(y) or doing it later(n)", "n"):
+			print(f"The following changes will be stored in a separate PMX file, so you can terminate at any point by pressing CTRL+C.")
+			_opt = {"all_yes": all_yes}
+			runOverhang(pmx, input_filename_pmx, moreinfo=moreinfo, _opt=_opt)
+		## Tell to perform [bounce] (with steps)
+		print("Do not forget to apply the additional fixes as explained above.")
+	else:
+		print("")
+		print("-----------")
+		print("-- Copy final result into 'model.pmx'....")
+		print("If you plan to use this with MMD, these are some additional steps to do with PMXEditor")
 	print("""
--- Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
 -- [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or apply all (except [Camera Bone])
+-- Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
 	""")
 	## -- Tell that bounce will break all morphs if RegionSettings use ',' as separator
 	## Tell to run semi-standard bones (PMX)
@@ -952,6 +968,9 @@ Mode Interactions:
 	itemsSlots = { "always": [], "mostly": [], "med": [], "full": [], "slotMatch": False }
 	f_body = opt.get("body", None)
 	f_slots = opt.get("group", None)
+	if util.is_auto():
+		f_body = True
+		f_slots = True
 	if f_body is None: f_body = util.ask_yes_no("Emit morphs for body-like materials", "n")
 	if f_slots is None: f_slots = util.ask_yes_no("Group by accessory slots", "y")		## Instead group by a_n_ slot, because some things make no sense in solo.
 	f_solo = not f_slots
@@ -982,8 +1001,6 @@ Mode Interactions:
 			#if disp is not None: disp.append(tmp)
 	
 	for idx, mat in enumerate(pmx.materials):
-		### Filter out what we do not want
-		if re.search(rgxSkip, mat.name_jp): continue
 		### Create searcher
 		l_readValue = lambda t: util.readFromComment(mat.comment, t)
 		l_hasMatValue = lambda t: util.readFromComment(mat.comment, t, exists=True)
@@ -997,6 +1014,17 @@ Mode Interactions:
 		isHidden   = mat.alpha == 0
 		isBodyAcc  = False
 		isTrueClo  = False
+		
+		if isDisabled or mat.faces_ct == 0:
+			mat.ambRGB  = [1, 0, 0] ## Mark it red so that it can be spotted fast for deletion
+			## Remove their texture references so they don't count as used
+			mat.tex_idx = -1
+			mat.sph_idx = -1
+			if mat.toon_mode == 0: mat.toon_idx = -1
+			mat.name_jp = "DELETE ME"
+			continue
+		### Filter out what we do not want
+		if re.search(rgxSkip, mat.name_jp): continue
 		
 		## Just for completeness sake, because they rarely have an own entry
 		if re.search(r"(cf_m_sirome_00)|(cf_m_tooth)", name_both, re.I):
@@ -1072,12 +1100,6 @@ Mode Interactions:
 		if f_solo: addMatMorph([name_jp, name_en], items, frame)
 		
 		## Sort into Body, Accessories, Cloth
-		if isDisabled:
-			mat.ambRGB  = [1, 0, 0] ## Mark it red so that it can be spotted fast for deletion
-			## Remove their texture references so they don't count as used
-			mat.tex_idx = -1
-			mat.sph_idx = -1
-			if mat.toon_mode == 0: mat.toon_idx = -1
 		if isBody or isDisabled: continue
 		appender = __append_itemmorph_sub if isHidden else __append_itemmorph_mul
 		if re.search(rgxAcc, name_both, re.I) and not isTrueClo: appender(itemsAcc, idx)
@@ -1278,7 +1300,8 @@ If all faces of a given material are considered invisible, it will be ignored an
 	prune_unused_vertices(pmx, moreinfo)
 	## Slots which usually contain only one-dimensional meshes
 	careful_mats = '|'.join(["ct_bra", "ct_shorts", "ct_socks", "ct_panst"])
-	fragile_name = '|'.join(["acs_m_necktielong01", "mf_m_primmaterial", "necklace"])
+	careful_mats += '|' + '|'.join(["ct_clothesBot"])
+	fragile_name = '|'.join(["acs_m_necktielong01", "mf_m_primmaterial", "necklace", "cf_m_bodytights"])
 	breakin_name = ["acs_m_necklace_heart"]
 	def get_uv(w,h,v): return [int(h * (v.uv[1] % 1)), int(w * (v.uv[0] % 1)), 3]
 	
@@ -1326,7 +1349,18 @@ If all faces of a given material are considered invisible, it will be ignored an
 		isCareful |= isPrim or isFragile
 		recCareful = False
 		## Everything is filtered now
-		img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+		img = None
+		if util.is_ascii(path): img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+		if img is None:
+			try:
+				from numpy import fromfile, uint8
+				img = cv2.imdecode(fromfile(path, dtype=uint8), cv2.IMREAD_UNCHANGED)
+			except Exception as err2:
+				print(err2)
+		if img is None:
+			print("Unable to read Texture, please fix")
+			continue
+		
 		if img.shape[2] < 4:
 			if isPrim: print(f"> Primitive mesh without alpha layer, ignored")
 			else: print("> Texture has no alpha, cannot determine invisibility")
@@ -1370,7 +1404,7 @@ If all faces of a given material are considered invisible, it will be ignored an
 			if lenFaces < 100: isFragile = True
 			ratio = abs((cnt / len(old_faces)))
 			if ratio < 0.1:
-				if not isCareful and not util.ask_yes_no("> Cutting away more than 90% of this material, proceed?"):
+				if not util.is_auto() and not isCareful and not util.ask_yes_no("> Cutting away more than 90% of this material, proceed?"):
 					continue
 				isCareful = recCareful = True
 			elif moreinfo: print(f"> Detected {(1 - ratio) * 100}% to cut away")
@@ -1378,10 +1412,22 @@ If all faces of a given material are considered invisible, it will be ignored an
 			### Special treatment for certain texture types
 			if isCareful:
 				new_faces = []
-				def avgCheck(vA, vB):
+				def avgCheck(vA, vB): return avgCheck1(vA, vB)
+				def avgCheck1(vA, vB):
 					coord = util.arrAvg(vA, vB, True)
+					coordA = util.arrAvg(vA, coord, True)
+					coordB = util.arrAvg(coord, vB, True)
 					#print(coord)
-					return img[coord[0], coord[1], coord[2]] != 0
+					_flag = img[coord[0], coord[1], coord[2]] != 0
+					_flag |= img[coordA[0], coordA[1], coordA[2]] != 0
+					_flag |= img[coordB[0], coordB[1], coordB[2]] != 0
+					return _flag
+				def avgCheck2(vA, vB):
+					coord = util.arrAvg(vA, vB, True)
+					coordA = util.arrAvg(vA, coord, True)
+					coordB = util.arrAvg(coord, vB, True)
+					return avgCheck1(coord, coordA) and avgCheck1(coordA, coordB) and avgCheck1(coordB, coord)
+					
 				if not recCareful:
 					if isFragile: print(f"> Delicate texture detected, doing detailed search on all {len(faces) * 3} edges.")
 					else: print(f"> Slot with careful texture, doing detailed search on all {len(faces) * 3} edges.")
@@ -1890,7 +1936,7 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 		if has_model:
 			with open(path, "a") as f: f.write(f"\n--[{util.now()}][{paths[1][0:-4]}]{msg}")
 		else:
-			with open(path, "a") as f: f.write(f"\n--[{util.now()}]{msg}")
+			with open(path, "a", encoding='utf-8') as f: f.write(f"\n--[{util.now()}]{msg}")
 	if has_model:
 		pmxlib.write_pmx(output_filename_pmx, pmx, moreinfo=True)
 		return output_filename_pmx
@@ -1898,7 +1944,7 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 
 
 if __name__ == '__main__':
-	print("Cazoo - 2023-06-03 - v.2.0.1")
+	print(f"Cazoo - 2023-06-03 - v.{util.VERSION_TAG}")
 	try:
 		if DEBUG or DEVDEBUG:
 			main()

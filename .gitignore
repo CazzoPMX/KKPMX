@@ -2,3 +2,5 @@ __pycache__
 build
 *.spec
 release
+/#github.7z
+/plugin

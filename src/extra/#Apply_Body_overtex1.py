@@ -56,8 +56,8 @@ show    = False       ## Do cv2.imshow
 opt = imglib.makeOptions(locals())
 
 ### Read in pics
-raw_image = cv2.imread(imgMain, cv2.IMREAD_UNCHANGED)
-mask      = cv2.imread(imgMask, cv2.IMREAD_UNCHANGED)
+raw_image = imglib.TryLoadImage(imgMain, "MainTex")
+mask      = imglib.TryLoadImage(imgMask, "Overtex")
 #DisplayWithAspectRatio(opt, 'Org', raw_image, 512+256)
 dim = raw_image.shape
 yPad = 1; xPad = 1
@@ -263,5 +263,5 @@ cv2.destroyAllWindows()
 
 ### Write out final image
 outName = imgMain[:-4] + "_pyOT1.png"
-cv2.imwrite(outName, image)
+imglib.TryWriteImage(outName, image)
 print("Wrote output image at\n" + outName)

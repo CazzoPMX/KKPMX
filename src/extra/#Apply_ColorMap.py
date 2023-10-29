@@ -145,7 +145,7 @@ flagIsFullPink   = False
 
 ### Read in pics
 raw_image = None
-mask = cv2.imread(imgMask)
+mask = imglib.TryLoadImage(imgMask, "ColorMask")
 if mask is None:
 	raise IOError("Mask-File '{}' does not exist.".format(imgMask))
 
@@ -154,7 +154,7 @@ if (noMainTex): ## Color may not always have a mainTex
 	raw_image = cv2.merge([image, image, image])
 	image = None
 else:
-	raw_image = cv2.imread(imgMain, cv2.IMREAD_UNCHANGED)
+	raw_image = imglib.TryLoadImage(imgMain, "MainTex")
 	if raw_image is None:
 		raise IOError(f"MainTex '{imgMain}' was provided but is invalid!")
 	DisplayWithAspectRatio(opt, 'Org', raw_image, 256)
@@ -201,16 +201,14 @@ maskB = extractChannel(mask, 0) ## Pink   == Color 3
 maskG = extractChannel(mask, 1) ## Yellow == Color 2
 maskR = extractChannel(mask, 2) ## Red    == Color 1
 
-
 #----- Had some assets doing this kind of weirdness, so lets support it
 sumB_Pin = channelSum[0]
 sumG_Yel = channelSum[1]
 sumR_Red = channelSum[2]
-if sumB_Pin == 0: ## About 97% on 1024x1024
+if sumB_Pin == 0:
 	if (min([sumG_Yel, sumR_Red]) / max([sumG_Yel, sumR_Red])) > 0.95:
 		flagIsFullYellow = True
 elif sumG_Yel == 0:
-	## About 97% on 1024x1024
 	if (min([sumB_Pin, sumR_Red]) / max([sumB_Pin, sumR_Red])) > 0.95:
 		flagIsFullPink = True
 
@@ -294,7 +292,7 @@ def applyColor(_mask, _colArr, tag, invert=False, bitmaskOnly=False): ## read: [
 	_mask[:,:,0] = ((_mask[:,:,0] / 255) * (colImg[:,:,0]))
 	_mask[:,:,1] = ((_mask[:,:,1] / 255) * (colImg[:,:,1]))
 	_mask[:,:,2] = ((_mask[:,:,2] / 255) * (colImg[:,:,2]))
-	#_mask = imglib.blend_segmented(blend_modes.addition, _mask / 255, colImg, alpha)
+	####_mask = imglib.blend_segmented(blend_modes.addition, _mask / 255, colImg, alpha)
 	if showCol: DisplayWithAspectRatio(opt, tag+'-NoMask+Color', _mask, 256)
 	#>> State: Colorize the mask \\[HSV]: Set H,S from color, then scale Color.V based on Mask.V 
 	
@@ -615,74 +613,6 @@ if not isAllSame: ### New tests
 	final = tmpB
 
 
-
-## Verified
-# If [isAllSame=True], Results look fine if all 3 are same non-BW color with MainTex
-if not isAllSame and False:
-	##[Verified: With dev_invertG,B = True,False, Hat(WHITE xor WHITE xor RED) works fine]
-	# --> R to G == G to R, all three use difference -- R+G and Blue keep BlackArea from Mask, combine to be fine, result a bit darker than before
-	##[Verified: With dev_invertG,B = True,False, Pouch(WHITE xor RED xor RED) works ng]
-	# --> R to G is Blue areas, G to R is Full White \\ Post-blue is just blue dot
-	##[Verified: With dev_invertG,B = True,False ++ always screen, Pouch(WHITE xor WHITE xor RED) works ng]
-	##[Verified: With dev_invertG,B = False,False, Hat(WHITE xor WHITE xor RED) is ... ?]
-	## Hair: Red:Red = Base, Yellow:Green = Root, Pink:Blue = Tips
-	x_Mode     = blend_modes.difference if is_dark else blend_modes.overlay
-	if dev_testOff or dev_invertG: x_Mode = blend_modes.difference ## << IMPURITY OF BOTH -- should have been "(NOT X) AND Y"
-#	x_ModeBlue = blend_modes.difference if is_dark else blend_modes.hard_light
-	if mode is not None: x_Mode = mode
-	#final = maskR
-	#if dev_testOff:
-	#	tmp = np.full(maskR.shape, 255, dtype="uint8")
-	#	final = handle_BW(tmp, maskR, "R")
-	#	if show: DisplayWithAspectRatio(opt, '[hair] Pre-R', final, 256)
-	### Convert to BW, convert into alpha, use that as bitmask for mixing
-	if not dev_testOff:
-		if not dev_invertG: maskG = imglib.apply_alpha_BW(opt, maskG).astype("uint8")
-	
-	#imglib.testOutModes_wrap(maskR, maskG)
-	## WHITE WHITE RED -- Screen works, Diff not as expected
-	
-	if colR_1Red == colG_2Yellow:
-		_tmpMode = x_Mode
-		overwriteMode = True
-		x_Mode = blend_modes.normal
-		_colArr = invertColorIfApplicable(colR_1Red, "R", dev_invertG)
-		tmp = imglib.getColorImg(opt, maskR, _colArr, "R+G", True)
-		DisplayWithAspectRatio(opt, '[hair] Pre-XXX', tmp, 256)
-		final = handle_BW(tmp, tmp, "G", "R")
-		x_Mode = _tmpMode
-		overwriteMode = False
-	else: final = handle_BW(maskR, maskG, "G", "R")
-	if show: DisplayWithAspectRatio(opt, '[hair] Pre-R to G', final, 256)
-	#final = handle_BW(maskG, maskR, "R")
-	#if show: DisplayWithAspectRatio(opt, '[hair] Pre-G to R', final, 256)
-	
-	##-- If Mask contains a Pink Layer, apply the hair tip gradient
-	if flagBlue:
-		isInBlue = True
-		if show: DisplayWithAspectRatio(opt, '[hair] Pre-Blue', final, 256)
-		if not dev_testOff:
-			if not dev_invertB: maskB = imglib.apply_alpha_BW(opt, maskG).astype("uint8") ##<< Given it was a constant, this is never needed anyway
-		#else: maskB = imglib.apply_alpha_BW(opt, maskB).astype("uint8")
-		if show: DisplayWithAspectRatio(opt, '[hair] Prepare Blue', maskB, 256)
-		#imglib.testOutModes_wrap(final, maskB, msg="Prepare Blue")
-		### 
-		final = handle_BW(final, maskB, "B", "GR" if "GR" in colBW else None)
-		## sus
-		if show: DisplayWithAspectRatio(opt, '[hair] Post-blue', final, 256)
-		##----- Only needed when there is no overlap between the colors... (?)
-		if dev_testOff and dev_invertB:
-			final = imglib.invert(final).astype("uint8")
-			if show: DisplayWithAspectRatio(opt, '[hair] Post-blue2', final, 256)
-		##-- Invert again ???
-		
-elif False:#elif noMainTex:### Works for: [acs_m_accZ4601: German Cross], only two colors
-	## Will look ugly on gradient colors
-	final = imglib.combineWithBitmask(opt, maskR, maskG, getBMbyTag("G"))
-	if flagBlue:
-		if show: DisplayWithAspectRatio(opt, '[NT] Pre-Blue', final, 256)
-		final = imglib.combineWithBitmask(opt, final, maskB, getBMbyTag("B"))
-
 ### If no MainTex exists, use the ColorMask directly
 if (noMainTex):
 	DisplayWithAspectRatio(opt, '[I] Final no Main', final.astype("uint8"), 256)
@@ -729,5 +659,5 @@ cv2.destroyAllWindows()
 outName = imgMain[:-4] + "_pyCol.png"
 if noMainTex: outName = imgMask[:-4] + "_pyCol.png"
 if altName is not None: outName = os.path.join(os.path.split(outName)[0], altName + "_pyCol.png")
-cv2.imwrite(outName, image)
+imglib.TryWriteImage(outName, image)
 print("Wrote output image at\n" + outName)

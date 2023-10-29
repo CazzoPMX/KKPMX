@@ -25,14 +25,18 @@ OPT__TAIL    = "tails"
 OPT__LOGS    = "extraLogs" ## Allows methods to add extra log_line
 def _verbose(): return local_state.get("moreinfo", False)
 
+##--- Collision Masks :: =/	(GRP_)|(merge_collision_groups)|(nocollide_mask)	/
 GRP_BODY    = 1   ## [E] Default Body >> Adding more here
+GRP_ARMS    = 2   ## [S] Arms -- Same as Body but ignore Skirt
 GRP_DEFHAIR = 3   ## [E] Default Hair
 GRP_HAIRACC = 3   ## [S] Adding Accessories attached to a_n_headfront
 GRP_SKIRT   = 4   ## [E] Skirt >> Extending here
 GRP_CHESACC = 5 
 GRP_CHEST_A = 8   ## [E] Chest Mass
+GRP_WING    = 12  ## Own
 GRP_TAIL    = 13  ## Own
 GRP_CHEST_B = 14  ## [E] Chest Rigids
+GRP_WAIST   = 15  ## [S] Other Waist Accessories: Conflict free with Skirt & Tail
 GRP_BODYACC = 16  ## [S] Adding all other Accessories
 
 
@@ -113,7 +117,7 @@ Rigging Helpers for KK.
 		handle_special_materials(pmx)
 		
 		flag = len(local_state[RBD__CLEANUP].keys()) != 0 ## Only ask if there is anything to do (full scan only in solo mode)
-		if flag and (all_yes or util.ask_yes_no("Delete unbound physics", 'y')):
+		if flag and (util.is_auto() or all_yes or util.ask_yes_no("Delete unbound physics", 'y')):
 			_out = {}
 			cleanup_free_bodies(pmx, _out)
 			if "log_line" in _out: arr_log += _out["log_line"]
@@ -204,7 +208,7 @@ def adjust_body_physics(pmx):
 
 	if find_bone(pmx, "左胸操作", False):
 		## -- Make Chest ignore Chest Acc & Hairs
-		chest_mask = merge_collision_groups([GRP_BODY, 2, GRP_HAIRACC, GRP_SKIRT, GRP_CHEST_B, GRP_BODYACC]) #24560 ## 1 2 3 4 14 16
+		chest_mask = merge_collision_groups([GRP_BODY, GRP_ARMS, GRP_HAIRACC, GRP_SKIRT, GRP_CHEST_B, GRP_BODYACC]) #24560 ## 1 2 3 4 14 16
 		def tmp(name):
 			idx = find_rigid(pmx, name, False)
 			if idx != -1: pmx.rigidbodies[idx].nocollide_mask = chest_mask
@@ -214,6 +218,7 @@ def adjust_body_physics(pmx):
 		tmp("左胸操作接続");  tmp("右胸操作接続")
 		tmp("左胸操作衝突");  tmp("右胸操作衝突")
 		## Fix Joints (WAY LESS BOUNCY)
+		# 左胸操作調整用, 右胸操作調整用 --> 200 200 200 100 100 100 -- Maybe fine adjust the movements to side and slight bounce
 		def fixSpring(name):
 			idx = util.find_joint(pmx, name, False)
 			if idx != -1:
@@ -922,6 +927,18 @@ def transform_skirt(pmx):
 
 # --[Fix materials that exist multiple times]-- #
 
+text_about_rigid_names = """
+Names for RigidBodies are build like this:
+
+Prefix is the root slot the Rigid belongs to (e.g. ca_slot06)
+If the asset used separate roots for Left/Right, "-0" / "-1" is added
+Next, a running number ("_0", "_1", ...) is added for each separate chain detected within the asset
+Last, we append ":" and the name of the attached bone to it
+
+Joints are build similarly, but simply copy the name of the secondary rigid of the junction
+
+"""
+
 ## [Step 04]
 def rig_hair_joints(pmx): #--- Find merged / split hair chains --> apply Rigging to them
 	printStage("Rig Hair")
@@ -1061,6 +1078,7 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit): ## TODO: Make the tail end 
 		#-- CM3D2 Handling -- because it contains [joints.xxx]
 		root_arr1 = finder("Bone_Face")
 		printIt = False#prefix == "ca_slot00"
+		if util.PRODUCTIONFLAG: printIt = False
 		if printIt: print("--------------- " + prefix)
 		def doPrint(x, name=""): 
 			if printIt: print(name); print(x)
@@ -1069,6 +1087,8 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit): ## TODO: Make the tail end 
 			if (printIt):
 				for _bb in root_arr0:
 					print(f"{_bb}: {pmx.bones[_bb].name_jp}")
+			doPrint(root_arr0)
+			doPrint(root_arr1)
 			root_arr2 = get_direct_chains(root_arr0, root_arr1[0])
 			child_arr = []
 			for elem in root_arr1:
@@ -1397,6 +1417,8 @@ def handle_special_materials(pmx):
 		joints = util.find_all_in_sublist(root, pmx.joints, returnIdx=False)
 		if len(joints) < 3: continue
 		
+		is_raccoon = tail[1] in ["arai_tail"]
+		
 		### base
 		body = rigids[0]
 		body.group = tail_col[0]
@@ -1415,21 +1437,17 @@ def handle_special_materials(pmx):
 		joint.rotmax[0] = 40
 		joint.rotmax[2] = 15
 		joint.rotmin[2] = -15
-		### Segment 2
-		body = rigids[3];joint = joints[1]
-		body.group = tail_col[0]
-		body.nocollide_mask = col__acc_tail
-		joint.rotmax[0] = 50
-		joint.rotmax[2] = 25
-		joint.rotmin[2] = -25
+		### Segment 2+
+		for segment in zip(rigids[3:], joints[1:]):
+			body = segment[0];joint = segment[1]
+			body.group = tail_col[0]
+			body.nocollide_mask = col__acc_tail
+			joint.rotmax[0] = 50
+			joint.rotmax[2] = 25
+			joint.rotmin[2] = -25
 		### End
-		body = rigids[4];joint = joints[2]
-		body.group = tail_col[0]
-		body.nocollide_mask = col__acc_tail
 		lastIdx = find_rigid(pmx, body.name_jp)
-		joint.rotmax[0] = 50
-		joint.rotmax[2] = 25
-		joint.rotmin[2] = -25
+		
 		########## Add extra bone to the end for fancyness
 		# Find lowest vertice
 		mat_idx = find_mat(pmx, tail[1])
@@ -1468,12 +1486,16 @@ def handle_special_materials(pmx):
 		new_body.phys_mode = 1
 		body = pmx.rigidbodies[lastIdx] = copy.deepcopy(new_body)
 		### Set all of nocollide_mask again
-		rigids[2].nocollide_mask = col__acc_tail
-		rigids[3].nocollide_mask = col__acc_tail
-		rigids[4].nocollide_mask = col__acc_tail
+		for rigid in rigids[2:]: rigid.nocollide_mask = col__acc_tail
 		body.nocollide_mask      = col__acc_tail
 		tail_body.nocollide_mask = col__acc_tail
 		
+		## Move start to center of new bone
+		if is_raccoon:
+			tail_bone = pmx.bones[bone_idx]
+			tail_body.pos  = tail_bone.pos
+			tail_joint.pos = tail_bone.pos
+			tail_body.shape = 0
 		## Rotate new tails like rigids[4]
 		tail_body.rot  = body.rot
 		tail_joint.rot = body.rot
@@ -1655,12 +1677,14 @@ def cleanup_free_things(pmx, _opt = {}):
 	
 	rgx = re.compile(r'^((cf_J_hair)|(ca_slot))')# or body.name_jp.startswith("cf_j_j_sk"):
 	
+	flag = _opt.get("flag", False)
+	
 	dupeBodies = {}
 	
 	rigid_dellist = []
 	for d,body in enumerate(pmx.rigidbodies):
 		#if body.name_jp.startswith("cf_hit"): continue		if body.group == 1: continue
-		if rgx.match(body.name_jp):
+		if rgx.match(body.name_jp) or flag:
 			if body.bone_idx in unusedBones:
 				#print(f"Adding [{d}]{body.name_jp} with Idx {body.bone_idx}")
 				rigid_dellist.append(d)
@@ -1710,49 +1734,6 @@ def cleanup_free_things(pmx, _opt = {}):
 		if not flag: print(msg)
 		if _opt.get("fullClean", False) or util.ask_yes_no("Clean them up (cleans the factory Rigids, keeps the new ones)", "n"):
 			__internal_cleanup(rigid_dellist)
-	
-
-#def simplify_acc_slots(pmx):
-#	## Get all such bones
-#	
-#	def is_bone_used(idx):
-#		## Does any vertex have bone weights on this
-#		## Does the bone have any Rigging attached
-#		## Is it called [N_move] (but not N_move2) -- used for recognizing them // Throw away anyway on BlenderMode or Non-Idepotent Mode
-#		pass
-#	
-#	
-#	for slot in slots: ## ca_slot
-#		for bone in slot:
-#			# if has Link: Add (X has Link to Y)
-#			# if has no Parent: ERROR
-#			# Add (X has Parent Y)
-#			# Add (Y has Parent X)
-#		
-feat__CleanUpForBlender = """
-Rename the respective Bones into English Equivalent
-Remove Twist(Arm, Wrist), Cancel (Waist), Dummy (kneeF, kneeB)
-
-Run [Cleanup unused Rigids / Joints] in Blender-Mode
-> ==== Remove all Acc-CLusters with only 1 or 2 Bodies
->	== Remove all Chest Physics (?)
-
-Run Simplify on all Slots with "Strict" Cleanup (e.g. all except used & ca_slotXX are removed)
->	Example: a primmaterial uses 4 bones each (ca_slot, N_move, O_nosetama, O_nosetama*3)
-Remove all kf_** Bones unless asked to keep
-Remove any reference to Nether bones unless asked
->	Probably also remove the [Breast Control] ones unless a reason to keep is found
-Reduce Root Bones
-> Replace / Combine [Motherbone, Center, Groove, Armature, "Model name"] back into Armature
->	If leg IK etc exists, keep as Sibling to Armature
-
-Find a way to properly sync the Weights of [VRM] vs. [KK Clothes] on Spine and Chest
-
-"""
-####---- 
-
-	
-	
 
 ########
 ## ca_slot (a_n_headside)
@@ -1864,15 +1845,23 @@ def patch_bone_array(pmx, head_body, arr, name, grp, overrideLast=True):
 		## Make first body static
 		body = pmx.rigidbodies[num_bodies]
 		body.phys_move_damp = 0.999
-		body.phys_rot_damp  = 0.99
+		body.phys_rot_damp  = 0.9999
 		## 
 		if new_bodies > 1:
 			### MMD needs two fixated rigids or one central anchored by multiple
 			pmx.rigidbodies[num_bodies+1].phys_mode = 0
+			##Copy Rot of 2nd last to last
+			last = pmx.rigidbodies[-1]
 			_rot = pmx.rigidbodies[-2].rot
 			pmx.joints[-1].rot = _rot
-			pmx.rigidbodies[-1].rot = _rot
-			pmx.rigidbodies[-1].size[0] = 0.1
+			last.rot     = _rot
+			last.pos     = pmx.bones[last.bone_idx].pos
+			last.size[0] = 0.1
+			#- Make it loose velocity faster
+			last.phys_mass = 2
+			last.phys_move_damp = 0.999
+			last.phys_rot_damp  = 0.9999
+		adjust_collision_groups(pmx.rigidbodies[num_bodies:], grp)
 ##########
 	pass# To keep trailing comments inside
 
@@ -2218,6 +2207,10 @@ def AddBodyChainWithJoints(pmx, boneIndex: List[int], mode: int, radius: float, 
 			##--- Regen from PMXExport does [-10 to 10, -5 to 5, -10 to 10] for Ponytail
 			pmxJoint.rotmax = num3.ToList()   #[  0.0,   0.0,   0.0] #Vector3(num3, num3, num3).ToList();
 			pmxJoint.rotmin = (-num3).ToList()#[  0.0,   0.0,   0.0] #-pmxJoint.rotmax;
+			##--- idk actually know what these do, but it makes it smoother
+			pmxJoint.movespring = [500, 100, 20]
+			pmxJoint.rotspring  = [250, 50, 10]
+			
 			dictionary2[bone_idx] = len(pmx.joints) - 1
 
 	### @todo: [?] add hidden bone with [0, 0, -1] as pointer
@@ -2399,7 +2392,7 @@ def get_collision_group(group): ## returns [group, mask]
 def merge_collision_groups(groups): ## returns mask
 	mask = 65535
 	groups.sort(reverse=True)
-	for group in groups:
+	for group in set(groups): # Ensure unique
 		if group in range(1,17):
 			if   group == 16: mask = 2**15 - 1
 			else:
@@ -2409,7 +2402,11 @@ def merge_collision_groups(groups): ## returns mask
 			
 			#group = group - 1 ## Because actually [0 - 15]
 	return mask
-
+## TODO: Verify uses and merge these three properly later
+def adjust_collision_groups(bodies, grp): ## For a given group, adjust colliders to ignore conflict clusters
+	if grp != GRP_WAIST: return
+	mask = merge_collision_groups([GRP_TAIL, GRP_WAIST, GRP_SKIRT])
+	for body in bodies: body.nocollide_mask = mask
 
 def perform_on_all_weights(pmx, cb):
 	for vert in pmx.verts:
@@ -2492,9 +2489,11 @@ def get_children_map(pmx, bones, returnIdx=False, add_first=True, find_all=True)
 	@bones:     Can be int or List[int]. Defaults to range(pmx.bones) if None
 	@returnIdx: <dict.keys> will consist of the boneIndices instead
 	@add_first: Adds @bone.index as first entry in each <dict.value>
+	@find_all:  <dict.value> will collect from all existing bones 		<UNTESTED>
 	"""
 	if bones == None: bones = range(len(pmx.bones))
 	elif type(bones) is not list: bones = [bones]
+	par_map = get_parent_map(pmx, range(len(pmx.bones)) if find_all else bones) # Reusing Range causes an issue I think...
 	bone_map = {}    ## dict of { "name": [bone, list of children] }
 	for bone in bones:
 		bone_key = pmx.bones[bone].name_jp
@@ -2514,19 +2513,6 @@ def check_no_dupes(pmx, func, name, outParam={}):
 	outParam["result"] = idx
 	return idx != -1
 
-#### Calculate nocollide_mask
-# Given a group X in [1 to 16]
-#>	remove X only           : 2^(X-1)         # == Keep all except X
-#>	remove all lower  groups: 2^(X-1) - 1
-#>	remove all higher groups: sum([2^(i-1) for i in range(16, X, -1)])
-#>	remove all but X        : sum([2^(i-1) for i in range(16, X, -1)], 2^(X-1) - 1) == higher(X) + lower(X)
-#>	>	## For 14: Sum 2^14 + 2^15 + 2^13 - 1
-#>	int(math.pow(2, 15))
-
-
-## /(\w+): (List\[\w+\]|\w+), *:: (.+)/  -- /\1: \2 = \3,/
-######
-##-- Add a new object with default values unless specified
 def add_bone_default(pmx, name): ## Find and return this bone, or add it if missing.
 	idx = find_bone(pmx, name, False)
 	bone_idx = idx if idx > -1 else add_bone(pmx, name)

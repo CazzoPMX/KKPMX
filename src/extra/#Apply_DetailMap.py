@@ -59,9 +59,9 @@ show    = False       ## Do cv2.imshow
 opt = imglib.makeOptions(locals())
 
 ### Read in pics
-raw_image = cv2.imread(imgMain, cv2.IMREAD_UNCHANGED)
-if has_detail: mask = cv2.imread(imgMask)
-if has_alpha: _mask = cv2.imread(imgAlpha)
+raw_image = imglib.TryLoadImage(imgMain, "MainTex")
+if has_detail: mask = imglib.TryLoadImage(imgMask, "DetailMask")
+if has_alpha: _mask = imglib.TryLoadImage(imgAlpha, "AlphaMask")
 
 if raw_image is None:
 	raise IOError(f"'{imgMain}' does not exist. Skipping Detail/Alpha-Mask.")
@@ -114,7 +114,7 @@ if has_alpha and not has_detail: ## << Only apply Alpha-Mask
 
 	### Write out final image
 	outName = imgMain[:-4] + "_pyDet.png"
-	cv2.imwrite(outName, image)
+	imglib.TryWriteImage(outName, image)
 	print("Wrote output image at\n" + outName)
 	raise IOError("Applied only the Alpha-Mask on a DetailMask asset. This error can be ignored")
 	pass#--------------------
@@ -213,5 +213,5 @@ if show: k = cv2.waitKey(0) & 0xFF
 
 ### Write out final image
 outName = imgMain[:-4] + "_pyDet.png"
-cv2.imwrite(outName, image)
+imglib.TryWriteImage(outName, image)
 print("Wrote output image at\n" + outName)
