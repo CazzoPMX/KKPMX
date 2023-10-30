@@ -205,18 +205,19 @@ Rigging Helpers for KK.
 def adjust_body_physics(pmx):
 	printStage("Adjust Body Physics")
 	mask = 65535 # == [1] is 2^16-1
-
+	
 	if find_bone(pmx, "左胸操作", False):
 		## -- Make Chest ignore Chest Acc & Hairs
-		chest_mask = merge_collision_groups([GRP_BODY, GRP_ARMS, GRP_HAIRACC, GRP_SKIRT, GRP_CHEST_B, GRP_BODYACC]) #24560 ## 1 2 3 4 14 16
+		bodies = { "x": [] }
 		def tmp(name):
 			idx = find_rigid(pmx, name, False)
-			if idx != -1: pmx.rigidbodies[idx].nocollide_mask = chest_mask
+			if idx != -1: bodies["x"].append(pmx.rigidbodies[idx])
 		tmp("左胸操作");     tmp("右胸操作")
 		tmp("左AH1");       tmp("右AH1")
 		tmp("左AH2");       tmp("右AH2")
 		tmp("左胸操作接続");  tmp("右胸操作接続")
 		tmp("左胸操作衝突");  tmp("右胸操作衝突")
+		adjust_collision_groups(GRP_CHEST_B, bodies["x"])
 		## Fix Joints (WAY LESS BOUNCY)
 		# 左胸操作調整用, 右胸操作調整用 --> 200 200 200 100 100 100 -- Maybe fine adjust the movements to side and slight bounce
 		def fixSpring(name):
@@ -231,7 +232,7 @@ def adjust_body_physics(pmx):
 				j.rotmax = [ 20,  10, 0]
 				j.movespring = [5000, 1000, 200]
 				j.rotspring  = [2500, 500, 100]
-		fixSpring("左胸操作調整用");  tmp("右胸操作調整用")
+		fixSpring("左胸操作調整用");  fixSpring("右胸操作調整用")
 
 	## Butt collision
 	decider = find_bone(pmx, "cf_j_waist02", False) != -1
@@ -1389,7 +1390,7 @@ def handle_special_materials(pmx):
 		return _map
 	slot_map = collect_by_slot()
 	### Assign Chest Group to all Chest accs (verified to not work yet, try again)
-	col__chestAll = merge_collision_groups([GRP_CHESACC, GRP_CHEST_A, GRP_CHEST_B])
+	col__chestAll = adjust_collision_groups(GRP_CHESACC)
 	for slot in [x for x in ["a_n_bust_f", "a_n_bust", "a_n_nip_L", "a_n_nip_R"] if x in slot_map]:
 		for slotMat in [f"ca_slot{x}" for x in slot_map[slot]]:
 			for rigid in util.find_all_in_sublist(slotMat, pmx.rigidbodies, returnIdx=False):
@@ -1670,7 +1671,7 @@ def fix_slot_collisions(pmx):
 	pass #
 
 ## [Mode 05]
-def cleanup_free_things(pmx, _opt = {}):
+def cleanup_free_things(pmx, _opt = { }):
 	from _prune_unused_bones import prune_unused_bones, identify_unused_bones_base
 	from _prune_unused_vertices import newval_from_range_map, delme_list_to_rangemap
 	unusedBones = identify_unused_bones_base(pmx, False, True) + [-1, None]
@@ -1861,7 +1862,7 @@ def patch_bone_array(pmx, head_body, arr, name, grp, overrideLast=True):
 			last.phys_mass = 2
 			last.phys_move_damp = 0.999
 			last.phys_rot_damp  = 0.9999
-		adjust_collision_groups(pmx.rigidbodies[num_bodies:], grp)
+		adjust_collision_groups(grp, pmx.rigidbodies[num_bodies:])
 ##########
 	pass# To keep trailing comments inside
 
@@ -2383,7 +2384,6 @@ def get_collision_group(group): ## returns [group, mask]
 			#mask = 0 << group - 1 ## All bigger than 'group'
 			#mask = 1 << group - 1 ## All except 'group'
 			mask = 65535 - (1 << group - 1) ## group
-		
 		group = group - 1 ## Because actually [0 - 15]
 	else:
 		group = 0
@@ -2393,20 +2393,31 @@ def merge_collision_groups(groups): ## returns mask
 	mask = 65535
 	groups.sort(reverse=True)
 	for group in set(groups): # Ensure unique
-		if group in range(1,17):
-			if   group == 16: mask = 2**15 - 1
-			else:
-				#mask = 0 << group - 1 ## All bigger than 'group'
-				#mask = 1 << group - 1 ## All except 'group'
-				mask = mask - (1 << group - 1) ## group
-			
-			#group = group - 1 ## Because actually [0 - 15]
+		if group in range(1,17): mask = mask - (1 << group - 1)
 	return mask
 ## TODO: Verify uses and merge these three properly later
-def adjust_collision_groups(bodies, grp): ## For a given group, adjust colliders to ignore conflict clusters
-	if grp != GRP_WAIST: return
-	mask = merge_collision_groups([GRP_TAIL, GRP_WAIST, GRP_SKIRT])
+def adjust_collision_groups(grp, bodies=[]): ## For a given group, adjust colliders to ignore conflict clusters
+	mask = None
+	# GRP_BODY    :1: 
+	if grp == GRP_BODY:                   ## [1] -- Solid for everything
+		mask = 65535
+	if grp == GRP_CHESACC:                ## [5] -- Chest accessories should ignore Chest Physics
+		mask = merge_collision_groups([GRP_CHESACC, GRP_CHEST_A, GRP_CHEST_B]) ## 5,8+14
+	if grp in [GRP_CHEST_A, GRP_CHEST_B]: ## [8 or 14] -- Chest should ignore Body, all Accs (Hair, Body, Chest), SecondaryChest
+		mask = merge_collision_groups([GRP_BODY, GRP_ARMS, GRP_CHEST_B, GRP_HAIRACC, GRP_CHESACC, GRP_BODYACC]) #24560 ## (1 2 14) + (3 5 16)
+	if grp in [GRP_WAIST, GRP_TAIL]:      ## [13, 15]: Prevent conflict between Tail / Waist with Skirt
+		mask = merge_collision_groups([GRP_TAIL, GRP_WAIST, GRP_SKIRT]) ## 13 + 15 << 4
+	if grp in [GRP_SKIRT]:                ## [4]: Prevent conflict between Skirt and Tail
+		mask = merge_collision_groups([GRP_TAIL, GRP_SKIRT]) ## 4 & 13
+	
+	# GRP_DEFHAIR :3: Currently only itself
+	# GRP_SKIRT   :4: Currently only itself
+	# GRP_HAIRACC --> Hair, Body ?
+	# GRP_BODYACC :16: Currently only itself --> Hair, Body ?
+	
+	if mask is None: mask = merge_collision_groups([grp]) ### Only ignore self
 	for body in bodies: body.nocollide_mask = mask
+	return mask
 
 def perform_on_all_weights(pmx, cb):
 	for vert in pmx.verts:

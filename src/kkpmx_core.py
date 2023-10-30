@@ -779,7 +779,8 @@ There are some additional steps that cannot be done by a script; They will be me
 	else:
 		print("")
 		print("-----------")
-		print("-- Copy final result into 'model.pmx'....")
+		print("-- Copy final result into 'model.pmx'....") 
+		print("-- In case the script cut away too much in certain places, [model_mat_backup] contains a backup before cleaning up")
 		print("If you plan to use this with MMD, these are some additional steps to do with PMXEditor")
 	print("""
 -- [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or apply all (except [Camera Bone])

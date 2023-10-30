@@ -21,6 +21,12 @@ This mod should work with most versions of KK, Party, or Sunshine.
 Comparing 'Bare minimum', '5min of manual edits', 'running the script' (old pic from 2022-06, needs update)
 
 
+#DISCLAIMER: The release section consists of two parts
+
+ - The KK Plugin which exports all necessary data
+    - It will NOT export a complete model -- that would cause the game to freeze for even longer
+ - The kkpmx_core.exe, which does the majority of the post-processing -- See below for some instructions
+
 ## Legal (from nuthouse01)
 
 
@@ -45,8 +51,7 @@ There is no need to download anything extra (apart from the usual ModdingAPI nee
 If you have any questions, feel free to hit me up on Discord -- I set up a Server so that Message-Requests (@thekaizo) are less awkward: https://discord.gg/HUexfg6f9E
 
 
-I'd be open to convert cards for you for $5+ depending on complexity, add 10 for converting it into a useable format for VRChat or VRM / VSeeFace.<br/>
-In the unlikely case that people actually make use of that offer, I reserve the right to increase if too many ask.
+I'd be open to convert cards for you for $5+ depending on complexity, see the server for more details.
 
 
 ## Misc

@@ -28,7 +28,7 @@ OPT_WORKDIR = "WORKINGDIR"
 OPT_AUTO = "automatic"
 ALL_YES = "all_yes"
 
-VERSION_TAG = "2.2.0"
+VERSION_TAG = "2.2.1"
 
 def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
