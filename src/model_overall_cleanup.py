@@ -193,7 +193,7 @@ def main(moreinfo=False):
 	pmx = pmxlib.read_pmx(input_filename_pmx, moreinfo=moreinfo)
 	return __main(pmx, input_filename_pmx, moreinfo)
 
-def __main(pmx, input_filename_pmx, moreinfo=False):
+def __main(pmx, input_filename_pmx, moreinfo=False, make_extra_file=True):
 	#### how should these operations be ordered?
 	# faces before verts, because faces define what verts are used
 	# verts before weights, so i operate on fewer vertices & run faster
@@ -301,6 +301,7 @@ def __main(pmx, input_filename_pmx, moreinfo=False):
 	
 	core.MY_PRINT_FUNC("")
 	core.MY_PRINT_FUNC("++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
+	if not make_extra_file: return None
 	if not is_changed:
 		core.MY_PRINT_FUNC("++++             No writeback required              ++++")
 		core.MY_PRINT_FUNC("Done!")

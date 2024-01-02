@@ -512,3 +512,25 @@ Most modes will always create a new file and append a suffix (see [Output]).
 ### (17) Bone weights
 
 >  << no help for 'Bone weights' >>
+
+### (18) Re-run Simplify
+
+>  Attempts to simplify the bone structure
+>   - Simplify Accessories by removing empty bones
+>   - Reduce Body parts by merging bones serving no purpose outside the game
+>  
+>  `[All in One-Mode]`:
+>   - Selecting "Ignore all options" does everything except removing NSFW bones
+>   - Selecting "Use default options" will only ask if NSFW should be kept
+>  
+>  User Choices:
+>   - "SFW-Mode": Merges Chest into one Bone, as well as Groin and Butt Bones into Waist
+>   - "Everything": Skip the below options with "Yes"
+>   - "Simplify waist": Simplify Butt
+>   - "Merge Toe bones": If individual toe bones exist, merge into default toe bone.
+>   - "Simplify non-head Slots": Simplify non-head Accessories (Head is always done)
+>  
+>  `[Output]`:
+>   - PMX file '`[modelname]`_better2.pmx' when called through "All-in-one"
+>   - PMX file '`[modelname]`_reduced.pmx' when called on its own
+>    - If unhappy with the result, call this again using `[modelname]`_better.pmx

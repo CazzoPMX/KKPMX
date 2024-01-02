@@ -19,7 +19,7 @@ import morph_scale
 DEBUG=False
 
 ## Global Debug Flag for debugging Script-Files only
-FILEDEBUG=False	## PLEASE REMOVE THIS FROM RELEASE
+FILEDEBUG=False
 PRODUCTIONFLAG=True
 ## 
 global_state = { }
@@ -27,8 +27,10 @@ HAS_UNITY = "UNITY"
 OPT_WORKDIR = "WORKINGDIR"
 OPT_AUTO = "automatic"
 ALL_YES = "all_yes"
+OPT_INFO = "moreinfo"
 
-VERSION_TAG = "2.2.1"
+VERSION_DATE = "2024-01-02"
+VERSION_TAG = "2.3.0"
 
 def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
@@ -243,6 +245,9 @@ def copy_file(src, dst): # https://stackoverflow.com/questions/123198
 			print(f"[!!] <FileNotFound> Failed to copy '{src}' to '{dst}'")
 		else: print(f"[!!] Failed to copy '{src}' to '{dst}'")
 
+#def makeDebugPrinter(condition):
+#	if DEBUG or condition: return lambda x: print(x)
+#	return lambda x: pass
 def throwIfDebug(isDebug, text):
 	if isDebug: raise Exception(text)
 	print(f"[W]: {text}")
@@ -261,8 +266,8 @@ def set_globals(workingdir):
 	if (os.path.exists(path)): global_state[HAS_UNITY] = True
 def is_allYes(): return global_state.get(ALL_YES, False)
 def is_auto(): return global_state.get(OPT_AUTO, False)
-
-# Maybe a printDEBUG(txt): if DEBUG: print(txt)
+def is_prod(): return PRODUCTIONFLAG
+def is_verbose(): return global_state.get(OPT_INFO, False)
 
 ################
 ### Numerics ###
@@ -434,6 +439,8 @@ find_bone.__doc__ = find_mat.__doc__ = find_disp.__doc__ = find_morph.__doc__ = 
 def find_all_in_sublist(name, arr, returnIdx=True):
 	result = []
 	idx = -1
+	if not PRODUCTIONFLAG:
+		if name in [None, ""]: raise Exception("Empty Name!")
 	for item in arr:
 		idx += 1
 		_name = f"{item.name_jp};{item.name_en}"
@@ -441,10 +448,10 @@ def find_all_in_sublist(name, arr, returnIdx=True):
 		result.append(idx if returnIdx else item)
 	return result
 
-def find_bones(pmx, arr, returnIdx=True):
+def find_bones(pmx, arr, flag=True, returnIdx=True):
 	result = []
 	for name in arr:
-		idx = find_bone(pmx, name, True)
+		idx = find_bone(pmx, name, flag)
 		if returnIdx: result.append(idx)
 		elif idx != -1: result.append(pmx.bones[idx])
 		else: result.append(None)
@@ -638,6 +645,29 @@ def get_weightVal(vert):
 	elif vert.weighttype == 1: return [w[2], 1 - w[2]]
 	elif vert.weighttype == 2: return w[4:]
 	raise Exception("....")
+
+
+def get_vertex_box(pmx, mat_idx, returnIdx=False):
+	""" Return the bounding box of the given material """
+	from kkpmx_core import from_material_get_faces, from_faces_get_vertices
+	faces = from_material_get_faces(pmx, mat_idx, False, moreinfo=False)
+	verts = from_faces_get_vertices(pmx, faces, False, moreinfo=False)
+	verts.sort(key=lambda e: e.pos[0]); lefBonePos = verts[0].pos; rigBonePos = verts[-1].pos
+	#print(f"Left: {lefBonePos}, Right: {rigBonePos}")
+	verts.sort(key=lambda e: e.pos[1]); botBonePos = verts[0].pos; topBonePos = verts[-1].pos
+	#print(f"Top: {topBonePos}, Bottom: {botBonePos}")
+	verts.sort(key=lambda e: e.pos[2]); froBonePos = verts[0].pos; bacBonePos = verts[-1].pos #NegZ is front
+	#print(f"Front: {froBonePos}, Back: {bacBonePos}")
+	if returnIdx: verts = from_faces_get_vertices(pmx, faces, True, moreinfo=False)
+	else: verts.sort(key=lambda e: -e.pos[1]);
+	return (verts, {
+			"Left": lefBonePos, "Right": rigBonePos, 
+			"Top": topBonePos, "Bottom": botBonePos, "Up": topBonePos, "Down": botBonePos,
+			"Front": froBonePos, "Back": bacBonePos
+		})
+	######
+	pass #
+
 
 ######
 ## Constants
@@ -1086,9 +1116,15 @@ def __test__types_py(): #>> Special build-ins (types.py)
 		tb = None; del tb
 	#-#####
 
-def __typePrinterLoc(arg, full=False):
-	""" Shorthand for printing all elements of locals() or globals() """
-	for elem in arg: __typePrinter(arg[elem], name=elem, full=full)
+def __typePrinterLoc(arg, superset=None, full=False, Idx=None):
+	""" Shorthand for printing all elements of locals() or globals().
+		If superset is given, then only the difference is printed. Store it with _superLoc = [item for item in locals().keys()] """
+	valid = arg.keys()
+	if not superset is None:
+		valid = set(arg.keys()).difference(set(superset)) ## Return all entries of [arg] that do not exist in [superset]
+	print("------")
+	for elem in valid: __typePrinter(arg[elem], name=elem, full=full, flat=True, Idx=Idx)
+	print("------")
 
 def __typePrinterDir(arg, full=False):
 	for elem in dir(arg): print(elem); break
@@ -1105,7 +1141,7 @@ def __typePrinter_Dict(arg, shallow=False):
 	print(f":: {type(arg)} of length {len(arg)}")
 	for (k,v) in arg.items(): __typePrinter(v, enum=k, shallow=shallow)
 
-def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False,full=False):
+def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False,full=False,flat=False,Idx=None):
 	"""
 	:param arg     [any]          : The object to print
 	:param prefix  [str]  = ""    : The prefix to use for each printed line
@@ -1113,15 +1149,26 @@ def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False,fu
 	:param test    [str]  = None  : if given, set prefix = ":: Test {test:10} :: " & imply shallow
 	:param enum    [str]  = None  : if given, set prefix = ":: {enum:15} :: "
 	:param shallow [bool] = False : if True, treat containers as empty
+	:param full    [bool] = False : if True, print the value
+	:param flat    [bool] = False : if True, print non-containers in one line (usually for locals())
+	:param idx     [int]  = None  : if flat & given, append [{idx:2}] to the prefix
 	
 	Both [test] and [enum] also indent their items with ":: {:15} :: "
 	Most containers print their first item, if any.
 	"""
+	if PRODUCTIONFLAG: return
 	## https://docs.python.org/3/reference/datamodel.html#object.__len__
 	def defines(obj, func): return func in dir(obj)
-	if name is not None: print("::{}::".format(name))
+	rowStart = ""
+	if name is not None:
+		rowStart = "::{}::".format(name)
+		if not flat: print(rowStart)
 	if test is not None: prefix = ":: Test {:10} :: ".format(test)
 	if enum is not None: prefix = ":: {:15} ::".format(enum)
+	recPrefix = prefix
+	if flat:
+		prefix = f"{prefix}{rowStart:20}"
+		if not Idx is None: prefix = f"{prefix}[{Idx:2}]"
 	tmp = type(arg)
 	try: # missing: __code__, <class 'module'>
 		#if defines(arg,'__add__') is False: print(dir(arg))
@@ -1135,6 +1182,9 @@ def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False,fu
 			return ## instead of "<re.Match object; span=(2, 3), match='c'>"
 		#### String is a Sequence of String
 		elif (tmp.__name__ == "str"): ## Avoids infinite recursion
+			if flat and full:
+				print("{} \"{}\"".format(prefix, arg))
+				return
 			print("{} {}: len={}".format(prefix, tmp, len(arg)))
 			if full: print("\"" + arg + "\"")
 			return
@@ -1148,10 +1198,13 @@ def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False,fu
 			if len(arg) == 0: return
 		elif defines(arg, '__length_hint__'): ## For iterator types
 			print("{} {}: hint={}".format(prefix, tmp, arg.__length_hint__()))
+		elif flat and full:
+			print("{} {}".format(prefix, arg)) ## Type is implicit on primitive
 		else:
 			print("{} {}".format(prefix, tmp))
 			if full: print(arg)
 		######
+		if flat: prefix = recPrefix ## restore prefix for recursion
 		if shallow: return
 		if [test, enum] != [None,None]: prefix = ":: {:15} ::- ".format("")
 		#### Sequence types restricted to 'int'
@@ -1159,21 +1212,21 @@ def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False,fu
 		if test is not None: return
 		#### Sequence types with any type
 		elif (tmp in [list, tuple]) or (tmp.__name__ == 'ndarray'):
-			__typePrinter(arg[0], prefix+"0>", full=full)
-			if len(arg) == 2: __typePrinter(arg[1], prefix+"1>", full=full)
+			__typePrinter(arg[0], prefix+"0>", full=full, flat=flat)
+			if len(arg) == 2: __typePrinter(arg[1], prefix+"1>", full=full, flat=flat)
 		#### All other Container types
 		elif defines(arg, '__iter__'):
 			if defines(arg, '__next__'): ## if already an iterator, avoid changing the object
 				x = next(copy.deepcopy(arg))
 			else: x = next(iter(arg))
 			if defines(arg, '__getitem__'):
-				__typePrinter(x, prefix+"Key>", full=full)
-				__typePrinter(arg[x], prefix+"Val>", full=full)
-			else: __typePrinter(x, prefix+"it>", full=full)
+				__typePrinter(x, prefix+"Key>", full=full, flat=flat)
+				__typePrinter(arg[x], prefix+"Val>", full=full, flat=flat)
+			else: __typePrinter(x, prefix+"it>", full=full, flat=flat)
 		
 		#if defines(arg,'__add__') is False: print(dir(arg))
 	except Exception as e:
 		print("----- err -----" + str(e))
 		print(">Type: {} --> {}".format(tmp.__name__, arg))
 	finally:
-		if name is not None: print("------")
+		if not flat and name is not None: print("------")

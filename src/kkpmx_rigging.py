@@ -87,6 +87,7 @@ Rigging Helpers for KK.
 	local_state[OPT__NODUPES] = False
 	
 	CH_REGULAR = 0; CH_BOUNCE = 1; CH_RIG_ARRAY = 2; CH_SPLIT_ARRAY = 3; CH_RUN_MODE = 4; CH_REPAIR = 5; CH_CLEANUP = 6;
+	
 	choices = [
 		("Regular Fixes", CH_REGULAR), ("Reduce Chest bounce",CH_BOUNCE), ("Rig Bone Array", CH_RIG_ARRAY), ("Split Chains", CH_SPLIT_ARRAY),
 		("Repair some bones", CH_REPAIR), ("Cleanup free rigids", CH_CLEANUP)
@@ -206,7 +207,7 @@ def adjust_body_physics(pmx):
 	printStage("Adjust Body Physics")
 	mask = 65535 # == [1] is 2^16-1
 	
-	if find_bone(pmx, "左胸操作", False):
+	if find_bone(pmx, "左胸操作", False) != -1:
 		## -- Make Chest ignore Chest Acc & Hairs
 		bodies = { "x": [] }
 		def tmp(name):
@@ -218,6 +219,7 @@ def adjust_body_physics(pmx):
 		tmp("左胸操作接続");  tmp("右胸操作接続")
 		tmp("左胸操作衝突");  tmp("右胸操作衝突")
 		adjust_collision_groups(GRP_CHEST_B, bodies["x"])
+		
 		## Fix Joints (WAY LESS BOUNCY)
 		# 左胸操作調整用, 右胸操作調整用 --> 200 200 200 100 100 100 -- Maybe fine adjust the movements to side and slight bounce
 		def fixSpring(name):
@@ -225,14 +227,15 @@ def adjust_body_physics(pmx):
 			if idx != -1:
 				j = pmx.joints[idx]
 				# Move: Left/Right, Up/Down, Back/Forward
-				j.movmin = [-0.01, -0.01, 0]
-				j.movmax = [ 0.01,  0.03, 0]
+				j.movmin = [-0.001, -0.001, 0]
+				j.movmax = [ 0.001,  0.003, 0]
 				# Rotation: Up/Down, Left/Right, Rotate
 				j.rotmin = [-20, -10, 0]
 				j.rotmax = [ 20,  10, 0]
-				j.movespring = [5000, 1000, 200]
-				j.rotspring  = [2500, 500, 100]
-		fixSpring("左胸操作調整用");  fixSpring("右胸操作調整用")
+				j.movespring = [5000, 800, 200] # 0 20 0
+				j.rotspring  = [2500, 500, 100] # 100 100 100
+		fixSpring("左胸操作調整用")
+		fixSpring("右胸操作調整用")
 
 	## Butt collision
 	decider = find_bone(pmx, "cf_j_waist02", False) != -1
@@ -569,7 +572,7 @@ def repair_some_bones(pmx):
 	
 	## --- Restore IK in case it is gone
 	## --- Allow Rotation since it seems to have been needed
-	bones = util.find_bones(pmx, ["左足ＩＫ", "左つま先ＩＫ", "右足ＩＫ", "右つま先ＩＫ"], False)
+	bones = util.find_bones(pmx, ["左足ＩＫ", "左つま先ＩＫ", "右足ＩＫ", "右つま先ＩＫ"], returnIdx=False)
 	for bone in [x for x in bones if x != None]: bone.has_rotate = True
 	
 	
@@ -587,6 +590,7 @@ def repair_some_bones(pmx):
 			bone.localaxis_z = [localaxis[3], localaxis[4], localaxis[5]]
 	
 	return
+	
 	
 	##--- Set the LocalAxis of Wrists to give some limit
 	# :: localaxis_x: == this.Pos
@@ -1010,6 +1014,8 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit): ## TODO: Make the tail end 
 		name = pmx.bones[b].name_jp
 		#dRigAcc = name in ["ca_slot16", "ca_slot20", "ca_slot07", "ca_slot06"]
 		if dRigAcc: print(f"---- Parse [{bone}] > [{b}]: {name}")
+		#Example: [487] > [486]: ca_slot16 with N_move: 488 till 497
+		#Example: [498] > [486]: ca_slot16 with N_move2: 499 till 504
 		
 		## Collect bone chain
 		if name in mergeDict:
@@ -1084,12 +1090,18 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit): ## TODO: Make the tail end 
 		def doPrint(x, name=""): 
 			if printIt: print(name); print(x)
 		if any(root_arr1):
+			#printIt = True
 			##[C] Descend onto Hair_R etc.
 			if (printIt):
 				for _bb in root_arr0:
 					print(f"{_bb}: {pmx.bones[_bb].name_jp}")
-			doPrint(root_arr0)
-			doPrint(root_arr1)
+			# Hair_F = 300,301
+			# Hair_R = 302
+			# _yure_hair = 303 to 342, joints.002 on 343, rigidbodies.003 on 374
+			#print("-- root_arr0")
+			doPrint(root_arr0) #### starts on first after [N_move]: 297 -- 419 = last before next slot
+			#print("-- root_arr1")
+			doPrint(root_arr1)		### 299, 376 -- Both Bone_Face -- only first has the vertex bones
 			root_arr2 = get_direct_chains(root_arr0, root_arr1[0])
 			child_arr = []
 			for elem in root_arr1:
@@ -1410,6 +1422,8 @@ def handle_special_materials(pmx):
 	#---
 	tails = util.find_all_mats_by_name(pmx, "acs_m_tail_fox", withName=True)
 	tails += util.find_all_mats_by_name(pmx, "arai_tail", withName=True) # Racoon Tail
+	tails += util.find_all_mats_by_name(pmx, "acs_m_aku01_sippo", withName=True) # Demon Tail: j_01, j_02, j_03, ...
+	tailCnt = 0
 	for tail in tails:
 		root = tail[0]
 		## root >> contains "ca_slotXX"
@@ -1419,13 +1433,21 @@ def handle_special_materials(pmx):
 		if len(joints) < 3: continue
 		
 		is_raccoon = tail[1] in ["arai_tail"]
+		#print([(x.name_jp, x.bone_idx) for x in rigids])
+		#print([(x.rb1_idx, x.rb2_idx) for x in joints])
 		
-		### base
+		cnt = 0
+		for rig in rigids:
+			pmx.bones[rig.bone_idx].name_jp = f"Tail{tailCnt}_{cnt}"
+			cnt += 1
+		tailCnt += 1
+		
+		### Base
 		body = rigids[0]
 		body.group = tail_col[0]
 		# Make the base bodies not interact with the Skirt << todo: Still causes Pantsu leaks, so find the skirt ones and make them ignore the tail
 		body.nocollide_mask = col__skirt_acc_tail
-		### base
+		### Segment 0
 		body = rigids[1]
 		body.group = tail_col[0]
 		body.nocollide_mask = col__skirt_acc_tail
@@ -1439,6 +1461,7 @@ def handle_special_materials(pmx):
 		joint.rotmax[2] = 15
 		joint.rotmin[2] = -15
 		### Segment 2+
+		#TODO: Determine if tail is inside skirt and don't omit it in that case
 		for segment in zip(rigids[3:], joints[1:]):
 			body = segment[0];joint = segment[1]
 			body.group = tail_col[0]
@@ -1789,6 +1812,8 @@ def patch_bone_array(pmx, head_body, arr, name, grp, overrideLast=True):
 	:old: If [head_body] provided, connect first rigid to it, else remove first joint
 	:new: Connect first new Joint to [head_body] (or root if None)
 	:: Make first two bodies static because of MMD
+	
+	overrideLast :: Overwrite settings of last bone to a TailBone
 	
 	"""
 	if True: ## To keep the History aligned

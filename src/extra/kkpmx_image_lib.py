@@ -41,16 +41,16 @@ def TryLoadJson(val,_tuple=False, _array=False):
 			return json.loads(val)
 
 def TryLoadImage(path, name="image file"):
-	if not path: 
-		print("Cannot load from empty path!")
+	if not path:
+		print(f"[!] Cannot load {name} from empty path!")
 		return None
 	try:
 		if is_ascii(path):
 			img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
 			if img is not None: return img
+			print(f"[!] Could not load {name}, try alternate method...")
 	except Exception as err1:
 		print(err1)
-	print(f"[!] Could not load {name}, try alternate method...")
 	## cv2.imdecode(np.fromfile(path, dtype.np.uint8), cv2.IMREAD_UNCHANGED)
 	try:
 		stream = open(path, "rb")

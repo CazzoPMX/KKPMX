@@ -143,6 +143,7 @@ Additional notes:
 """
 DEBUG = util.DEBUG or False
 TEST_EYES = False
+TEST_BODY = False
 
 ## Todos: Root Path
 
@@ -346,6 +347,7 @@ def __parse_json_file(pmx, data: dict, root: str):
 				## @todo_note: "if 'MainTex' is used but does not exist in BASE, use the one registered in the PmxMaterial, if any"
 				##-- This generates default paths for the supported textures
 				attr[texDict[tex]] = os.path.join(base, name + texSuffix[tex])
+				#print(f">> Generate: {attr[texDict[tex]]}")
 				if tex == t__Main and base_mat.tex_idx > -1:
 					if not os.path.exists(attr[texDict[tex]]):
 						attr[texDict[tex]] = os.path.join(root, pmx.textures[base_mat.tex_idx])
@@ -368,10 +370,11 @@ def __parse_json_file(pmx, data: dict, root: str):
 			'main': parse_main, 'metal': parse_metal, 'hair2': parse_hair2,
 			}
 		try:
-			if attr[GROUP] in parseDict: parseDict[attr[GROUP]](pmx, mat, attr); #exit()
+			if attr[GROUP] in parseDict: parseDict[attr[GROUP]](pmx, mat, attr);
 			elif not DEBUG_RUN:
 				msgs['no_action'].append(msgsPre + mat.name_jp + f" ({attr[GROUP]})")
 				print(">--> [MissingAction]: " + msgs['no_action'][-1])
+				if util.is_prod(): parseDict["item"](pmx, mat, attr)
 		except Exception as err:
 			print("--- Error while processing this Material")
 			for (k,v) in attr.items():
@@ -908,7 +911,8 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 				cmtNew = CopyCommentValue(cmtNew, "[Old Diffuse]:", True)
 				cmtNew = CopyCommentValue(cmtNew, "[MatId]:", True)
 				if (len(mat.comment) != len(cmtNew)): cmtNew += mat.comment[len(cmtNew):]
-				mat.comment = cmtNew.strip()
+				mat.comment = re.sub(r"[\r\n]+", r"\r\n", cmtNew.strip())
+
 	###--------- Extra Attributes
 	_arr = []
 	for a in _extraAttributes:
@@ -1395,6 +1399,7 @@ def set_new_texture(pmx, mat, attr, tex_names: list, tex_mode=tex_mode_main, ski
 	isSphereMode = tex_mode == tex_mode_sphr
 	# [attr]: So that one can use "get_working_texture" but must not
 	if tex_mode != tex_mode_main: tex_name = tex_names[0]
+	#else:  tex_name = os.path.splitext(tex_names[0])[0] + tex_names[1]
 	else:  tex_name = re.sub(".png", "", tex_names[0]) + tex_names[1] # Not splitext bc Names could have '.'
 	
 	if skipped:
@@ -1550,12 +1555,14 @@ shader_dict = {
 	"main_texture_studio": "main",	##[__,?_?] MainTex, Color, Patternuv1, Cutoff, CutoutClip, patternclamp1, patternrotator1
 	#----------------
 	"main_item_studio_add": "alpha",   ##3000[KK,?_?] t__Main \\ Color, Color2, Color3, alpha
+	
 	#### KKS
 	"main_clothes_alpha": "alpha",
 	"main_clothes_opaque": "cloth",
 	"main_clothes_item": "item",
 	"main_clothes_emblem": "color", #shader_dict["main_emblem"],
 	"main_clothes_item_glasses": "glass",
+	"main_item_ditherd": "color",
 	 ## Color, overcolor1, overcolor2, overcolor3
 	"IBL_Shader_alpha": "color",
 	"IBL_Shader_cutoff": "color",

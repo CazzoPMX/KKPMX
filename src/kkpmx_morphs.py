@@ -36,11 +36,14 @@ cName_extraBones = "ExtraBones"
 cName_morebones  = "morebones"
 c_moremorphs     = "moremorphs" # By dispframe_fix
 
-#--- [Text]: How it appears in the exported morph name
-#--- [Morph]: The name how it should be displayed in MMD [== name_en]
-#--- [KK Name]: The Display name in the respective dropdown in KK
-#--- [EN]: The segment for the VertexMorph (maybe only JP / EN ?)
-#--- [JP]: "name_jp" of the morph. Should reflect the phrase most commonly used in dance motions.
+from enum import Enum
+class IndexTL(Enum):
+	SFX_JP   = 0 #--- [Text]: How it appears in the exported morph name
+	NAME_MY  = 1 #--- [Morph]: The name how it should be displayed in MMD [== name_en]
+	NAME_KK  = 2 #--- [KK Name]: The Display name in the respective dropdown in KK
+	SFX_EN   = 3 #--- [EN]: The segment for the VertexMorph (maybe only JP / EN ?)
+	NAME_JP  = 4 #--- [JP]: "name_jp" of the morph. Should reflect the phrase most commonly used in dance motions.
+
 prefixes = [ # ["Text", "", "", "EN"]
 	## Combos for convenience
 	["eye"        , "",     "", "eye"],
@@ -71,53 +74,51 @@ infixes  = [ # ["Text", "Morph", "KK Name", ".EN", "JP", ]		\t"\t, "\t
 	["_u"         , "'U'"          ,  ".." 			, ".u"			, "う"		],
 	["_n"         , "'N'"          ,  ".." 			, ".n"			, "ん"		],
 	# [Infix]        [My name]       [KK Name/TL]    [EN Infix] []
-	## Mayuge only[B]	
-	##### All[X]
-	##### Eye or Mayuge only[E]
-	##### Mouth only[M]
-	["_akire"     , "Flustered"    ,  "Flustered"   , ".zzz", 		""   		],#[M] あせり		Haste
-	["_aseri"     , "Impatient"    ,  ""            , ".zzz", 		""   		],#[X] あせり		Haste
-	["_bisyou"    , "Grin"         ,  "Grin"        , ".zzz", 		""   		],#[X] びしょう		Smile
+	## [B]=Mayuge only \\ [X]=All \\ [E]=Eye or Mayuge only \\ [M]=Mouth only
+	["_akire"     , "Flustered"    ,  "Flustered"   , ".fluster",	""   		],#[M] あきれ	Haste
+	["_aseri"     , "Impatient"    ,  ""            , ".nervous",	""   		],#[X] あせり		Haste
+	["_bisyou"    , "Grin"         ,  "Grin"        , ".grin",		""   		],#[X] びしょう	Smile
 	["_def"       , "Default"      ,  "default"     , ".default",	""   		],#[X] デフォルト	
-	["_doki"      , "Excited"      ,  ""            , ".zzz",		""   		],#[M] どき		
-	["_doya"      , "Smug"         ,  "Smug"        , ".zzz",		""   		],#[X] どや		
-	["_egao"      , "Smiling"      ,  "Smiling"     , ".smile",		""   		],#[X] えがお		
+	["_doki"      , "Excited"      ,  ""            , ".excite",	""   		],#[M] どき		
+	["_doya"      , "Smug"         ,  "Smug"        , ".smug",		""   		],#[X] どや		
+	["_egao"      , "Smiling"      ,  "Smiling"     , ".smile", 	""   		],#[X] えがお		
 	["_gag"       , "xxx"          ,  ""            , ".zzz",		""   		],#[E] がが		< Circle Eyes >
 	["_gyu"       , "xxx"          ,  ""            , ".zzz",		""   		],#[E] ぎゅ		< Blank Eyes >
 	["_gyul"      , "xxx"          ,  ""            , ".zzz",		""   		],#[E] 			
 	["_gyur"      , "xxx"          ,  ""            , ".zzz",		""   		],#[E] 			
-	["_gimo"      , "Doubt"        ,  ""            , ".zzz",		""   		],#[B] 			
-	["_huan"      , "Confused"     ,  ""            , ".zzz",		""   		],#[B] 			
-	["_human"     , "Pouting"      ,  "Grumbling"   , ".zzz",		""   		],#[M] ふまん		
-	["_ikari"     , "Angry"        ,  "Angry"       , ".zzz",		""   		],#[X] いかり		
-	["_kanasi"    , "Sad 2"        ,  "Sad 2"       , ".zzz",		""   		],#[E] かなし		
+	["_gimo"      , "Doubt"        ,  ""            , ".doubt", 	""   		],#[B] 			
+	["_huan"      , "Confused"     ,  ""            , ".confused",	""   		],#[B] 			
+	["_human"     , "Pouting"      ,  "Grumbling"   , ".pout",		""   		],#[M] ふまん		
+	["_ikari"     , "Angry"        ,  "Angry"       , ".angry", 	""   		],#[X] いかり		
+	["_kanasi"    , "Sad 2"        ,  "Sad 2"       , ".sad2",		""   		],#[E] かなし		
 	["_keno"      , "Disgust"      ,  "Disgust"     , ".zzz",		"気の"		   ],#[X] けの		
-	["_kisu"      , "Kiss"         ,  "Kiss"        , ".zzz",		""   		],#[M] きす		
-	["_koma"      , "Concerned"    ,  ""            , ".zzz",		""   		],#[B] こま		
-	["_komaru"    , "Concerned"    ,  "Concerned"   , ".zzz",		""   		],#[E] こまる		
-	["_kurusi"    , "In Pain"      ,  "In Pain"     , ".zzz",		""   		],#[E] くるし		
-	["_kuwae"     , "Sucking"      ,  "Sucking"     , ".zzz",		""   		],#[M] くわえ		
-	["_mogu"      , "Chewing"      ,  ""            , ".zzz",		""   		],#[M]
-	["_naki"      , "Crying"       ,  "Crying"      , ".zzz",		""   		],#[E] なき		
-	["_name"      , "Licking"      ,  "Licking"     , ".zzz",		""   		],#[M] なめ		
-	["_neko"      , "OwO"          ,  ""            , ".zzz",		""   		],#[M]
-	["_niko"      , "NikoNikoNii"  ,  ""            , ".zzz",		""   		],#[M]
-	["_odoro"     , "Surprised"    ,  "Surprised"   , ".zzz",		""   		],#[X] おどろ		
-	["_oko"       , "Angry"        ,  ""            , ".zzz",		""   		],#[B] 			
-	["_pero"      , "Bleh"         ,  "Bleh"        , ".zzz",		""   		],#[M] ぺろ		
-	["_rakutan"   , "Upset"        ,  "Upset"       , ".zzz",		""   		],#[E] らくたん	
-	["_sabisi"    , "Lonely"       ,  "Lonely"      , ".zzz",		""   		],#[M] さびし		
-	["_san"       , "Triangle"     ,  ""            , ".zzz",		""   		],#[M]
-	["_setunai"   , "Sad"          ,  "Sad"         , ".zzz",		""   		],#[E] せつない	
-	["_sian"      , "Thoughtful"   ,  "Thoughtful"  , ".zzz",		""   		],#[E] しあん		
-	["_sinken"    , "Serious"      ,  "Serious"     , ".zzz",		""   		],#[X] しんけん	
-	["_tabe"      , "Eating"       ,  ""            , ".zzz",		""   		],#[M]
-	["_tere"      , "Shy"          ,  "Shy"         , ".zzz",		""   		],#[E] てれ		
-	["_tmara"     , "Bored"        ,  ""            , ".zzz",		""   		],#[B] 			
-	["_tumara"    , "Bored"        ,  "Bored"       , ".zzz",		""   		],#[E] つまら		
-	["_uresi"     , "Happy"        ,  "Happy"       , ".zzz",		""   		],#[M] うれし		
-	["_winkl"     , "Wink L"       ,  "Wink L"      , ".zzz",		""   		],#[E] うぃんく		
-	["_winkr"     , "Wink R"       ,  "Wink R"      , ".zzz",		""   		],#[E] 			
+	["_kisu"      , "Kiss"         ,  "Kiss"        , ".kiss",		""   		],#[M] きす		
+	["_koma"      , "Concerned"    ,  ""            , ".concern",	""   		],#[B] こま		
+	["_komaru"    , "Concerned"    ,  "Concerned"   , ".concern",	""   		],#[E] こまる		
+	["_kurusi"    , "In Pain"      ,  "In Pain"     , ".pain",		""   		],#[E] くるし		
+	["_kuwae"     , "Sucking"      ,  "Sucking"     , ".suck",		""   		],#[M] くわえ		
+	["_mogu"      , "Chewing"      ,  ""            , ".chew",		""   		],#[M]
+	["_naki"      , "Crying"       ,  "Crying"      , ".cry",		""   		],#[E] なき		
+	["_name"      , "Licking"      ,  "Licking"     , ".lick",		""   		],#[M] なめ		
+	["_neko"      , "Cat Face"     ,  ""            , ".cat",		""   		],#[M]
+	["_niko"      , "NikoNikoNii"  ,  ""            , ".niko",		""   		],#[M]
+	["_odoro"     , "Surprised"    ,  "Surprised"   , ".shock", 	""   		],#[X] おどろ		
+	["_oko"       , "Angry"        ,  ""            , ".angry2", 	""   		],#[B] 			
+	["_pero"      , "TongueOut"    ,  "Bleh"        , ".bleh",		""   		],#[M] ぺろ		
+	["_rakutan"   , "Upset"        ,  "Upset"       , ".upset",		""   		],#[E] らくたん	
+	["_sabisi"    , "Lonely"       ,  "Lonely"      , ".lonely",	""   		],#[M] さびし		
+	["_san"       , "Triangle"     ,  ""            , ".triangle",	""   		],#[M]
+	["_setunai"   , "Sad"          ,  "Sad"         , ".sad",		""   		],#[E] せつない	
+	["_sian"      , "Thoughtful"   ,  "Thoughtful"  , ".think", 	""   		],#[E] しあん		
+	["_sinken"    , "Serious"      ,  "Serious"     , ".serious",	""   		],#[X] しんけん	
+	["_tabe"      , "Eating"       ,  ""            , ".eat",		""   		],#[M]
+	["_tere"      , "Shy"          ,  "Shy"         , ".shy",		""   		],#[E] てれ		
+	["_tmara"     , "Bored"        ,  ""            , ".bored", 	""   		],#[B] 			
+	["_tumara"    , "Bored"        ,  "Bored"       , ".bored", 	""   		],#[E] つまら		
+	["_uresi"     , "Happy"        ,  "Happy"       , ".happy", 	""   		],#[M] うれし		
+	["_wink"      , "Wink"         ,  "Wink"        , ".wink",  	""   		],#[E] うぃんく		
+	["_winkl"     , "Wink L"       ,  "Wink L"      , ".winkl", 	""   		],#[E] うぃんく		
+	["_winkr"     , "Wink R"       ,  "Wink R"      , ".winkr", 	""   		],#[E] 			
 ]; infixes_2 = [
 	["_doki_s"    , ""             ,  ""            , ".zzz",		""   		],#[X] 			
 	["_doki_ss"   , ""             ,  ""            , ".zzz",		""   		],#[X] 			
@@ -143,6 +144,8 @@ suffixes = [ # ["Text", "Morph", "", "EN"]
 	["02"     , " 2"          , "", ".2"],
 	["03"     , " 3"          , "", ".3"],
 	#["02_op"  , " 2"          , "", ".2.op"],
+	["l"      , " L"          , "", ".l"],
+	["r"      , " R"          , "", ".r"],
 #	["l"   , " (Left)"     , "", ".left"],
 #	["r"   , " (Right)"    , "", ".right"],
 #	[""    , ""],
@@ -181,6 +184,40 @@ def translateItem(name, useEN=False): ## Always input the untranslated name
 	
 	if len(dest) == 0: return name
 	if dest == parts.group(1) + parts.group(2) + parts.group(3): return name
+	return dest
+	
+def translateItem_2(name, useEN=False, forceSuffix=False): ## Always input the untranslated name
+	parts = re.search("(?:(\w+)\.[a-z]+\d+)?(_[a-z]+?)([lr])?(_\w+)?$", name) ## \2\t\1 \3
+	if not parts: return name
+	if len(parts.groups()) < 2: return name
+	dest = ""
+	arrIdx = 1 if useEN else 3
+	## Get Prefix
+	if parts.group(1):
+		m = parts.group(1)
+		arr = [x[arrIdx] for x in prefixes if x[0] == m]
+		dest += arr[0] if len(arr) > 0 else m
+	## Get Infix
+	m = parts.group(2)
+	arr = [x[arrIdx] for x in infixes if x[0] == m]
+	tmp = arr[0] if len(arr) > 0 else m
+	tmp = ("."+m[1:]) if tmp == ".zzz" else tmp
+	dest += tmp
+	## Get Suffix
+	
+	if forceSuffix: arrIdx = 3
+	
+	if parts.group(3):
+		m = parts.group(3)
+		arr = [x[arrIdx] for x in suffixes if x[0] == m]
+		dest += arr[0] if len(arr) > 0 else m
+	if (parts.group(4)):
+		m = parts.group(4)
+		arr = [x[arrIdx] for x in suffixes if x[0] == m]
+		dest += arr[0] if len(arr) > 0 else m
+	
+	if len(dest) == 0: return name
+	#if dest == parts.group(1) + parts.group(2) + parts.group(3): return name
 	return dest
 
 ## Create or find a given morph and write the given fields
@@ -225,27 +262,41 @@ def find_all_morphs(_morphs, prefix=None, infix=None, suffix=None, value=None, i
 	OUT(value!=None): List[Tuple[str, float]]
 	"""
 	verbose = _verbose()
+	useEN = local_state.get("useEN", False)
+	def compileRGX(text):
+		if infix: text = re.sub(".zzz", f".{infix[1:]}", text)
+		if not useEN: return re.compile(text)
+		text = re.sub("^eye", "(eye|eyes|eye_nose|eyeline_[ul])", text)
+		text = re.sub("_op", ".open", text)
+		text = re.sub("_cl", ".close", text)
+		return re.compile(text)
+	
 	## Get all morphs
 	morphs = copy.copy(_morphs)
-	if verbose: print(f"\nFind all morphs called <{prefix}:{infix}:{suffix}>")
+	if verbose: print(f"\nFind all morphs called <{prefix}:{infix}:{suffix}> (exclude: {exclude})")
 	## Reduce by prefixes, if any
 	if prefix is not None: ## Only match at start
 		pat = [x[3] for x in prefixes if x[0] == prefix]
 		if len(pat) == 0: raise Exception(f"Prefix {prefix} is not defined!")
-		r = re.compile(f"{prefix}|{pat[0]}")
+		r = compileRGX(f"{prefix}|{pat[0]}(?=\.)")
 		morphs = [m for m in morphs if r.match(m)] ## Only match at start
+		if verbose: print(f">> {len(morphs)} remaining with prefix")
 	## Reduce by infixes, if any
 	if infix is not None:
+		raw_infix = infix
 		noNum = False; exact = False
-		if infix[-1] == "$": noNum = True; infix = infix[:-1]
-		if infix[-1] == "%": exact = True; infix = infix[:-1]
+		if infix.endswith("$"): noNum = True; infix = infix[:-1]
+		if infix.endswith("%"): exact = True; infix = infix[:-1]
 		pat = [x[3] for x in infixes if x[0] == infix]
 		if len(pat) == 0: raise Exception(f"Infix {infix} is not defined!")
-		if exact:   r = re.compile(re.escape(infix) + "(_op|_cl)|" + re.escape(pat[0]) + "(_|$)")
-		elif noNum: r = re.compile(re.escape(infix) + "_|" + re.escape(pat[0]) + "(_|$)")
-		else:       r = re.compile(re.escape(infix) + "|" + re.escape(pat[0]) + "(\.|$)")
-		#print(f">>[Infix]: " + re.escape(infix) + "|" + re.escape(pat[0]))
+		if exact:   r = compileRGX(re.escape(infix) + r"(_op|_cl|$)|" + re.escape(pat[0]) + r"(?!\.\d)(\.|$)")
+		elif noNum: r = compileRGX(re.escape(infix) + r"_|" + re.escape(pat[0]) + r"(?!\.\d)(\.|$)")
+		else:       r = compileRGX(re.escape(infix) + r"|" + re.escape(pat[0]) + r"(\.|$)")
+		
+		if verbose: print(f">>[Infix({raw_infix})]: {r}, exact={exact}, noNum={noNum}, pat={pat}")
+		
 		morphs = [m for m in morphs if r.search(m)]
+		if verbose: print(f">> {len(morphs)} remaining with infix")
 	## Reduce by suffixes, if any
 	if suffix is not None: ## Only match at end
 		if type(suffix).__name__ == "str": suffix = [suffix, None]
@@ -256,10 +307,12 @@ def find_all_morphs(_morphs, prefix=None, infix=None, suffix=None, value=None, i
 		if oc is None: _suffix += "(_op|_cl)"
 		# The single length vocals cause problems, so combine with the infix
 		if isVocal: _suffix = infix + _suffix
-		r = re.compile(f"{_suffix}$")
+		r = compileRGX(f"{_suffix}$")
 		morphs = [m for m in morphs if r.search(m)]
+		if verbose: print(f">> {len(morphs)} remaining with suffix")
 	if exclude:
-		r2 = re.compile(exclude)
+		if verbose: print(f">> Filter " + str(morphs))
+		r2 = compileRGX(exclude)
 		morphs = [x for x in filter(lambda x: not r2.search(x), morphs)]
 	if verbose: print(f">> " + str(morphs))
 	if len(morphs) == 0: return []
@@ -625,19 +678,31 @@ def hotfix_generate_all_morphs(pmx, morphs, eyeOpenness):
 	addOrReplaceBrow  = lambda jp,en,it: addOrReplace(pmx, jp, en, 1, it)
 	addOrReplaceOther = lambda jp,en,it: addOrReplace(pmx, jp, en, 4, it)
 	arr = [x[0] for x in infixes][6:]
+	
 	#arr += [x[0] for x in infixes_2]
+	
+	local_state["useEN"] = find_morph(pmx, "eyes.default.close", False) != -1
+	
 	def action(act, _name, _arr):
 		if act == "O" and _arr[0] == ('', eyeOpenness): return
 		if _arr is None or len(_arr) == 0: return
 		if _arr[0] in [None, "", ('', 1)]: return
-		if act == "E": addOrReplaceEye  (f"[E] {_name}", f"[E] {_name}", _arr)
-		if act == "M": addOrReplaceMouth(f"[M] {_name}", f"[M] {_name}", _arr)
-		if act == "B": addOrReplaceBrow (f"[B] {_name}", f"[B] {_name}", _arr)
-		if act == "O": addOrReplaceOther(f"[O] {_name}", f"[O] {_name}", _arr)
+		if "_gyu" in _name: return ## Frick this, causes too many cornercases
+		#elif _name == "_gyur": ## Handle "2" later
+		#	idx = find_morph(pmx, f"[E] _gyul"), find _gyur, add both to _arr, create _gyu
+		
+		name_jp = translateItem_2(_name, True)
+		name_en = translateItem_2(_name, False).strip(".")
+		#print(f"---Translate '{act}::{_name}' into {name_en}")
+		
+		if act == "E": addOrReplaceEye  (f"[E] {name_jp}", f"[E] {name_en}", _arr)
+		if act == "M": addOrReplaceMouth(f"[M] {name_jp}", f"[M] {name_en}", _arr)
+		if act == "B": addOrReplaceBrow (f"[B] {name_jp}", f"[B] {name_en}", _arr)
+		if act == "O": addOrReplaceOther(f"[O] {name_jp}", f"[O] {name_en}", _arr)
 	
 	for infix in arr:
-		action("E", infix, find_all_morphs(morphs, "eye", infix, [None,"_op"], eyeOpenness, exclude="_siro[LR]"))
-		#action("O", infix, [ find_one_morph(morphs, f"eye_line_u.elu00{infix}_op", eyeOpenness) ])
+		#print(f"----- Generate '{infix}'")
+		action("E", infix, find_all_morphs(morphs, "eye", infix+"%", [None,"_op"], eyeOpenness, exclude="_siro[LR]"))
 		action("M", f"{infix}_op", find_all_morphs(morphs, "kuti", infix+"%", [None,"_op"], 1))
 		action("M", f"{infix}_cl", find_all_morphs(morphs, "kuti", infix+"%", [None,"_cl"], 1))
 		action("B", f"{infix}_op", find_all_morphs(morphs, "mayuge", infix+"%", [None,"_op"], 1))
@@ -707,9 +772,10 @@ def sort_morphs(pmx):
 		
 		if (m.morphtype == 0): # groups
 			if re.match("\[\w\]", m.name_jp): groups2.append(m)
+			elif m.name_jp.startswith("hitomi"): bones.append(m)
 			else: groups.append(m)
 		elif (m.name_jp == "== Eyeline only =="): groups2.append(m)
-		elif (m.name_jp == "hitomi-small"): bones.append(m)
+		elif (m.name_jp == "Stretch EyeWhite"): bones.append(m) # vertex
 		elif (m.morphtype == 1): # vertex
 			if re.match("vr[mc]\.", m.name_jp): exported.append(m)
 			else: vertices.append(m)
@@ -720,6 +786,7 @@ def sort_morphs(pmx):
 	baseIdx = 0; newMorphs = []
 	## Order: VRC, A E I O U Blink, Material, slots, Extras, Vocals, Groups, Components
 	## List Export \\ Materials \\ Extras \\ Group
+	## >Todo> Add some sort of Material Sorter I guess
 	def sorter(baseIdx, _list, _sep = None):
 		if not _sep is None:
 			newMorphs.append(make_separator(pmx, _sep))
@@ -838,7 +905,7 @@ def sort_morphs_into_frames(pmx): ## Intended for UniVRM models
 def sort_bones_into_frames(pmx):
 	used_bones = set()
 	curSlot = "global_slot"
-	moreIdx = []
+	moreIdx = [] # FrameIdx of "morebones"
 	for (d,frame) in enumerate(pmx.frames):
 		if frame.name_jp.startswith(cName_morebones): moreIdx.append(d); continue
 		if frame.name_jp == cName_extraBones: continue
@@ -874,7 +941,6 @@ def sort_bones_into_frames(pmx):
 				slot_bones[curSlot] += arr
 				continue
 			## Group all remaining Vertex Bones
-			#if reKeep.match(name):
 			if name.startswith("cf_s_"):
 				extra_bones.append(d)
 		except: continue
@@ -888,25 +954,28 @@ def sort_bones_into_frames(pmx):
 	delIdx = []
 	for k,v in slot_bones.items():
 		idx = find_or_replace_disp(pmx, k)
-		if len(v) < 2: 
+		#print(f"[{k}]:{idx} {v}")
+		if len(v) < 2:
 			delIdx.append(idx)
 			continue
 		pmx.frames[idx] = pmxstruct.PmxFrame(name_jp=k, name_en=k, is_special=False, items=[[0, x] for x in v])
-	for idx in reversed(delIdx): del pmx.frames[idx]
+	for idx in reversed(sorted(delIdx)):
+		del pmx.frames[idx]
 	
 	#########
 	# TODO: Resort other things correctly
 	#: 左腕捩, 左手捩, 右腕捩, 右手捩 into [Arms] if in [morebones]
 	#: Filter out cf_hit Bones into OtherPhysics
 	
-	## Move 'remaining bones' Frame to end and filter out thsoe already added elsewhere
+	## Move 'remaining bones' Frame to end and filter out those already added elsewhere
 	idx = find_disp(pmx, cName_morebones, False)
 	if idx != -1:
 		oldFrame = pmx.frames[idx]
 		oldItems = []
-		for idx in reverse(moreIdx):
-			[oldItems.append(y) for y in list(filter(lambda x: x[1] not in used_bones, pmx.frames[idx]))]
-			del pmx.frames[idx]
+		for idx in reversed(sorted(moreIdx)):
+			if idx < len(pmx.frames):
+				[oldItems.append(y) for y in list(filter(lambda x: x[1] not in used_bones, pmx.frames[idx].items))]
+				del pmx.frames[idx]
 		oldFrame.items = oldItems
 		pmx.frames.append(oldFrame)
 
@@ -968,18 +1037,18 @@ def add_ground_morph(pmx):
 	util.set_parent_if_found(pmx, "右胸操作衝突", bone_name, is_rigid=True)
 
 	make_bone_morph(pmx, morph_name, [
-		make_bone_item(pmx, "センター",   [0, -delta, 0], [0, 0, 0]),
-		make_bone_item(pmx, "左足ＩＫ",   [0, -delta, 0], [0, 0, 0]),
-		make_bone_item(pmx, "右足ＩＫ",   [0, -delta, 0], [0, 0, 0]),
-		make_bone_item(pmx, bone_name, [0, -delta, 0], [0, 0, 0]),
+		make_bone_item(pmx, "センター",   [0, -abs(delta), 0], [0, 0, 0]),
+		make_bone_item(pmx, "左足ＩＫ",   [0, -abs(delta), 0], [0, 0, 0]),
+		make_bone_item(pmx, "右足ＩＫ",   [0, -abs(delta), 0], [0, 0, 0]),
+		make_bone_item(pmx, bone_name, [0, -abs(delta), 0], [0, 0, 0]),
 	])
 
 ##############
 ### VertexMorph
 ##############
 
-def make_vert_morph(pmx, name, items=[], override=False): return make_any_morph(pmx, name, items, override, 2)
-def make_vert_item(pmx, name, pos, rot): return pmxstruct.PmxMorphItemBone(find_bone(pmx, name, False), pos, rot)
+def make_vert_morph(pmx, name, items=[], override=False): return make_any_morph(pmx, name, items, override, 1)
+def make_vert_item(pmx, vert_idx, move): return pmxstruct.PmxMorphItemVertex(vert_idx, move)
 
 ##############
 ### More Morph Helpers

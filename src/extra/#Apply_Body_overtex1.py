@@ -64,10 +64,17 @@ yPad = 1; xPad = 1
 if dim[0] != 2048: yPad = dim[0] / 2048
 if dim[1] != 2048: xPad = dim[1] / 2048
 
+### Rescale [nipsize] since it has different min / max boundaries (test exp() curve ?)
+nipMax = nipsize_def + 0.66
+nipMin = nipsize_def - 0.50
+nipRange = nipMax - nipMin
+nipsize = (nipsize * nipRange) + nipMin
+
 ### These cords work for a standard size of 2048 x 2048
 _scale = 16
 #cX_L  = int((195 - (_scale/2)) * xPad); cX_R  = int((382 - (_scale/2)) * xPad); cY    = int((285 - (_scale/2)) * yPad)
 size  = ((64 / nipsize_def) * nipsize) + _scale
+#size  = (nipsize) + _scale##: Keep using nipsize_def since that size was looking fine, so we rescale towards that
 sizeX = size * xPad
 sizeY = size * yPad
 

@@ -15,6 +15,7 @@ from kkpmx_handle_overhang import run as runOverhang
 from kkpmx_json_generator import GenerateJsonFile
 from kkpmx_morphs import emotionalize
 import kkpmx_morphs as kkmorph
+
 try:
 	import nuthouse01_core as core
 	import nuthouse01_pmx_parser as pmxlib
@@ -65,6 +66,7 @@ Output: STDOUT -> Unique list of used bones (Format: id, sorted)
 
 '''}
 def get_choices():
+	from kkpmx_special import simplify_armature
 	return [
 		("Show help for all",None),
 		("Cleanup Model", cleanup_texture),
@@ -84,6 +86,7 @@ def get_choices():
 		("Prune invisible Faces", delete_invisible_faces),
 		("Add Emotion Morphs", emotionalize),
 		("Bone weights", kkrig.merge_bone_weights),
+		("Re-run Simplify", simplify_armature),
 	]
 def main(moreinfo=True):
 	# promt choice
@@ -656,6 +659,7 @@ There are some additional steps that cannot be done by a script; They will be me
 		has_univrm  = util.is_univrm();
 		all_yes     = util.ask_yes_no("Do most as yes","y")
 	util.global_state["all_yes"] = all_yes
+	util.global_state[util.OPT_INFO] = moreinfo
 	
 	## rename input_filename_pmx to "_org"
 	orgPath = input_filename_pmx[0:-4] + "_org.pmx"
@@ -757,6 +761,10 @@ There are some additional steps that cannot be done by a script; They will be me
 	section("Final Physics Cleanup over the whole model")
 	#-- Do some post-processing cleanup
 	_opt = { "fullClean": all_yes if all_yes else None }
+	_opt["soloMode"] = False
+	from kkpmx_special import simplify_armature
+	simplify_armature(pmx, input_filename_pmx, _opt)
+	
 	kkrig.cleanup_free_things(pmx, _opt)
 	path = end(pmx, input_filename_pmx, "_better2", "Cleaned up Physics")
 	util.copy_file(path, input_filename_pmx)
@@ -764,7 +772,7 @@ There are some additional steps that cannot be done by a script; They will be me
 	if has_univrm: return ## Never makes sense in this mode
 	if not speed_yes:
 		print("")
-		print("== All changes are stored, this is optional ==")
+		print("== All changes are stored in [model.pmx], this is optional ==")
 		print("")
 		section("Fixing material bleed-through")
 		
@@ -779,7 +787,7 @@ There are some additional steps that cannot be done by a script; They will be me
 	else:
 		print("")
 		print("-----------")
-		print("-- Copy final result into 'model.pmx'....") 
+		print("-- Copy final result into 'model.pmx'....")
 		print("-- In case the script cut away too much in certain places, [model_mat_backup] contains a backup before cleaning up")
 		print("If you plan to use this with MMD, these are some additional steps to do with PMXEditor")
 	print("""
@@ -911,7 +919,7 @@ slot_dict = {
 	"hand":   ["a_n_wrist_L", "a_n_wrist_R", "a_n_hand_L", "a_n_hand_R", "a_n_ind_L", "a_n_ind_R", "a_n_mid_L", "a_n_mid_R", "a_n_ring_L", "a_n_ring_R"],
 	"nether": ["a_n_dan", "a_n_kokan", "a_n_ana"],
 }
-slotBody   = ["ct_head", "p_cf_body_00", "cf_J_FaceUp_ty"]
+slotBody   = ["ct_head", "cf_J_FaceUp_ty", "p_cf_body_00"]
 slotAlways = slot_dict["hair"] + slot_dict["face"] + ["ct_hairB", "ct_hairF", "ct_hairS"]
 slotMostly = slot_dict["hand"] + slot_dict["foot"] + ["ct_gloves", "ct_socks", "ct_shoes_outer", "ct_shoes_inner"]
 slotMed    = slot_dict["body"] + slot_dict["nether"]
@@ -979,11 +987,15 @@ Mode Interactions:
 	frame = []
 	dictSlots = {}
 	### If both flags, make sure that head+body is first
-	if f_body and f_slots:
-		dictSlots["ct_head"] = []
-		dictSlots["cf_J_FaceUp_ty"] = []
-		dictSlots["p_cf_body_00"] = []
-	
+	if f_slots:
+		slotOrder = [slotBody]
+		slotOrder.append(slotAlways)
+		slotOrder.append(["ct_clothesTop", "ct_top_parts_A", "ct_top_parts_B", "ct_top_parts_C", "ct_clothesBot", "ct_bra", "ct_shorts", "ct_panst"])
+		slotOrder.append(["ct_gloves", "ct_socks", "ct_shoes_outer", "ct_shoes_inner"])
+		slotOrder.append(util.flatten([slot_dict["body"], slot_dict["upper"], slot_dict["hand"]]))
+		slotOrder.append(util.flatten([slot_dict["nether"], slot_dict["lower"], slot_dict["foot"]]))
+		for item in util.flatten(slotOrder): dictSlots[item] = []
+
 	def addMatMorph(name, arr, disp=None):
 		if len(arr) == 0: return
 		if type(name) is str: names = [ name, name ]
@@ -1052,7 +1064,7 @@ Mode Interactions:
 				elif isBody: ## Setting to BODY is just information for the User at this point
 					typeStr = mt.BODY.value
 					mat.comment = util.updateComment(mat.comment, 'MatType', typeStr, _replace=True)
-
+			
 			## === match is not empty and not(ignoreBody and isBody): 
 			#	yesBody    + isBody: True and True = True > False
 			if m is not None and len(m) > 0 and not (not f_body and m in slotBody):
@@ -1108,7 +1120,9 @@ Mode Interactions:
 	#############
 	#### Add slot morphs
 	# ask first to add, then use name "{slot}" as name
-	if f_slots: [addMatMorph(key,  dictSlots[key], frame) for key in dictSlots.keys()]
+	if f_slots: 
+		keys = [k for (k,v) in dictSlots.items() if len(v) > 0]
+		[addMatMorph(key,  dictSlots[key], frame) for key in keys]
 	
 	#### Add extra morphs
 	items = []
@@ -1945,7 +1959,7 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 
 
 if __name__ == '__main__':
-	print(f"Cazoo - 2023-06-03 - v.{util.VERSION_TAG}")
+	print(f"Cazoo - {util.VERSION_DATE} - v.{util.VERSION_TAG}")
 	try:
 		if DEBUG or DEVDEBUG:
 			main()
@@ -1957,8 +1971,11 @@ if __name__ == '__main__':
 			except (KeyboardInterrupt, SystemExit):
 				# this is normal and expected, do nothing and die normally
 				print()
-			#except Exception as ee:
-			#	# if an unexpected error occurs, catch it and print it and call pause_and_quit so the window stays open for a bit
-			#	print(ee)
-			#	core.pause_and_quit("ERROR: something truly strange and unexpected has occurred, sorry!")
+			except:# Exception as ee:
+				from datetime import datetime
+				import traceback
+				traceback.print_exc()
+				errorLog = traceback.format_exc()
+				errorPath = f"#errorLog{datetime.today().strftime('%Y-%m-%d')}.log"
+				with open(errorPath, "a", encoding='utf-8') as f: f.write(errorLog)
 	except (KeyboardInterrupt): print()
