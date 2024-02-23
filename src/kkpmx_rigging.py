@@ -178,6 +178,7 @@ Rigging Helpers for KK.
 		if util.is_number(start): looper(start, core.MY_GENERAL_INPUT_FUNC(is_valid, "Last Bone"  + f"?: "), True, all_arr)
 		else:
 			if not start.startswith('[['):
+				if "-" in start: start = re.sub("-", ",", start)
 				if not start.startswith('['): start = f"[[{start}]]" ## Wrap flat pairs
 				else: start = f"[{start}]" ## Wrap lists without enclosing bracket
 			arr_log.append(">>> " + json.dumps(json.loads(start)))
@@ -565,6 +566,8 @@ def repair_some_bones(pmx):
 		bone = pmx.bones[find_bone(pmx, "cf_s_elboback_R")]
 		bone.parent_idx = bone.parent_idx if elbow == -1 else _elbow
 	
+	#adjust_bone("左肩C", lambda b: b.name_en = "shoulderC_L")
+	#adjust_bone("右肩C", lambda b: b.name_en = "shoulderC_R")
 	idx = find_bone(pmx, "左肩C", False)
 	if idx != -1: pmx.bones[idx].name_en = "shoulderC_L"
 	idx = find_bone(pmx, "右肩C", False)
@@ -574,7 +577,6 @@ def repair_some_bones(pmx):
 	## --- Allow Rotation since it seems to have been needed
 	bones = util.find_bones(pmx, ["左足ＩＫ", "左つま先ＩＫ", "右足ＩＫ", "右つま先ＩＫ"], returnIdx=False)
 	for bone in [x for x in bones if x != None]: bone.has_rotate = True
-	
 	
 	## --- Find these based on non-T-Pose alignment
 	def add_axis(name, fixedaxis, localaxis):
@@ -590,43 +592,6 @@ def repair_some_bones(pmx):
 			bone.localaxis_z = [localaxis[3], localaxis[4], localaxis[5]]
 	
 	return
-	
-	
-	##--- Set the LocalAxis of Wrists to give some limit
-	# :: localaxis_x: == this.Pos
-	# :: localaxis_z: == Elbow.Pos
-	#-- Check what happens in PMXEditor because the axis are normalized to 1 after changing reloading
-	
-	##--- Find some use for these bones
-	# :: o_tang, cf_j_tang_01-5, cf_j_tang_L_05/04/R
-	# :: Colliders: cf_hit_shoulder_L, cf_hit_shoulder_R, cf_hit_spine02_L, cf_hit_neck, cf_hit_head
-	
-	#:: Investigate this
-	#[Nope] Some motions cause armpit tears on clothes which are fixed when raising cf_d_shoulder_L/R & counter rotating shoulder_L/R... ?
-	#-- Looks like [左肩Solo] should be dragged along, but in turn tears below again... BW detach & ROT Binding ?
-	# Move SOLO below ARM, ROT+ on it, unbind some vertices in armpit
-	#	Rough: Vertices shared by [arm_twist 01] & [shoulder SOLO] but cf_s_spine03 is first (~~0.44.. vs 0.39 of shoulder)
-	#		Look at those where 1-2-3 are spine, shoulder, arm (Shoulder blade)
-	#		--> Armpit are basically those from below where arm01 still exists & spine is first
-	#		Guide at those where 1-2-3 are shoulder, spine, arm (Actual shoulder)
-	#		--> Reduce further by ignoring any with non-zero arm02
-	#		Ignore those where 1-2-3 are shoulder, arm, spine (already in arm)
-	#	Probably want to remove the arm01 things from the shoulder blade ?
-	#---- Alternative
-	# 0.4 -15.8  -39.5 :: Setting Shoulder to "Shoulder Raise", and make Solo be inverted "KIND OF" works, but looks ugly when nude, BW issue ?
-	#- Reason why it could be right: Shoulder & Arm are on the same position -- verify if elsewhere too
-	#----- Current Workaround
-	# Just cut out Armpit with Mode4 -- also add inner (top A) to 2nd selection, add "note" to 2nd instead of 3rd, add TopSlot
-	
-	#--- Find a way to keep the Feet IK where it is -- <<< REASON FOR FEET ROTATIONS (only have to move Y-Axis)
-	# >> When you move the IK Bone back to the Ankle, it looks as supposed to be
-	
-	## Add some AxisLimit for Knees to prevent them from bending too much
-	
-	## << "bone_auto_armtwist" is fancy
-	
-	##---
-	# :: Rename dummy_R, dummy_L to "Grab Item" or smt (OP anchor for props)
 	
 	########
 	pass####
@@ -1423,6 +1388,7 @@ def handle_special_materials(pmx):
 	tails = util.find_all_mats_by_name(pmx, "acs_m_tail_fox", withName=True)
 	tails += util.find_all_mats_by_name(pmx, "arai_tail", withName=True) # Racoon Tail
 	tails += util.find_all_mats_by_name(pmx, "acs_m_aku01_sippo", withName=True) # Demon Tail: j_01, j_02, j_03, ...
+	tails += util.find_all_mats_by_name(pmx, "acs_m_cattail", withName=True) # Cat Tail
 	tailCnt = 0
 	for tail in tails:
 		root = tail[0]
@@ -2217,6 +2183,9 @@ def AddBodyChainWithJoints(pmx, boneIndex: List[int], mode: int, radius: float, 
 	pmx.rigidbodies[dictionary[boneIndex[0]]].phys_mode = 0
 	
 	dictionary2 = {}
+	
+	def isVisible(_bone): return pmxBone != None and (not uvFlag or pmxBone.has_visible)
+	
 	for bone_idx in boneIndex:
 		# Don't add more Joints than bodies
 		if len(dictionary) == len(dictionary2): break
@@ -2224,7 +2193,7 @@ def AddBodyChainWithJoints(pmx, boneIndex: List[int], mode: int, radius: float, 
 		#if boneIndex[-1] == bone_idx: break
 
 		pmxBone = pmx.bones[bone_idx]
-		if (pmxBone != None and (not uvFlag or pmxBone.has_visible)):
+		if (isVisible(pmxBone)):
 			pmxJoint = pmx.joints[add_joint(pmx)]
 			pmxJoint.name_jp = name + ":" + pmxBone.name_jp
 			pmxJoint.pos = pmxBone.pos
@@ -2243,6 +2212,8 @@ def AddBodyChainWithJoints(pmx, boneIndex: List[int], mode: int, radius: float, 
 	# TODO: If called directly (with only two bones), joints are always bound to rb = 0
 	for key in dictionary.keys():
 		pmxBone2 = pmx.bones[key]
+		if key not in dictionary2: continue
+		
 		if pmxBone2.parent_idx not in boneIndex: continue
 		#if pmxBone2.tail_usebonelink:
 		#	if pmxBone2.tail not in boneIndex: continue

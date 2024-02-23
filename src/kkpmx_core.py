@@ -67,32 +67,39 @@ Output: STDOUT -> Unique list of used bones (Format: id, sorted)
 '''}
 def get_choices():
 	from kkpmx_special import simplify_armature
-	return [
-		("Show help for all",None),
-		("Cleanup Model", cleanup_texture),
-		("Make Material morphs", make_material_morphs),
-		("Scan Plugin File", PropParser.parseMatComments),
-		("Isolate protruding surfaces", runOverhang),
-		("All-in-one converter", kk_quick_convert), 
-		("----------", __do),
-		("Parse Result from Plugin", GenerateJsonFile),
-		("Export Material to CSV", export_material_surface),
-		("Move material weights to new bones", move_weights_to_new_bone),
-		("Print material bones", print_material_bones),
-		("Slice helper", slice_helper),
-		("Run Rigging Helpers", kkrig.run),
-		("Draw Shader", PropParser.draw_toon_shader, True),
-		("Adjust for Raycast", PropParser.convert_color_for_RayMMD),
-		("Prune invisible Faces", delete_invisible_faces),
-		("Add Emotion Morphs", emotionalize),
-		("Bone weights", kkrig.merge_bone_weights),
-		("Re-run Simplify", simplify_armature),
+	from kkpmx_morphs import sort_bones_into_frames
+	import file_sort_textures
+	import model_overall_cleanup
+	arr = [ ## https://en.wikipedia.org/wiki/Box-drawing_character :: ┌┬┐ ├┼┤ └┴┘ ─ │ 
+		("",	 0, "Show help for all",None),
+		("╦",	 5, "All-in-one converter", kk_quick_convert), 
+		("╟─",	 1, "Cleanup Model", cleanup_texture),
+		("║┬",	 3, "Apply Plugin-Properties", PropParser.parseMatComments),
+		("╟└─",	 7, "Re-parse Result from Plugin", GenerateJsonFile),
+		("╟─",	15, "Prune invisible Faces", delete_invisible_faces),
+		("╟─",	12, "Run Rigging Helpers", kkrig.run),
+		("╟─",	 2, "Make Material morphs", make_material_morphs),
+		("╟┬",	16, "Add Emotion Morphs", emotionalize),
+		("║└─",	18, "Sort DisplayFrames", lambda p,f: main_wrapper(p,f, lambda p,f: sort_bones_into_frames(p), "_morphsSort")),
+		("╟─",   0, "Main Sorter", lambda p,f: file_sort_textures.__main(f, False)),
+		("╟─",   0, "Main Cleanup", lambda p,f: model_overall_cleanup.__main(p, f, False)),
+		("╟┬",  19, "Re-run Simplify", simplify_armature),
+		("║└─",  0, "Cleanup Physics", lambda p,f: main_wrapper(p,f, kkrig.cleanup_free_things, "_phyClean")), ## (pmx, _opt = { }):
+		("╙─",	 4, "Isolate protruding surfaces", runOverhang),
+		("",	 6, "----------", __do),
+		("",	 8, "Export Material to CSV", export_material_surface),
+		("",	 9, "Move material weights to new bones", move_weights_to_new_bone),
+		("",	10, "Print material bones", print_material_bones),
+		("",	11, "Slice helper", slice_helper),
+		("",	13, "Draw Shader", PropParser.draw_toon_shader, True),
+		("",	14, "Adjust for Raycast", PropParser.convert_color_for_RayMMD),
 	]
+	return [(f"{x[0]}  {x[2]}", x[3]) for x in arr]
+
 def main(moreinfo=True):
 	# promt choice
 	choices = get_choices()
-	idx = core.MY_SIMPLECHOICE_FUNC(range(len(choices)), [(str(i)+": "+str(choices[i][0])) for i in range(len(choices))])
-	
+	idx = core.MY_SIMPLECHOICE_FUNC(range(len(choices)), [(f"{i:>2}: "+str(choices[i][0])) for i in range(len(choices))])
 	# generate helptext
 	def print_help(_idx):
 		name = choices[_idx][0]
@@ -105,7 +112,7 @@ def main(moreinfo=True):
 			doc = "{}===({}) {} ({}):\n{}{}".format(line, _idx, name, choice.__name__, "", doc)
 		core.MY_PRINT_FUNC(doc if doc is not None else (f"<< no help for '{choices[_idx][0]}' >>"))
 	if idx == 0: return [print_help(idx) for idx in range(1,len(choices))]
-	elif idx == 6:
+	elif idx == 15:
 		if not util.PRODUCTIONFLAG:
 			from kkpmx_internal import main2
 			main2();
@@ -667,6 +674,7 @@ There are some additional steps that cannot be done by a script; They will be me
 		secNum["s"] = -2
 		section("Restore to original state")
 		if all_yes or util.ask_yes_no("Found a backup, should the model be reset to its original state"):
+			util.move_unused_from_folder(pmx, orgPath)
 			util.copy_file(orgPath, input_filename_pmx)
 			pmx = pmxlib.read_pmx(input_filename_pmx, moreinfo=False)
 	else:
@@ -726,22 +734,6 @@ There are some additional steps that cannot be done by a script; They will be me
 		path = emotionalize(pmx, input_filename_pmx, write_model, moreinfo=moreinfo, _opt={ "automatic": True })
 		if write_model: util.copy_file(path, input_filename_pmx)
 	#-------------#
-	if not has_univrm: ## Imports are never cluttered
-		section("Sort Textures (will make a backup of all files)")
-		if util.ask_yes_no("Sort textures into subfolders", "y"):
-			## run [core] sort textures (which edits in place) --- [2nd] to also sort the property files
-			import file_sort_textures
-			if not write_model: pmxlib.write_pmx(input_filename_pmx, pmx, moreinfo=moreinfo)
-			print(">> Recommended: 2 (No) \\ 2 (only top-level) \\ 1 (Yes) ")
-			print("")
-			# Tell options: 2(No) \\ 2(only top-level) \\ 1(Yes) <<<<<<<<<<<<<<<<<<<<<<<<<
-			file_sort_textures.__main(input_filename_pmx, moreinfo)
-			if write_model: ## Kinda should skip this if sort was canceled, but _sorted exists regardless
-				end(None, input_filename_pmx, "_sorted", "Sorted all texture files")
-				path = core.get_unused_file_name(input_filename_pmx[0:-4] + "_sorted.pmx")
-				util.copy_file(input_filename_pmx, path)
-			print("-- Reparsing sorted model")
-			pmx = pmxlib.read_pmx(input_filename_pmx, moreinfo=False) # Re-Import *.pmx bc no pmx argument
 	#-------------#
 	if has_univrm and not util.ask_yes_no("Do some general cleanup", "n", extra="This may break some things needed for reexporting"):
 		import _translate_to_english as pmxTL
@@ -758,14 +750,16 @@ There are some additional steps that cannot be done by a script; They will be me
 	model_overall_cleanup.__main(pmx, input_filename_pmx, moreinfo)
 	path = input_filename_pmx[0:-4] + "_better.pmx"
 	util.copy_file(path, input_filename_pmx)
-	section("Final Physics Cleanup over the whole model")
+	section("Final Cleanup over the whole model")
 	#-- Do some post-processing cleanup
 	_opt = { "fullClean": all_yes if all_yes else None }
 	_opt["soloMode"] = False
 	from kkpmx_special import simplify_armature
 	simplify_armature(pmx, input_filename_pmx, _opt)
-	
 	kkrig.cleanup_free_things(pmx, _opt)
+	from kkpmx_morphs import sort_bones_into_frames
+	sort_bones_into_frames(pmx)
+	
 	path = end(pmx, input_filename_pmx, "_better2", "Cleaned up Physics")
 	util.copy_file(path, input_filename_pmx)
 	#-------------#
@@ -789,8 +783,9 @@ There are some additional steps that cannot be done by a script; They will be me
 		print("-----------")
 		print("-- Copy final result into 'model.pmx'....")
 		print("-- In case the script cut away too much in certain places, [model_mat_backup] contains a backup before cleaning up")
-		print("If you plan to use this with MMD, these are some additional steps to do with PMXEditor")
 	print("""
+	[!!] If you use the model for MMD, do not forget to apply Semi-Standard Bones, else your Model will be less compatible with Standard Armatures
+	
 -- [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or apply all (except [Camera Bone])
 -- Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
 	""")
@@ -888,8 +883,10 @@ enAccs += ['decor', 'bow', 'Ribbon']
 baseMats = ['body', 'face', 'hair', 'noseline', 'tooth', 'eyeline', 'mayuge', 'sirome', 'hitomi', 'tang']
 baseMats += ['expression', 'cf_m_mm']
 ## Aux parts that should always stay
-accMatsNoHair = ['tail','acs_m_mimi_','kedama','mermaid','wing','cattail','cat_ear', 'fox'] ## Hair & Kemomimi
-accMatsNoHair += ['aku01_tubasa', 'back_angelwing'] ## Vanilla wings
+accMatsNoHair = ['tail','mimi','kedama','mermaid','wing','cattail','cat_ear', 'fox'] ## Hair & Kemomimi
+accMatsNoHair += ['furryB' ] ## Vanilla Ears: Generic
+accMatsNoHair += ['aku01_tubasa', 'back_angelwing'] ## Vanilla wings: Angel, Demon
+accMatsNoHair += ['aku01_sippo' ] ## Vanilla Tails: Demon
 #>	acs_m_mermaid ++ Fins
 #>	acs_m_hair_*  -- Hair decoration
 accMats = ['hair','ahoge'] + accMatsNoHair
@@ -897,7 +894,7 @@ hairAcc = ['mat_body','kamidome'] ## Common hair accs
 ## Additional parts that are not main clothing
 accOnlyMats = ['socks','shoes','gloves','miku_headset','hood', 'mf_m_primmaterial']
 #                                                                (v)== Exclude accMatsNoHair from this list
-accOnlyMats += ['^\'?cf_m_acs_'] + ['^\'?mf_m_acc'] + ['^\'?acs_(?!m_(' + '|'.join(accMatsNoHair) +  '|mimi))']
+accOnlyMats += ['^\'?cf_m_acs_'] + ['^\'?mf_m_acc'] + ['^\'?acs_(?!m_(' + '|'.join(accMatsNoHair) + '))']
 ####--- 
 rgxBase = 'cf_m_(' + '|'.join(baseMats) + ')'
 rgxBase += '|' + '|'.join(accMats)
@@ -1287,8 +1284,12 @@ def delete_invisible_faces(pmx, input_filename_pmx, write_model=True, moreinfo=T
 	"""
 Detects unused vertices and invisible faces and removes them accordingly, as well as associated VertexMorph entries.
 An face is invisible if the corresponding texture pixel(== UV) of all three vertices has an alpha value of 0%.
+- Certain material slots (and specific names) are considered "fragile" and scanned on 9 instead of 3 points -- This may increase runtime
 If the material is defined by less than 50 vertices, it will be ignored to avoid breaking primitive meshes (like cubes or 2D planes)
 If all faces of a given material are considered invisible, it will be ignored and reported to the user for manual verification.
+
+[Options]:
+- "delDisp": bool -- Set false to suppress automatic deletion of materials marked as "Disabled". (Default: Set null for user prompt)
 
 [Output]: PMX file '[modelname]_pruned.pmx'
 
@@ -1308,7 +1309,10 @@ If all faces of a given material are considered invisible, it will be ignored an
 	verify = []
 	small = []
 	disabled = []
-	delDisp = opt.get("delDisp", False)
+	processed = []
+	delDisp = util.ask_yes_no("Auto-delete disabled Materials", "y", check=opt.get("delDisp", None))
+	
+	skipAsking = util.is_auto() or not util.ask_yes_no("Confirm before deleting big", "n")
 	
 	### Outside so that it still runs even if no material triggers it.
 	print("\n=== Remove any vertices that belong to no material in general")
@@ -1316,8 +1320,8 @@ If all faces of a given material are considered invisible, it will be ignored an
 	## Slots which usually contain only one-dimensional meshes
 	careful_mats = '|'.join(["ct_bra", "ct_shorts", "ct_socks", "ct_panst"])
 	careful_mats += '|' + '|'.join(["ct_clothesBot"])
-	fragile_name = '|'.join(["acs_m_necktielong01", "mf_m_primmaterial", "necklace", "cf_m_bodytights"])
-	breakin_name = ["acs_m_necklace_heart"]
+	fragile_name = '|'.join(["acs_m_necktielong01", "mf_m_primmaterial", "necklace", "cf_m_bodytights", "ls_t_high_neck01"])
+	breakin_name = '|'.join(["acs_m_necklace_"])
 	def get_uv(w,h,v): return [int(h * (v.uv[1] % 1)), int(w * (v.uv[0] % 1)), 3]
 	
 #> foreach in materials
@@ -1325,24 +1329,42 @@ If all faces of a given material are considered invisible, it will be ignored an
 		mat = pmx.materials[mat_idx]
 		print(f"\n=== Scanning [{mat_idx:2}]({mat.faces_ct:5}) " + mat.name_jp)
 		isPrim = util.is_primmat(mat)
+		delME = False
 		
 		if mat.faces_ct == 0:
 			print(f"> Material has no faces, skipping...")
 			continue
-		
 		## Remove Bonelyfans, c_m_shadowcast if they have any vertices
 		if any([x in mat.name_jp for x in ["Bonelyfans", "shadowcast"]]):
 			print(f"> Deleting useless material...")
 			faces = from_material_get_faces(pmx, mat_idx, True, moreinfo=False)
-			delete_faces(pmx, faces)
+			delete_faces(pmx, faces);processed.append(mat_idx)
 			changed = True
 			continue
+		
+		## Check for appended extra materials and delete if the base is gone
+		if re.search("MECopy", mat.name_jp):
+			match = re.search("([^*]+?)\.MECopy(\d+)(\*\d+)?", mat.name_jp)
+			meOffset = int(match[2])
+			mePIdx = mat_idx - meOffset
+			meBase = pmx.materials[mePIdx]
+			meName = f"{match[1]}{match[3]}" if match[3] else match[1]
+			if (meBase.name_jp == meName):
+				if not mePIdx in processed:
+					print(f">[!] Skipping extras of previous skipped material...")
+					continue ## TODO: Add same list adjustment for Skipping as for Disabled
+				if (meBase.faces_ct == 0):
+					print(f">[!] Deleting extras of previous disabled material...")
+					delME = True
+			## Todo: Add "Skipping because base was skipped" using the [processed] list
+		
 		## If deleting disabled materials, do them here too
-		if delDisp and util.isDisabled(mat):
-			print(f">[!] Deleting disabled material...")
+		if delDisp and (util.isDisabled(mat) or delME):
+			if not delME: print(f">[!] Deleting disabled material...")
 			faces = from_material_get_faces(pmx, mat_idx, True, moreinfo=False)
-			delete_faces(pmx, faces)
-			disabled.append(mat_idx)
+			delete_faces(pmx, faces);processed.append(mat_idx)
+			if not delME: disabled.append(mat_idx) ## Change "Disabled" Entry to be a range
+			else: disabled[-1] = re.sub(r"(\d+)(-\d+)?", f"$1-{mat_idx}", f"{disabled[-1]}")
 			changed = True
 			continue
 			
@@ -1358,7 +1380,7 @@ If all faces of a given material are considered invisible, it will be ignored an
 		if re.search("ct_head", mat.comment) or mat.name_jp in ["cf_m_body", "cm_m_body", "cf_m_mm", "cf_m_eyeline_kage", "cf_m_tooth"]:
 			print("> Material should never be checked, skipping")
 			continue
-		if mat.name_jp in breakin_name: print("> Material always breaks, ignored"); continue
+		if re.search(breakin_name, mat.name_jp): print("> Material too fragile, ignored"); continue
 		isCareful = re.search(careful_mats, mat.comment) is not None
 		isFragile = (re.search(fragile_name, mat.name_jp) is not None)
 		isCareful |= isPrim or isFragile
@@ -1419,7 +1441,7 @@ If all faces of a given material are considered invisible, it will be ignored an
 			if lenFaces < 100: isFragile = True
 			ratio = abs((cnt / len(old_faces)))
 			if ratio < 0.1:
-				if not util.is_auto() and not isCareful and not util.ask_yes_no("> Cutting away more than 90% of this material, proceed?"):
+				if not skipAsking and not isCareful and not util.ask_yes_no("> Cutting away more than 90% of this material, proceed?"):
 					continue
 				isCareful = recCareful = True
 			elif moreinfo: print(f"> Detected {(1 - ratio) * 100}% to cut away")
@@ -1455,11 +1477,12 @@ If all faces of a given material are considered invisible, it will be ignored an
 				## Swap the list
 				if (len(faces) != len(new_faces)):
 					print(f">> Reduced delete count from {len(faces)} to {len(new_faces)}")
+				##--- Print "Still deleting X Faces [or] Nothing to delete after careful scan!"
 				#(Idea): Could additionally smooth it out <Add lonely "Keep Face", remove lonely "Remove Face">
 				faces = new_faces
 			else: print(f">>> Deleting {len(faces)}...")
 			#>	push list to **.delete_faces(pmx, faces)
-			delete_faces(pmx, faces)
+			delete_faces(pmx, faces);processed.append(mat_idx)
 			#>	call **.prune_unused_vertices(pmx, moreinfo)
 			changed = True
 	log_line = []
@@ -1480,6 +1503,11 @@ If all faces of a given material are considered invisible, it will be ignored an
 	if len(disabled) > 0:
 		print("\nThese disabled materials have been deleted because User-Input said yes.\n " + str(disabled))
 		log_line += ["> Disabled deleted: " + str(disabled)]
+		if write_model:
+			for idx in disabled:
+				mat = pmx.materials[idx]
+				mat.name_jp = "DELETE*ME"
+				mat.ambRGB = [1, 0, 0]
 	
 	end(pmx if changed and write_model else None, input_filename_pmx, "_pruned", log_line)
 
@@ -1916,6 +1944,10 @@ def ask_to_rename_extra(pmx, base):
 			os.renames(fpath+basename, fpath+dst)
 
 def __do(pmx, input_filename_pmx): pass
+
+def main_wrapper(pmx, input_filename_pmx, callback, log_suffix):
+	callback(pmx, input_filename_pmx)
+	end(pmx, input_filename_pmx, log_suffix, None)
 
 def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 	"""

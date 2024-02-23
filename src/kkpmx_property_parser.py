@@ -91,6 +91,7 @@ MT_SLOT    = "slot"
 #---- Extras
 ARGSTR    = "argStr"
 t__Reuse  = "Reuse"
+ALTNAME   = "altName"
 
 
 #############
@@ -172,6 +173,8 @@ debug_file = "showinfoFile"
 state_SKIP = "state_SKIP"
 state_UNITY = "unity"
 state_SKIN = "sharedskin"
+state_ONLY = "BODY_OR_EYE"
+state_MAPTEX = "mapMain"
 def _verbose(): return local_state.get(state_info, True)
 def _useImg():  return local_state.get(OPT_IMG, True)
 
@@ -210,10 +213,15 @@ def parseMatComments(pmx, input_file_name: str, write_model = True, moreinfo = F
 		if os.path.isabs(tex):
 			pmx.textures[idx] = os.path.relpath(tex, root)
 	
-	if write_model:
+	if local_state.get(state_ONLY, False) or DEBUG_RUN: return
+	
+	if not write_model: set_clean_texture(pmx, input_file_name)
+	
+	if write_model:# and False:
 		flag = opt.get("apply", None)
 		if flag is None: flag = util.ask_yes_no("Apply changes")
 		if flag:
+			set_clean_texture(pmx, input_file_name)
 			return kklib.end(pmx, input_file_name, "_props", log_lines)
 		return input_file_name
 	else: return kklib.end(None, input_file_name, "_props", log_lines)
@@ -249,10 +257,17 @@ def __parse_json_file(pmx, data: dict, root: str):
 	
 	hair_tabu = []
 	local_state[OPT_HAIR]  = {}
+	TEST_BODY = TEST_EYES = False
+	SECOND = False
+	local_state[state_MAPTEX] = util.DictAppend(0)
+	
 	if util.is_auto() or DEBUG_RUN:
 		local_state[OPT_CACHE] = True
 		local_state[OPT_IMG]   = True
 	else:
+		TEST_BODY = util.ask_yes_no("Re-run Body only", "n")
+		TEST_EYES = util.ask_yes_no("Re-run Eyes only", "n")
+		local_state[state_ONLY] = TEST_BODY or TEST_EYES
 		local_state[OPT_CACHE] = util.ask_yes_no("Enable Texture Cache", "y", extra="Reuse Textures that use the same parameters. [See above for more info] ")
 		local_state[OPT_IMG]   = not util.ask_yes_no("Skip images", "n")
 	
@@ -270,7 +285,10 @@ def __parse_json_file(pmx, data: dict, root: str):
 			if type(data[mat_name]) == dict:
 				if data[mat_name].get("template",False): continue # @todo_note "if TEMPLATE is true, it does not count as 'no match'"
 			msgs['miss'].append(msgsPre + mat_name)
-			print("\nCould not find {}, skipping".format(mat_name)); continue
+			print("\nCould not find {}, skipping".format(mat_name))
+			if TEST_BODY or (TEST_EYES and SECOND): break
+			if TEST_EYES: SECOND = True;
+			continue
 		mat = pmx.materials[mat_idx]
 		attr = data[mat_name]
 		local_state[state_SKIP] = {}
@@ -280,6 +298,8 @@ def __parse_json_file(pmx, data: dict, root: str):
 		if (mat.name_jp.startswith("cf_m_eyeline_kage")): continue
 		if not verbose: print("\n==== Processing " + mat.name_jp)
 		set_name(mat, attr)
+		if TEST_EYES and not mat.name_jp.startswith("cf_m_hitomi"): continue
+		if TEST_BODY and not mat.name_jp.startswith("cf_m_body"): continue
 		
 		# Copy Type
 		if type(attr) in [str, list]:
@@ -349,8 +369,12 @@ def __parse_json_file(pmx, data: dict, root: str):
 				attr[texDict[tex]] = os.path.join(base, name + texSuffix[tex])
 				#print(f">> Generate: {attr[texDict[tex]]}")
 				if tex == t__Main and base_mat.tex_idx > -1:
-					if not os.path.exists(attr[texDict[tex]]):
-						attr[texDict[tex]] = os.path.join(root, pmx.textures[base_mat.tex_idx])
+					tmp = texDict[tex]
+					if not os.path.exists(attr[tmp]):
+						attr[tmp] = os.path.join(root, pmx.textures[base_mat.tex_idx])
+					#-- Record how often a given Texture is used, to avoid identical assets (with different colors) from overwriting each other
+					#local_state[state_MAPTEX].addOrInit(attr[tmp], 0, lambda v: v+1)
+					local_state[state_MAPTEX][attr[tmp]] += 1
 				
 		# Field: Add hair flag and keep track of duplicates
 		if (attr[GROUP] == "hair"):
@@ -361,7 +385,6 @@ def __parse_json_file(pmx, data: dict, root: str):
 		if verbose: print(">--> Found {} attributes to process".format(len(attr)))
 		attr[ROOT] = root
 		attr[PARSED] = True
-		
 		parseDict = {
 			'cloth': parse_acc, 'acc': parse_acc, 'item': parse_acc,
 			'body': parse_body, 'face': parse_face,
@@ -380,6 +403,10 @@ def __parse_json_file(pmx, data: dict, root: str):
 			for (k,v) in attr.items():
 				print(f"[{k}: {v}")
 			raise err
+		if TEST_BODY: break
+		if TEST_EYES and SECOND: break
+		SECOND = True
+		
 		
 		## Clear texture cache after every run when reuse is disabled
 		if not local_state[OPT_CACHE]: local_state[ARGSTR] = {}
@@ -540,7 +567,13 @@ def parse_acc(pmx, mat, attr): ## Shader actually ignores Alpha and always uses 
 		mat.diffRGB = attr[Color_1][:3]
 		mat.ambRGB  = attr[Color_1][:3]
 		## This color provides optimal shading in KK, but we don't want a shader for that.
-		if attr[Color_Shadow] == [0.75, 0.9586206, 1, 1]: del attr[Color_Shadow]
+		#if attr[Color_Shadow] == [0.75, 0.9586206, 1, 1]: del attr[Color_Shadow]
+		## Actually, this is inside the mouth -- always ignore KK shader
+		if Color_Shadow in attr:
+			col = attr[Color_Shadow][:3]
+			rgb = (int(col[0]*255), int(col[1]*255), int(col[2]*255))
+			mat.comment = util.updateComment(mat.comment, "Backup Shadow:", rgb)
+			del attr[Color_Shadow]
 	
 	process_common_attrs(pmx, mat, attr)
 	process_color_and_detail(pmx, mat, attr)
@@ -885,7 +918,10 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 			cmtNew = []
 			def addComment(token, value): cmtNew.append(util.updateComment("", token, value))
 			comment = meta[MT_SLOT]
-			if comment in ["BodyTop","p_cf_head_bone"]: comment = meta[MT_PARENT]
+			# [BodyTop]        --> p_cf_body_00, < clothes >
+			# [p_cf_head_bone] --> ct_head
+			# [cf_J_FaceUp_ty] --> ct_hairB, ct_hairF, ct_hairS
+			if comment in ["BodyTop","p_cf_head_bone","cf_J_FaceUp_ty"]: comment = meta[MT_PARENT]
 			if comment and len(comment) > 0: addComment("Slot", comment)
 			par = meta[MT_PARENT]; ren = meta[MT_RENDER]
 			### Add accessory slot as extra line
@@ -960,7 +996,7 @@ def process_color_and_detail(pmx, mat, attr):
 				if t__Detail in attr and not os.path.exists(attr[t__Detail]):
 					del attr[t__Detail]
 					detail_or_alpha = t__Alpha in attr and os.path.exists(attr[t__Alpha])
-			attr["altName"] = re.sub("_ColorMask","",ff) + "@" + attr[META][MT_PARENT] ##--- This prevents Detail Masks being reused across slots
+			attr[ALTNAME] = re.sub("_ColorMask","",ff) + "@" + attr[META][MT_PARENT] ##--- This prevents Detail Masks being reused across slots
 		else:
 			### Ignore mf_m_primmaterial if they have a MainTex
 			if (getFN(attr[t__Main]).startswith("mf_m_primmaterial")):
@@ -968,7 +1004,7 @@ def process_color_and_detail(pmx, mat, attr):
 				return
 		handle_acc_color(pmx, attr)
 		ff = attr[t__Color if attr[t__Main] is None else t__Main]
-		if noMain: ff = replFN(attr[t__Color], attr["altName"])
+		if noMain or ALTNAME in attr: ff = replFN(ff, attr[ALTNAME])
 		attr[t__MainCol] = re.sub(".png","",ff) + suffix_Col + ".png"
 		##-- Remove a non-generated entry due to errors
 		if attr[t__MainCol] and not os.path.exists(attr[t__MainCol]):
@@ -1165,7 +1201,7 @@ def handle_acc_color(pmx, attr): ### @FIX: Add the slot name to avoid things bei
 	data[state_info]   = local_state[state_info]    # Verbosity flag
 	data["saturation"] = attr.get("saturation", 1)  # Allows adjustments to Hair-Tip saturation
 	arg6ArgStr = quoteJson(data) ## Since this is individual per slot, it prevents dupe detection
-	add_if_found(attr, data, "altName")             # Save with diff. name
+	add_if_found(attr, data, ALTNAME)             # Save with diff. name
 	arg6 = quoteJson(data)
 	
 	## Build reuse id, apply [Alpha] in case it exists (since it should only be reused if same alpha)
@@ -1173,8 +1209,18 @@ def handle_acc_color(pmx, attr): ### @FIX: Add the slot name to avoid things bei
 	
 	attr[ARGSTR] = argStr
 	tmp = local_state[ARGSTR].get(argStr, None)
-	if (tmp): attr[t__Reuse] = tmp
-	else: call_img_scripts((pathColor, arg1, arg2, arg3, arg4, arg5, arg6), "color", [6])
+	if (tmp): attr[t__Reuse] = tmp; return
+	### If the Maintex is used multiple times, make sure the ColorTex is unique BUT stay idempotent
+	# check if t__Main in state_MAPTEX > 1
+	if local_state[state_MAPTEX][main] > 1:
+		# Replace ALTNAME & overwrite arg6
+		ff = os.path.splitext(os.path.split(main)[1])[0]
+		attr[ALTNAME] = re.sub("@.+","",ff) + "@" + attr[META][MT_PARENT]
+		add_if_found(attr, data, ALTNAME)
+		orgArg6 = arg6
+		arg6 = quoteJson(data)
+	
+	call_img_scripts((pathColor, arg1, arg2, arg3, arg4, arg5, arg6), "color", [6])
 
 def handle_acc_detail(pmx, attr): ## Has @todo_add \\ @open: All the props affecting t__Detail
 	if NO_FILES in attr: return
@@ -1310,37 +1356,6 @@ def ask_to_rename_extra(base):
 			continue
 		os.renames(basename, newname)
 
-def fix_material_names(pmx, data):
-	matJsn = []
-	weird = False
-	if weird: print("--- Data.keys")
-	if weird: print("-----------")
-	for mat_name in data.keys():
-		if weird: print(mat_name)
-		if mat_name in [NAME, BASE, OPTIONS]: continue
-		## Do not add [materials] elements -- Only add Render (which have *X or no suffix)
-		if re.search("(@ca_slot\d+|#-\d+)$", mat_name): continue
-		if weird: print("--> Add to matJsn")
-		matJsn.append(mat_name)
-	matSkip = ["Bonelyfans", "c_m_shadowcast", "cf_m_tooth", "cf_m_sirome"]
-	## sirome has no Render \\ teeth are stupid
-	for mat in pmx.materials:
-		## Org Material -> OrgName without any suffix
-		name = re.sub("(@ca_slot\d+|#-\d+|\*\d+)?$", "", mat.name_jp)
-		if weird: print(f"{mat.name_jp} -> {name}")
-		## Get array of all that start with this name
-		arr = [x for x in matJsn if x.startswith(name)]
-		if len(arr) == 0:
-			if any([x for x in matSkip if name.startswith(x)]): continue
-			print(f"[*] {name} has no dedicated slot match"); continue
-		### Assign the first you find to these (???)
-		elem = arr[0]
-		if weird: print(f"- {elem} <<<-- {arr}")
-		del matJsn[matJsn.index(elem)]
-	### Never report this because we use it for body color
-	if "cf_m_eyeline_kage" in matJsn: del matJsn[matJsn.index("cf_m_eyeline_kage")]
-	if len(matJsn) != 0: print("[**] matJsn is not empty: "); print(matJsn)
-	
 ##############
 	pass
 
@@ -1459,6 +1474,82 @@ def get_relative_path(path, attr=None):
 	if attr: path = attr.get(path, EMPTY_TEXTURE)
 	return os.path.relpath(path, base)
 
+def set_clean_texture(pmx, input_file_name):
+	from kkpmx_utils import get_unique_name
+	basePath = os.path.split(input_file_name)[0]
+	texPath = os.path.join(basePath, "tex") ## Destination folder
+	if not os.path.exists(texPath): os.mkdir(texPath)
+	nameMap = {
+		"cf_m_body"         : "body",
+		"cf_m_face_00"      : "face",
+		"cf_m_mayuge_00"    : "head_eyebrows",
+		"cf_m_noseline_00"  : "head_nose",
+		"cf_m_tooth"        : "head_teeth",
+		"cf_m_tooth_1"      : "head_teeth2",
+		"cf_m_eyeline_00_up": "head_eyeline_up",
+		"cf_m_eyeline_kage" : "head_eyeline_up2",
+		"cf_m_eyeline_down" : "head_eyeline_down",
+		"cf_m_sirome_00"    : "head_eye_white",
+		"cf_m_hitomi_00"    : "head_eye_l",
+		"cf_m_hitomi_00_1"  : "head_eye_r",
+		"cf_m_tang"         : "head_tongue",
+	}
+	texTabu = [None, -1]
+	imgTabu = []
+	matTabu = []
+	
+	#-- Make sure we always have unique Materials
+	for mat in pmx.materials: mat.name_jp = get_unique_name(mat.name_jp, matTabu, isFile=False)
+	pad = max([len(mat.name_jp) for mat in pmx.materials]) + len(" --> '000'")
+	try:
+		for mat in pmx.materials:
+			texIdx = mat.tex_idx
+			#- Filter out invalid and disabled, and only do it once
+			if texIdx in texTabu or util.isDisabled(mat):
+				print(f"{mat.name_jp} --> '{texIdx}'")
+				continue
+			## TODO: Call 'eye_l' = 'eye' if both have same texture
+			texTabu.append(texIdx)
+			#---
+			tex = pmx.textures[texIdx]
+			msg = f"{mat.name_jp} --> '{texIdx}'"
+			myPad = " " * (pad - len(msg))
+			print(msg + myPad + f"::[Cleanup] --> '{tex}'")
+			oldFile = os.path.join(basePath, tex)
+			if not os.path.exists(oldFile):
+				failed = True
+				if tex.startswith("cf_m_tooth_("):
+					tex = "cf_m_tooth.png"; tmp = oldFile
+					oldFile = os.path.join(basePath, tex)
+					failed = not os.path.exists(oldFile)
+					if failed: oldFile = tmp
+				if failed:
+					print(f"{mat.name_jp} has non-existing Texture '{oldFile}'; skipping...")
+					del texTabu[texIdx] ## remove again so that you see the error for all faulty materials
+					continue
+			
+			name = re.sub(r"[\*: ]+", "_", mat.name_jp)
+			if name in nameMap: token = nameMap[name]
+			else:
+				token = util.readFromComment(mat.comment, 'AccId')
+				if token is None: token = util.readFromComment(mat.comment, 'Slot')
+				else: token = "slot" + token
+			if token: name = token + '@' + name
+			
+			##--- If the file already existed as renamed, accept that
+			texFile = os.path.join(texPath, name + ".png")
+			texFile = get_unique_name(texFile, imgTabu, isFile=True)
+			
+			try:
+				util.copy_file(oldFile, texFile)
+			except Exception as ex:
+				if not os.path.exists(texFile): raise ## Ignore errors if the file already exists
+			pmx.textures[texIdx] = os.path.relpath(texFile, basePath)
+	except Exception as ex:
+		print(ex)
+		return
+	util.move_unused_to_folder(pmx, input_file_name)
+	
 ##############
 ## Mappings ##
 ##############
@@ -1580,7 +1671,7 @@ shader_dict = {
 	"xukmi/MainOpaquePlus": "cloth", ## t__Alpha, t__Another, t__Detail, t__Emission, t__Line, t__Liquid, t__Main, t__NorMap, ...
 	"xukmi/HairFrontPlus": "hair", 
 	"xukmi/SkinPlus": "item", 
-	"xukmi/MainItemAlphaPlus": "alpha", 
+	"xukmi/MainItemAlphaPlus": "alpha",
 	"xukmi/MainItemPlus": "item",
 	"xukmi/MainAlphaPlus": "alpha",
 	"xukmi/HairPlus": "hair", 

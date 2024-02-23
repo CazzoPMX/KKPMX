@@ -204,9 +204,7 @@ def translateItem_2(name, useEN=False, forceSuffix=False): ## Always input the u
 	tmp = ("."+m[1:]) if tmp == ".zzz" else tmp
 	dest += tmp
 	## Get Suffix
-	
 	if forceSuffix: arrIdx = 3
-	
 	if parts.group(3):
 		m = parts.group(3)
 		arr = [x[arrIdx] for x in suffixes if x[0] == m]
@@ -354,7 +352,7 @@ Will override existing morphs, which allows "repairing" cursed Impact-Values.
 	local_state["moreinfo"] = moreinfo or DEBUG
 	local_state["univrm"] = util.is_univrm()
 	####
-	if not _univrm() and find_mat(pmx, "cf_m_face_00", True) == -1:
+	if not _univrm() and not util.findMat_Face(pmx):
 		print(">> Skipping because model has no standard face texture.")
 		return input_file_name
 	####
@@ -786,7 +784,7 @@ def sort_morphs(pmx):
 	baseIdx = 0; newMorphs = []
 	## Order: VRC, A E I O U Blink, Material, slots, Extras, Vocals, Groups, Components
 	## List Export \\ Materials \\ Extras \\ Group
-	## >Todo> Add some sort of Material Sorter I guess
+	## TODO: Add some sort of Material Sorter I guess
 	def sorter(baseIdx, _list, _sep = None):
 		if not _sep is None:
 			newMorphs.append(make_separator(pmx, _sep))
@@ -923,6 +921,8 @@ def sort_bones_into_frames(pmx):
 	# Vertex Bones and Any JP
 	reKeep = re.compile(r"cf_s_|[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]+", re.U)
 	
+	reExt = re.compile(r"^cf_s_|腕捩|手捩", re.U)
+	reSlot = re.compile(r"^a_n_|cf_s_spine02", re.U)
 	
 	for d,bone in enumerate(pmx.bones):
 		try:
@@ -940,8 +940,8 @@ def sort_bones_into_frames(pmx):
 				[used_bones.add(x) for x in arr]
 				slot_bones[curSlot] += arr
 				continue
-			## Group all remaining Vertex Bones
-			if name.startswith("cf_s_"):
+			## Group all remaining Vertex Bones into ExtraBones
+			if reExt.match(name):
 				extra_bones.append(d)
 		except: continue
 	
@@ -978,6 +978,17 @@ def sort_bones_into_frames(pmx):
 				del pmx.frames[idx]
 		oldFrame.items = oldItems
 		pmx.frames.append(oldFrame)
+	
+	idx = find_morph(pmx, "== Vocal Components ==", False)
+	if idx != -1:
+		moremorphs = find_disp(pmx, "moremorphs", False)
+		if moremorphs == -1: return
+		moremorphs = pmx.frames[moremorphs]
+		for i,x in enumerate(moremorphs.items):
+			if x[1] != idx: continue
+			moremorphs.items = moremorphs.items[0:i];
+			break
+	
 
 
 

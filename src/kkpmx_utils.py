@@ -29,8 +29,8 @@ OPT_AUTO = "automatic"
 ALL_YES = "all_yes"
 OPT_INFO = "moreinfo"
 
-VERSION_DATE = "2024-01-02"
-VERSION_TAG = "2.3.0"
+VERSION_DATE = "2024-02-20"
+VERSION_TAG = "2.4.0"
 
 def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
@@ -223,6 +223,37 @@ def ask_number(message: str, min_val=None, max_val=None, default=None):
 	return float(val)
 ## if asking for list of numbers as "x,x" or "[x,x]" or "[[x,x],[x,x]]", check rigging
 
+def ask_array():
+	all_arr=[]
+	def is_valid_bulk(value):
+		if is_valid(value): return True
+		if is_csv_number(value): return len(value.split(',')) == 2
+		return is_csv_array(value)
+	def is_valid(value): return is_number(value) and int(value) > -1 and int(value) < len(pmx.bones)
+	def looper(start, end, log=True, all_arr=[]):
+		if start < end:
+			arr = list(range(int(start), int(end)+1))
+			all_arr += arr
+			#if log: arr_log.append("> " + json.dumps(arr))
+			#patch_bone_array(pmx, None, arr, pmx.bones[arr[0]].name_jp, 16, False)
+		else: print("> End must be bigger than start")
+	start = core.MY_GENERAL_INPUT_FUNC(is_valid_bulk, "First Bone (or Pair or JSON-Array)" + f"?: ")
+	if is_number(start): looper(start, core.MY_GENERAL_INPUT_FUNC(is_valid, "Last Bone"  + f"?: "), True, all_arr)
+	else:
+		if not start.startswith('[['):
+			if "-" in start: start = re.sub("-", ",", start)
+			if not start.startswith('['): start = f"[[{start}]]" ## Wrap flat pairs
+			else: start = f"[{start}]" ## Wrap lists without enclosing bracket
+		#arr_log.append(">>> " + json.dumps(json.loads(start)))
+		for x in json.loads(start):
+			if len(x) < 2: continue
+			if len(x) == 2: looper(x[0], x[1], False, all_arr)
+			else:
+				all_arr += x
+				#patch_bone_array(pmx, None, x, pmx.bones[x[0]].name_jp, 16, False)
+		#print("> Done")
+	return all_arr
+
 
 def now(epoch=False): ## :: str(dt) == dt.isoformat(' ')
 	"""
@@ -257,10 +288,10 @@ def throwIfDebug(isDebug, text):
 ###############
 
 def is_univrm(): return global_state.get(HAS_UNITY, False)
-def set_globals(workingdir):
+def set_globals(base_file):
 	global_state[OPT_WORKDIR] = ""
-	if not workingdir: return
-	path = os.path.split(workingdir)[0]
+	if not base_file: return
+	path = os.path.split(base_file)[0]
 	global_state[OPT_WORKDIR] = path
 	path = os.path.join(path, "UNITY_MARKER");
 	if (os.path.exists(path)): global_state[HAS_UNITY] = True
@@ -359,10 +390,14 @@ def unify_names(arr):
 		names.append(name)
 
 class DictAppend(dict):
+	def __init__(self, initVal: int):
+		self.initVal = initVal
+	def addOrInit(self, key, default, func):
+		self[key] = func(self.getdefault(key, default))
 	#__getitem__: https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence
 	def __missing__(self, key): ## Called by dict[key] if key is not in the mapü
 		#self.__setitem__
-		return []
+		return self.initVal
 
 
 #############
@@ -413,6 +448,39 @@ def is_ascii(s):
 		s.encode('ascii'); return True
 	except UnicodeEncodeError:
 		return False
+
+matsRgx = re.compile(r"( \(Instance\))*(@\w+|#\-\d+)")
+fileRgx = re.compile(r"[<>:\"/\\|?*]")
+def get_unique_name(init: str, tabu: list, isFile = False) -> str:
+	"""
+	Uniquefy a name based on a list of provided names.
+	Adds the element to [names] before returning.
+	
+	:param init: desired file path, absolute or relative
+	:param tabu: list/set of forbidden names
+	:param isFile: optional flag to handle init as FileName
+	:return: init with integers appended until it becomes unique (if needed)
+	"""
+	name = init
+	pattern = "{}*{}"
+	if isFile:
+		import os
+		base, init = os.path.split(init)
+		init       = fileRgx.sub("", init)     ## Cut off dir path to only clean file name
+		name, ext  = os.path.splitext(init)    ## ... and to make sure we take the actual extension
+		init       = os.path.join(base, init)  ## then glue together again
+		pattern    = base + "/{}_{}" + ext
+	else: init = matsRgx.sub("", init)
+	
+	if init in tabu:
+		suffix = 0
+		while True:
+			suffix += 1
+			if (pattern.format(name, suffix)) not in tabu: break
+		name = pattern.format(name, suffix)
+	else: name = init
+	tabu.append(name)
+	return name
 
 ######
 ## Finders
@@ -590,6 +658,44 @@ def is_bodyMat(mat):
 
 def is_primmat(mat): return mat.name_jp.startswith("mf_m_primmaterial")
 
+def findMat_Face(pmx):
+	idx = find_mat(pmx, "cf_m_face_00", True)
+	if idx != -1: return idx
+	for (idx,mat) in enumerate(pmx.materials):
+		slot    = readFromComment(mat.comment, "Slot")
+		MatType = readFromComment(mat.comment, "MatType")
+		if (MatType == "Face"): return idx
+		if (slot == "ct_head" and MatType == "Body"): return idx
+	return -1
+
+######
+## Common (3b:Textures)
+#####
+
+def move_unused_to_folder(pmx, input_filename_pmx):
+	from pathlib import Path
+	from shutil import move
+	source = os.path.dirname(input_filename_pmx)
+	target = os.path.join(source, "unused")
+	if not os.path.exists(target): os.mkdir(target)
+	files = Path(source).glob('*.png')
+	for oldname in files:
+		basePath, name = os.path.split(oldname)
+		newname = os.path.join(target, name)
+		move(oldname, newname)
+
+def move_unused_from_folder(pmx, input_filename_pmx):
+	from pathlib import Path
+	from shutil import move
+	target = os.path.dirname(input_filename_pmx)
+	source = os.path.join(target, "unused")
+	if not os.path.exists(source): return
+	files = Path(source).glob('*.png')
+	for oldname in files:
+		basePath, name = os.path.split(oldname)
+		newname = os.path.join(target, name)
+		move(oldname, newname)
+
 ######
 ## Common (6:Display)
 #####
@@ -660,14 +766,22 @@ def get_vertex_box(pmx, mat_idx, returnIdx=False):
 	#print(f"Front: {froBonePos}, Back: {bacBonePos}")
 	if returnIdx: verts = from_faces_get_vertices(pmx, faces, True, moreinfo=False)
 	else: verts.sort(key=lambda e: -e.pos[1]);
+	
+	center = [
+		(lefBonePos[0] + rigBonePos[0]) / 2,
+		(topBonePos[1] + botBonePos[1]) / 2,
+		(froBonePos[2] + botBonePos[2]) / 2
+		]
+	
+	
 	return (verts, {
 			"Left": lefBonePos, "Right": rigBonePos, 
 			"Top": topBonePos, "Bottom": botBonePos, "Up": topBonePos, "Down": botBonePos,
-			"Front": froBonePos, "Back": bacBonePos
+			"Front": froBonePos, "Back": bacBonePos,
+			"Center": center
 		})
 	######
 	pass #
-
 
 ######
 ## Constants
@@ -676,6 +790,7 @@ from enum import Enum
 class MatTypes(Enum):
 	ANY = "Any"       # Anything else
 	BODY = "Body"     # Designated if Skin or in ct_head
+	FACE = "Face"     # Designated if Skin or in ct_head
 	HAIR = "Hair"     # GameObjects with KKHairComponent
 	CLOTH = "Cloths"  # GameObjects with KKClothComponent
 	ACCS = "Acc"      # GameObjects with KKAccComponent

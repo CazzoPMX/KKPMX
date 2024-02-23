@@ -36,6 +36,7 @@ This section contains a list of known issues, and how to solve them.
 | All morphs are empty after I applied Bounce!  | Originally being Japanese, PMXEditor only works with English decimal separators; if your Regional Language settings happen to use '1,5' instead of '1.5',<br/>the only solution is to change the Decimalseparator used by your system (usually found in the Formats tab under 'Region and Language').<br/>This will not change how the separator is typed by the numpad, though, as this depends on your "UI-Language", also called "Region-Locale". |
 | CSV imports / export don't work! | Same problem as above |
 | 'Update model' in the TransformView stays at 0/0 | This can be caused by '-1' bone ids in vertex weights. To fix: IN the Main window, click [Edit] > [Vertex] > [Normalize], then click yes. |
+| Eye sliders do not go fully close the eyes! | If the eyes are too big, the default values are not enough.<br/>In the [Morph] tab of the main window, set the [まばたき] Morph to 1.00, then go to the [TransformView] and play around until it feels right, then keep the factor in mind.<br/>Open KKPMX_core and select "Add Emotion Morphs", provide the model, and then input the number from just now.<br/>Proceed with the new model or repeat until it works out. |
 
 ### MMD issues
 

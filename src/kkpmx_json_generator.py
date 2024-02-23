@@ -149,6 +149,8 @@ KAGE_MATERIAL = "cf_m_eyeline_kage" ## Special exception, used as piggy back for
 renTag_isBody = "renTag_isBody"
 renTag_idxOvr = "renTag_idxOvr" ## Index Override
 local_state = { }
+state_debug = "debug"
+def verbose(): return False#local_state.get(state_debug, False)
 
 #############
 def GenerateJsonFile(pmx, input_filename_pmx):
@@ -156,11 +158,12 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 	path = os.path.join(wdir, "#generateJSON.json")
 	if os.path.exists(path):
 		if util.is_auto(): return path
-		if not util.ask_yes_no("Found existing #generateJSON file. Regenerate?", "n"):
+		elif not util.ask_yes_no("Found existing #generateJSON file. Regenerate?", "n"):
 			return path
 
 	local_state[renTag_isBody] = []
 	local_state[renTag_idxOvr] = {}
+	local_state[state_debug] = local_state.get(state_debug, not util.is_prod() and True)
 	##### Generate Bone tree
 	slots = []
 	tree = {}
@@ -169,21 +172,27 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 	
 	#[X]: Populate Map with (pmx.materials).name_jp being unique
 	#### dict --> { name: { name, idx } }
-	#### dict --> { name: True or False }
 	kk_re = re.compile(r" ?\(Instance\)_?(\([-0-9]*\))?")
 	kk_skip = re.compile('|'.join(["Bonelyfans","shadowcast","Standard"]))
 	mat_filter = {}
-	for (idx, name) in enumerate([m.name_jp for m in pmx.materials]):
+	for (idx, mat) in enumerate(pmx.materials):
+		name = mat.name_jp
 		suffix = 0
-		mat = kk_re.sub("", name)
-		mat_filter[mat] = mat_filter.get(mat, 0) + 1
-		if mat in mat_dict:
+		name = kk_re.sub("", name)
+		mat_filter[name] = mat_filter.get(name, 0) + 1
+		if name in mat_dict:
 			while True:
 				suffix += 1
-				if ("{}*{}".format(mat, suffix)) not in mat_dict: break
-			#pmx.materials[idx].name_en = "{}*{}".format(mat.name_en, suffix)
-			mat = "{}*{}".format(mat, suffix)
-		mat_dict[mat] = kk_skip.match(name)
+				if ("{}*{}".format(name, suffix)) not in mat_dict: break
+			name = "{}*{}".format(name, suffix)
+		matId = util.readFromCommentRaw(mat.comment, "[MatId]:")
+		mat_dict[matId] = mat.name_jp
+	def adjustNames(raw_json):
+		for val in mat_dict.items():
+			raw_json = re.sub(f"\".+?(#{val[0]})\"", f"\"{val[1]}#{val[0]}\"", raw_json)
+		if genFiles: util.write_json(raw_json, "_gen\#raw_json");
+		return raw_json
+	
 	##--- Verify Sanity check
 	mat_filter = [f'- {k}: x{v}' for (k,v) in mat_filter.items() if v > 1]
 	if len(mat_filter) > 0:
@@ -221,7 +230,7 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 				if not "#generateJSON.json" in file:
 					jsonPath = os.path.join(wdir, file)
 					break
-	json_ren = util.load_json_file(jsonPath)
+	json_ren = util.load_json_file(jsonPath, extra=adjustNames)
 	if json_ren is None:
 		print("--- No file has been generated")
 		return False
@@ -255,7 +264,6 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 		prDEBUG(k, f"------- End: {k} --- Parent={_parent}")
 		parent_tree.setdefault(_parent, [])
 		parent_tree[_parent].append(k)
-	#if genFiles: util.write_json(parent_tree, "_gen\#3Parents")
 	
 	if DEBUG:
 		tmp = parent_tree["_blank"]
@@ -267,6 +275,7 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 	GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree)
 	GenerateJsonFile__Clothes(pmx, arr, json_tree, parent_tree)
 	GenerateJsonFile__Accs(pmx, arr, json_tree, slots, parent_tree)
+	
 	####
 	# In certain cases, especially when using Game-ported Models, Material names may be shared between Clothes and Accs.
 	# The code that tries to repair the Name-order will get confused by that, so we disable that in such cases.
@@ -508,6 +517,7 @@ cat_to_Title = {
 	}
 
 
+tabuKeys = { "keys": [] }
 def write_entity(pmx, arr, json_tree, opt):
 	"""
 #	Search in [json_tree] for all entities named 'opt' (if str) or opt[opt_Name] (if dict)
@@ -536,9 +546,11 @@ def write_entity(pmx, arr, json_tree, opt):
 	if isDict: name = opt.get(opt_Name)
 	else: opt = {}
 	
+	if verbose(): print(f"------------- {name}")
 	targetBase = {}
-	_filter = re.compile(name + r'(#-\d+|\*\d+)?$')
+	_filter = re.compile(re.escape(name) + r'([#*]-?\d+)*$')
 	#_elem = filter(lambda kv: kv[0].startswith(name), json_tree.items())
+	
 	_elem = filter(lambda kv: _filter.match(kv[0]), json_tree.items())
 	#for x in _elem: print(x[0])### Verifyer
 	if not _elem:
@@ -550,9 +562,14 @@ def write_entity(pmx, arr, json_tree, opt):
 		if not opt.get(opt_Optional, False): print(f"[!] Model does not contain an entry for {name}")
 		return
 	suffix = opt.get(opt_Iter, 0)
-	for x in range(suffix): elem = next(_elem)
+	try:
+		for x in range(suffix): elem = next(_elem)
+	except StopIteration:
+		print(f"State: {name}, {suffix}")
+		return
 	#prDEBUG("-------------------------------")
 	prDEBUG(elem[0], f"> [{suffix}]: {reduceDictData(elem[1])}")
+	if verbose(): print(elem[0], f"> [{suffix}]: {reduceDictData(elem[1])}")
 	
 	#---#
 	token = re.sub(r"( \(Instance\))+", "", elem[0]) ## the full name that started with [name], without (instance)
@@ -672,6 +689,7 @@ def write_entity(pmx, arr, json_tree, opt):
 			#### Add weird Body assets using "Armature" too
 			if parent in local_state[renTag_isBody]: val[ren_Type] = mt.BODYACC.value
 			if parent in ["ct_head", "p_cf_body_00", "p_cm_body_00"]: val[ren_Type] = mt.BODY.value
+			if val[ren_Render] == "cf_O_face": val[ren_Type] = mt.FACE.value
 		
 		### add to arr
 		#mat_comment = opt.get(opt_Comment) ## generate some based on data
@@ -814,6 +832,7 @@ def generate_render_tree(pmx, tree, json_ren):
 	```
 	"""
 	if genFiles: util.write_json(json_ren, "_gen\#1R00_json_ren", True)
+	#::: Generates each Renderer with META + its Mat Tokens
 	#DEBUG = True
 	
 	### Group by Parent

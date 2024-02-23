@@ -448,9 +448,9 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 	## Also move the KK Toes into proper Toes to allow D-Bones (if merged, else keep)
 	if fbx("cf_j_toes0_R") == -1 or flagToes:
 		toe = fbx("cf_j_toes_L")
-		if toe != -1: soloFixMap[toe] = idxArr[1]; usedBones.remove(toe)
+		if toe != -1 and toe in usedBones: soloFixMap[toe] = idxArr[1]; usedBones.remove(toe)
 		toe = fbx("cf_j_toes_R")
-		if toe != -1: soloFixMap[toe] = idxArr[3]; usedBones.remove(toe)
+		if toe != -1 and toe in usedBones: soloFixMap[toe] = idxArr[3]; usedBones.remove(toe)
 	
 	(idx_LF,idx_LT,idx_RF,idx_RT,idx_LL,idx_RL) = idxArr
 	threshold = pmx.bones[fb("右足ＩＫ")].pos[1]
@@ -561,3 +561,4 @@ User Choices:
  - PMX file '[modelname]_reduced.pmx' when called on its own
   - If unhappy with the result, call this again using [modelname]_better.pmx
 """
+
