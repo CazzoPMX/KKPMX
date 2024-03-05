@@ -796,6 +796,7 @@ def collectSubTree(pmx, tree, _start, _forceEnd=False):
 	return subTree
 
 kk_re = re.compile(r"( \(Instance\))*(@\w+|#\-\d+)")
+kk_skip = re.compile(r"bonelyfans|shadowcast")
 def uniquefy_material(mat: str, names: list):
 	"""
 	Uniquefy a name based on a list of provided names.
@@ -947,7 +948,10 @@ def generate_material_tree(pmx, tree, render_tree: dict, json_mats: dict):
 			if not _vXFlag_UseId: render_tree[ren[0]][ren_Target] = uniquefy_material(_mat, uniqueMats)
 			else:
 				_matId = _mat.split('#')[-1]
-				if not _matId in matIdDict: util.throwIfDebug(DEBUG, f"ID '{_matId}' was supposed to exist but does not"); continue
+				if not _matId in matIdDict:
+					if not kk_skip.search(ren[1][ren_Render]): ## Dirty workaround to not log missing things that were useless
+						util.throwIfDebug(DEBUG, f"ID '{_matId}' was supposed to exist but does not")
+					continue
 				render_tree[ren[0]][ren_Target] = matIdDict[_matId] #uniquefy_material(_mat, uniqueMats)
 			prDEBUG(_mat, f"-- ren_Target: {render_tree[ren[0]][ren_Target]}")
 #	### Map existing render to existing materials

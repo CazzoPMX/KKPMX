@@ -1476,6 +1476,8 @@ def get_relative_path(path, attr=None):
 
 def set_clean_texture(pmx, input_file_name):
 	from kkpmx_utils import get_unique_name
+	print("--- [Sorting Textures]")
+	print("Read: Material -> TexID  -- if first occurence >> ::[Cleanup] --> TexName")
 	basePath = os.path.split(input_file_name)[0]
 	texPath = os.path.join(basePath, "tex") ## Destination folder
 	if not os.path.exists(texPath): os.mkdir(texPath)

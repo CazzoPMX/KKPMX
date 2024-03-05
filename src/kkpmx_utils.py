@@ -29,8 +29,8 @@ OPT_AUTO = "automatic"
 ALL_YES = "all_yes"
 OPT_INFO = "moreinfo"
 
-VERSION_DATE = "2024-02-20"
-VERSION_TAG = "2.4.0"
+VERSION_DATE = "2024-03-05"
+VERSION_TAG = "2.4.1"
 
 def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
@@ -654,7 +654,8 @@ def is_male(pmx): return find_bodyname(pmx) != "cf_m_body"
 
 def is_bodyMat(mat):
 	return re.search("ct_head", mat.comment) or \
-		mat.name_jp in ["cf_m_face_00", "cf_m_body", "cm_m_body", "cf_m_mm"]
+		mat.name_jp in ["cf_m_face_00", "cf_m_body", "cm_m_body", "cf_m_mm"] or \
+		mat.name_jp in ["cf_m_eyeline_kage", "cf_m_tooth", "cf_m_sirome"]
 
 def is_primmat(mat): return mat.name_jp.startswith("mf_m_primmaterial")
 

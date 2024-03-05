@@ -56,6 +56,10 @@ If you have any questions or feedback, feel free to hit me up on Discord -- I ma
 I am open to help you convert cards into VRC/VRM depending on complexity, see the server for more details.
 
 
+## Other cool people doing similar things!
+
+ - [KKBP](https://github.com/FlailingFog/KK-Blender-Porter-Pack)
+
 ## Misc
 
 

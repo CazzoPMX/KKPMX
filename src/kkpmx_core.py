@@ -1377,7 +1377,7 @@ If all faces of a given material are considered invisible, it will be ignored an
 			print("> No file found at this path, skipping")
 			continue
 	#>	ignore head assets, because missing vertices in these basically ruin most expressions
-		if re.search("ct_head", mat.comment) or mat.name_jp in ["cf_m_body", "cm_m_body", "cf_m_mm", "cf_m_eyeline_kage", "cf_m_tooth"]:
+		if util.is_bodyMat(mat):
 			print("> Material should never be checked, skipping")
 			continue
 		if re.search(breakin_name, mat.name_jp): print("> Material too fragile, ignored"); continue
@@ -1437,6 +1437,9 @@ If all faces of a given material are considered invisible, it will be ignored an
 			if cnt == 0:
 				print(">!! Trying to delete all faces of this material, please verify manually. Skipped.")
 				verify.append(mat_idx)
+				mat.alpha = 0
+				mat.flaglist[4] = False
+				mat.comment = util.updateCommentRaw(mat.comment, "[Note]: Tried to delete all faces of this. Verify if not needed and delete.")
 				continue
 			if lenFaces < 100: isFragile = True
 			ratio = abs((cnt / len(old_faces)))

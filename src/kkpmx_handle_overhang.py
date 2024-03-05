@@ -195,17 +195,17 @@ def run_kk_defaults(pmx, input_filename_pmx, _opt = {}):
 		averageOut("cf_s_bust03_R", "maxZ", 2)
 		averageOut("cf_s_bust03_R", "maxZ", 2)
 	elif choice == CH__BOX_BIG:
-		addIfFound("cf_d_arm01_R", "minX", 0)
-		addIfFound("cf_d_arm01_L", "maxX", 0)
+		addIfFound("右腕捩1", "minX", 0)
+		addIfFound("左腕捩1", "maxX", 0)
 		addIfFound("cf_s_spine02", "minY", 1)
-		addIfFound("cf_d_arm01_L", "maxY", 1, -0.2)
+		addIfFound("左腕捩1", "maxY", 1, -0.2)
 		bounds["maxZ"] = 3
 		bounds["minZ"] = -3
 	elif choice == CH__BOX_MEDIUM:
-		addIfFound("cf_d_arm01_R", "minX", 0)
-		addIfFound("cf_d_arm01_L", "maxX", 0)
+		addIfFound("右腕捩1", "minX", 0)
+		addIfFound("左腕捩1", "maxX", 0)
 		addIfFound("cf_s_spine02", "minY", 1)
-		addIfFound("cf_d_arm01_L", "maxY", 1)
+		addIfFound("左腕捩1", "maxY", 1)
 		
 		averageOut("cf_s_bnip02_R", "minX", 0, -0.3)
 		averageOut("cf_s_bnip02_L", "maxX", 0, 0.3)

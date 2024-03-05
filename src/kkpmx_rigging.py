@@ -936,7 +936,7 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit): ## TODO: Make the tail end 
 	"""
 	:: private method as common node for both normal and hair chains
 	"""
-	verbose = True#_verbose()
+	verbose = _verbose()
 	dRigAcc = False
 	### At least this exists for every accessory
 	__root_Name = "N_move"
