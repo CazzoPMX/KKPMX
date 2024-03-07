@@ -1418,11 +1418,14 @@ If all faces of a given material are considered invisible, it will be ignored an
 		new_verts = []
 		vert_uv = {} ## Store UV for use in careful calc
 	#>	foreach in vertices
+		from math import floor
 		for idx,vert in enumerate(old_verts):
 		#>	coord = (w * UV.x, h * UV.y) -- UV can be bigger than 1, but this only repeats the texture inbetween
-			coord = [int(h * (vert.uv[1] % 1)), int(w * (vert.uv[0] % 1)), 3]
+			coord = [floor(h * (vert.uv[1] % 1)), floor(w * (vert.uv[0] % 1)), 3]
 			#print(f"[{vert_idx[idx]}] w:{w}, h:{h} -- UV.x: {w * vert.uv[0]}, UV.y: {h * vert.uv[1]}")
 		#>	if [img(coord).Alpha == 0]: add idx to list
+			if coord[0] == h: coord[0] -= 1
+			if coord[1] == w: coord[1] -= 1
 			if (img[coord[0], coord[1], coord[2]] == 0):
 				new_verts.append(vert_idx[idx])
 				vert_uv[vert_idx[idx]] = coord
