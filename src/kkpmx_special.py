@@ -271,10 +271,11 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 	soloFixMap = {} # Map for additional edits of chains only using the last bone
 	for idx in checkSlot:
 		slotName  = pmx.bones[idx].name_jp ## The original Slot Name for Physics
-		slotRB    = util.find_all_in_sublist(slotName, pmx.rigidbodies, False)[1:] ## Skip the _r one
+		slotRB    = util.find_all_in_sublist(slotName, pmx.rigidbodies, False)
+		
 		parIdx    = idx
 		resetName = False
-		myMap     = fullMap[slotName]
+		myMap     = fullMap.get(slotName, {})
 		##-- Add the ca_slot into usedBones for now
 		orgPar  = idx if parIdx in multiList else -1
 		orgName = slotName
@@ -287,10 +288,14 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 			multiSlot[multName] = multiSlot[multName] + 1
 			usedBones.append(idx) ## Important else it will be reset to OrgParent (citation-needed)
 			## Repair things
-			myMap    = fullMap[oldName] ## use the correct Map
+			myMap    = fullMap.get(oldName, {}) ## use the correct Map
 			slotRB   = util.find_all_in_sublist(oldName, pmx.rigidbodies, False)
 			####
 		doPrint = False
+		
+		# Down here instead of at fetch to include the redirect-check
+		if len(slotRB) < 1: print(f"[!]: No rigids found for idx={idx} ('{slotName}')!");
+		elif slotRB[0].name_jp.endswith("_r"): slotRB = slotRB[1:] ## Skip the _r one
 		
 		if doPrint: print(f":--- Start {idx}: {slotName} (in multiList: {orgPar != -1})")
 		###--- [A] Keep ca_slot (use this for Tails ?)
@@ -424,11 +429,10 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 						__tmp = pmx.bones[__idx]
 						if doPrint: print(f":>>> Testing {__idx} = {__tmp.name_jp} with parent {__tmp.parent_idx}")
 						if __tmp.parent_idx != boneIdx: continue
-						extraIdx = __idx
-						if doPrint: print(f":>>>> Pushing {extraIdx}")
-						multiMap[extraIdx] = (slotName, __tmp.name_jp) ## Provide the original name to get the correct Map
-						multiList.append(extraIdx)
-						checkSlot.append(extraIdx)
+						if doPrint: print(f":>>>> Pushing {__idx}")
+						multiMap[__idx] = (slotName, __tmp.name_jp) ## Provide the original name to get the correct Map
+						multiList.append(__idx)
+						checkSlot.append(__idx)
 				break
 		##-- End Loop "for idx in fullMap[pmx.bones[idx].name_jp]"
 		#: Set parent variables : newParent, hadOneUsedParent, storedRbkID

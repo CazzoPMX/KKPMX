@@ -29,8 +29,8 @@ OPT_AUTO = "automatic"
 ALL_YES = "all_yes"
 OPT_INFO = "moreinfo"
 
-VERSION_DATE = "2024-03-05"
-VERSION_TAG = "2.4.1"
+VERSION_DATE = "2024-03-08"
+VERSION_TAG = "2.4.3"
 
 def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
@@ -509,6 +509,7 @@ def find_all_in_sublist(name, arr, returnIdx=True):
 	idx = -1
 	if not PRODUCTIONFLAG:
 		if name in [None, ""]: raise Exception("Empty Name!")
+	if name in [None, ""]: return result
 	for item in arr:
 		idx += 1
 		_name = f"{item.name_jp};{item.name_en}"
