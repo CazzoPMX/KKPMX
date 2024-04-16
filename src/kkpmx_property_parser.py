@@ -92,6 +92,7 @@ MT_SLOT    = "slot"
 ARGSTR    = "argStr"
 t__Reuse  = "Reuse"
 ALTNAME   = "altName"
+PROCESS   = "Processed"
 
 
 #############
@@ -342,6 +343,19 @@ def __parse_json_file(pmx, data: dict, root: str):
 			#<< Because multi-part assets share a common texture, the unique-fyed name must be reduced for them.
 			name = re.sub(r"\*\d+","",name) #@todo_note "<< smt about '* not allowed in filename' >>"
 			
+			ignErrors = False
+			if util.readFromCommentRaw(mat.comment, "[:Processed:]", exists=True):
+				attr[PROCESS] = ignErrors = True
+				mat.comment = util.deleteCommentRaw(mat.comment, "[:Processed:]")
+				if verbose: print("Texture was already exported preprocessed, resetting Textures...")
+				
+				if texDict[t__Main] not in attr[TEXTURES]: attr[TEXTURES].append(texDict[t__Main])
+				for t in ["t__Color", "t__Detail", "t__Alpha", "t__Line"]:
+					tt = texDict[t]
+					if tt in attr[TEXTURES]: attr[TEXTURES].remove(tt)
+					if tt in attr: del attr[tt]
+			
+			
 			## Transform supported textures into actual paths
 			#print("TEXTURES:: " + str(attr[TEXTURES]))
 			for tex in set(texDict.values()):
@@ -375,6 +389,11 @@ def __parse_json_file(pmx, data: dict, root: str):
 					#-- Record how often a given Texture is used, to avoid identical assets (with different colors) from overwriting each other
 					#local_state[state_MAPTEX].addOrInit(attr[tmp], 0, lambda v: v+1)
 					local_state[state_MAPTEX][attr[tmp]] += 1
+			##[If a MainTexture is set regardless, then always support that usecase regardless of Shader]
+			if t__Main not in attr and base_mat.tex_idx > -1:
+				tmp = texDict[t__Main]
+				attr[tmp] = os.path.join(root, pmx.textures[base_mat.tex_idx])
+				local_state[state_MAPTEX][attr[tmp]] += 1
 				
 		# Field: Add hair flag and keep track of duplicates
 		if (attr[GROUP] == "hair"):
@@ -397,8 +416,8 @@ def __parse_json_file(pmx, data: dict, root: str):
 			elif not DEBUG_RUN:
 				msgs['no_action'].append(msgsPre + mat.name_jp + f" ({attr[GROUP]})")
 				print(">--> [MissingAction]: " + msgs['no_action'][-1])
-				if util.is_prod(): parseDict["item"](pmx, mat, attr)
-		except Exception as err:
+				if util.is_prod(): parseDict["item"](pmx, mat, attr)#; exit()
+				else: exit()
 			print("--- Error while processing this Material")
 			for (k,v) in attr.items():
 				print(f"[{k}: {v}")
@@ -514,6 +533,8 @@ def parse_face(pmx, mat, attr):
 	## [t__Line] ++ DetailNormalMapScale :: [SpecialEffects]
 	#>> RGB-B ++ Alpha (0-200)
 	
+	## TODO Actually setting the skin.Diffuse to a skin color helps a lot in MMD
+	
 	remove_face_alpha(pmx, attr)
 	
 	if t__Detail in attr: #pass ## Load file, pass to [detail python]
@@ -596,7 +617,7 @@ def parse_eye(pmx, mat, attr): ## @open: rotation, offset, scale
 		handle_eye_highlight(pmx, attr)
 		set_new_texture(pmx, mat, attr, [attr[t__Main], suffix_HL + ".png"])
 
-def parse_hair(pmx, mat, attr): ## @open: t__Color, t__Detail, t__HairGloss, Color2, Color3
+def parse_hair(pmx, mat, attr): ## [HasTodo] @open: t__Color, t__Detail, t__HairGloss, Color2, Color3
 	print(":: Running 'hair' parser")
 	verbose = _verbose()
 	###
@@ -606,6 +627,11 @@ def parse_hair(pmx, mat, attr): ## @open: t__Color, t__Detail, t__HairGloss, Col
 	###
 	extend_colors(attr, [Color_1, Color_2, Color_3, Color_Line, Color_Shadow])
 	process_common_attrs(pmx, mat, attr)
+	
+	#--- TODO
+	# When keeping the main Hair Color as [Diffuse, Specular], then faint Highlights are invisible (with own ToonShader)
+	#-- Not so much when using the Color3 for all three
+	# :: After some tests, it seems to work WAY BETTER (in PMXE at least) when adding TIPS to Diffuse & Specular, keeping MAIN in Ambient
 	
 	## This may notify users about a maybe-wrong color configuration for this asset -- 
 	if attr[Color_1] == attr[Color_2] == attr[Color_3] == [1,1,1,1] and os.path.exists(attr.get(t__Main, "")):
@@ -835,7 +861,7 @@ In specific:
 		msg = [f"> Doing '{name}'", ""]
 		name = re.sub(r"_delta", "", name) ##<< Remark: update to use OPT_ENG
 		## body & face only contain overcolor1+2+3 anyway, which has nothing to do with skin color.
-		if kage and name in skin:
+		if kage and name in skin and Color_1 in kage:
 			msg[1] = " >> Is skin"
 			mat.diffRGB = kage[Color_1][:3]
 			mat.specRGB = kage[Color_1][:3]
@@ -915,14 +941,35 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 		if MT_TYPE in meta: mat.comment = util.updateComment(mat.comment, "MatType", meta[MT_TYPE])
 		#### Add Slot into Comment (note: optimize this a bit later to also use updateComment but keep order)
 		if MT_SLOT in meta:
-			cmtNew = []
-			def addComment(token, value): cmtNew.append(util.updateComment("", token, value))
+			cmtNew = ["" if (not mat.comment or len(mat.comment) == 0) else mat.comment]
+			def addComment(token, value, isRaw = False, _append=False):
+				funcIN  = util.readFromCommentRaw if isRaw else util.readFromComment
+				funcOUT = util.updateCommentRaw if isRaw else util.updateComment
+				funcDEL = util.deleteCommentRaw if isRaw else util.deleteComment
+				
+				orgCmt = cmtNew[0]
+				if "Disabled" in token:
+					if funcIN(orgCmt, token, True):
+						orgCmt = funcDEL(orgCmt, token)
+						cmtNew.append(funcOUT("", "[:Disabled:]"))
+					cmtNew[0] = orgCmt
+					return
+			
+				if funcIN(orgCmt, token, True):
+					value = re.sub(r"[\r\n]+", "", funcIN(orgCmt, token))
+					orgCmt = funcDEL(orgCmt, token)
+				if value is None: return
+				cmtNew[0] = orgCmt
+				cmtNew.append(funcOUT("", token, value.strip()))
+				
 			comment = meta[MT_SLOT]
 			# [BodyTop]        --> p_cf_body_00, < clothes >
 			# [p_cf_head_bone] --> ct_head
 			# [cf_J_FaceUp_ty] --> ct_hairB, ct_hairF, ct_hairS
 			if comment in ["BodyTop","p_cf_head_bone","cf_J_FaceUp_ty"]: comment = meta[MT_PARENT]
 			if comment and len(comment) > 0: addComment("Slot", comment)
+			addComment("CTASlot", None)
+			
 			par = meta[MT_PARENT]; ren = meta[MT_RENDER]
 			### Add accessory slot as extra line
 			if re.match("ca_slot\d+", par): addComment("AccId", re.match("ca_slot(\d+)", par)[1])
@@ -933,21 +980,24 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 			if re.match("ct_top_parts_", par): addComment("TopId", par)
 			### Give some navigation for primmats
 			if attr[NAME].startswith("mf_m_primmaterial"): addComment("PrOrg", meta[MT_RENDER])
-			cmtNew = "\r\n".join(cmtNew)
+			
+			addComment("MatType", None)
+			addOld = ("[:MatType:] Hair" not in cmtNew[-1])
+			
+			if util.isDisabled(mat): addComment("[:Disabled:]", None, isRaw=True)
+			addComment("[MatId]:", None, isRaw=True)
+			
+			if addOld: addComment("[Old Diffuse]:", None, isRaw=True)
+			else:      cmtNew[0] = util.deleteCommentRaw(cmtNew[0], "[Old Diffuse]:")
+			
 			if not mat.comment or len(mat.comment) == 0:
-				mat.comment = cmtNew
+				mat.comment = "\r\n".join(cmtNew[1:])
 			else:##-- This at least ensures a consistent order
-				def CopyCommentValue(cmtNew, token, isRaw=False):
-					funcIN  = util.readFromCommentRaw if isRaw else util.readFromComment
-					funcOUT = util.updateCommentRaw if isRaw else util.updateComment
-					if not funcIN(mat.comment, token, True): return cmtNew
-					return funcOUT(cmtNew, token, funcIN(mat.comment, token), _append=True)
-				cmtNew = CopyCommentValue(cmtNew, "MatType", False)
-				if util.isDisabled(mat): cmtNew = util.updateCommentRaw(cmtNew, "[:Disabled:]", _append=True)
-				cmtNew = CopyCommentValue(cmtNew, "[Old Diffuse]:", True)
-				cmtNew = CopyCommentValue(cmtNew, "[MatId]:", True)
-				if (len(mat.comment) != len(cmtNew)): cmtNew += mat.comment[len(cmtNew):]
-				mat.comment = re.sub(r"[\r\n]+", r"\r\n", cmtNew.strip())
+				mat.comment = "\r\n".join(cmtNew)
+			mat.comment = re.sub(r"^\s*|\s*$", "", mat.comment)
+			
+			m = re.search(r"(0\.\d{5})\d*", mat.comment)
+			if m is not None: mat.comment = re.sub(r"(0\.\d{5})\d*", f"{m[1]}", mat.comment)
 
 	###--------- Extra Attributes
 	_arr = []
@@ -1003,6 +1053,7 @@ def process_color_and_detail(pmx, mat, attr):
 				mat.flaglist[4] = False ## Disable Edge as well
 				return
 		handle_acc_color(pmx, attr)
+		##-- Ensure we have a common tex key regardless which source the filename came from
 		ff = attr[t__Color if attr[t__Main] is None else t__Main]
 		if noMain or ALTNAME in attr: ff = replFN(ff, attr[ALTNAME])
 		attr[t__MainCol] = re.sub(".png","",ff) + suffix_Col + ".png"
@@ -1134,6 +1185,7 @@ def handle_eye_highlight(pmx, attr): ## Actually uses all three colors, so color
 	js[state_info] = local_state[debug_file] ## Always show full things here
 	arg2 = quoteJson(js)
 	#### offset(\d, \d), scale(\d,\d) overcolor1, overcolor2
+	## TODO: Add option to generate Iris and Highlights separately
 	if t__overtex1 in attr:
 		arg3 = quote(attr[t__overtex1])
 		col = (attr.get(Color_Tex1, [1,1,1,1]) * 255)
@@ -1226,6 +1278,7 @@ def handle_acc_detail(pmx, attr): ## Has @todo_add \\ @open: All the props affec
 	if NO_FILES in attr: return
 	# [t__Reuse] is set by ColorMask if happening -- Only do AlphaMask then
 	#---[TODO]: Revamp Reuse system to allow partial reuse if only Color is the same
+	#if t__Reuse in attr: return handle_acc_alpha(pmx, attr)
 	if NotFound(attr, t__Detail): return handle_acc_alpha(pmx, attr)
 	
 	### Determine main texture & blend mode
@@ -1461,6 +1514,10 @@ def NotFound(attr, name, optional=False): ## Returns true if not found
 	if name not in attr: return True
 	if not os.path.exists(attr[name]):
 		tmp = os.path.join(attr[ROOT], attr[name])
+		if not os.path.exists(tmp):
+			if name == t__overtex1:
+				tmp2 = tmp + ".png"
+				if os.path.exists(tmp2): os.renames(tmp2, tmp)
 		if os.path.exists(tmp):
 			attr[name] = tmp;
 			return False
@@ -1547,11 +1604,25 @@ def set_clean_texture(pmx, input_file_name):
 			except Exception as ex:
 				if not os.path.exists(texFile): raise ## Ignore errors if the file already exists
 			pmx.textures[texIdx] = os.path.relpath(texFile, basePath)
+			
+			##-- Check for AlphaMask
+			m = re.match(r"^(.+?)(?:_py[A-Za-z1-9]+)*\.png$", tex)
+			if (m):
+				texBase = m[1] + ".alphaCut.png"
+				alphaPath = os.path.join(basePath, texBase)
+				if os.path.exists(alphaPath):
+					texAlpha = os.path.join(texPath, name + "@alpha.png")
+					try:
+						util.copy_file(alphaPath, texAlpha)
+					except Exception as ex:
+						if not os.path.exists(texFile): raise ## Ignore errors if the file already exists
+			
 	except Exception as ex:
 		print(ex)
 		return
 	util.move_unused_to_folder(pmx, input_file_name)
 	
+
 ##############
 ## Mappings ##
 ##############
@@ -1605,6 +1676,7 @@ shader_dict = {
 	"Bonelyfans": "ignore",
 	"mnpb": "ignore",          ##[KK] WhiteOff \\ cf_m_mnpb
 	"Standard": "color",       ## -- Too much going on, just do colors for now.
+	#:: [DstBlend]: if 1, All but [Glossiness] is transparent
 	# t__Glass, t__Main, t__NorMap ++ Color, Color4, ColorInverse, ColorSort, RimPower
 	"toon_glasses_lod0": "glass", ##[KK] .... \\  cf_m_namida_00, c_m_gomu
 	### Small
@@ -1635,6 +1707,7 @@ shader_dict = {
 	# t__Alpha, t__Another, 			t__Detail, t__Line, t__liquid, t__Main, t__NorMap, 
 	"main_opaque": "cloth",	##2450 t__Alpha, t__Another, t__Detail, t__Line, t__Liquid, t__Main, t__NorMap, t__Texture2+3 ++ DetailBLineG, DetailRLineR, NUTS RP RV SE SEA SH SP SPN
 	"main_opaque2": "cloth", #--[^] z__AlphaMaskuv
+	"main_opaque_low": "cloth", # ??
 	"main_alpha": "alpha",	##3040 t__Alpha, t__Another, t__Detail, t__Liquid, t__Main, t__NorMap, t__Texture2+3
 	# ++ Col_Shadow, Col_Spec :: DetailBLineG, outline, rimpower, rimV, SE, SP
 	
@@ -1649,6 +1722,7 @@ shader_dict = {
 	#----------------
 	"main_item_studio_add": "alpha",   ##3000[KK,?_?] t__Main \\ Color, Color2, Color3, alpha
 	
+	
 	#### KKS
 	"main_clothes_alpha": "alpha",
 	"main_clothes_opaque": "cloth",
@@ -1657,9 +1731,11 @@ shader_dict = {
 	"main_clothes_item_glasses": "glass",
 	"main_item_ditherd": "color",
 	 ## Color, overcolor1, overcolor2, overcolor3
+	 #--- Nashi IBL Bunny
 	"IBL_Shader_alpha": "color",
 	"IBL_Shader_cutoff": "color",
 	"IBL_Shader": "metal", ## Glossiness, Metallic, Occlusion
+	"IBL_Shader_light_alpha" : "color", ## [Madevil] t__Detail, t__Main, t__NorMap, c__Color, c__RimColor, Glossiness, Metallic
 	##
 	"hair_main_sun_front": "hair", ##[hair] + Color2onoff, Color3onoff: flag to disable [Root] / [Tip]
 	###
@@ -1673,10 +1749,11 @@ shader_dict = {
 	"xukmi/MainOpaquePlus": "cloth", ## t__Alpha, t__Another, t__Detail, t__Emission, t__Line, t__Liquid, t__Main, t__NorMap, ...
 	"xukmi/HairFrontPlus": "hair", 
 	"xukmi/SkinPlus": "item", 
-	"xukmi/MainItemAlphaPlus": "alpha",
+	"xukmi/MainItemAlphaPlus": "alpha", 
 	"xukmi/MainItemPlus": "item",
 	"xukmi/MainAlphaPlus": "alpha",
 	"xukmi/HairPlus": "hair", 
+	"xukmi/EyeWPlus": "color", ## t__Main, c__Color, c__Custom, c__Shadow, Cutoff, UseRampForLights
 	
 	"main_hair2": "hair2",
 	"main_hair_front2": "hair2",
@@ -1694,6 +1771,7 @@ _extraAttributes = [
 	"ShrinkVal",           ## 
 	"ShrinkVerticalAdjust" ## Y-Axis Adjustment
 	]
+
 
 ## shorthands:  __typePrinter_Dict
 if __name__ == '__main__': util.main_starter(parseMatComments)

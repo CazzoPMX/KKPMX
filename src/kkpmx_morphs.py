@@ -259,7 +259,7 @@ def find_all_morphs(_morphs, prefix=None, infix=None, suffix=None, value=None, i
 	OUT(value==None): List[str]
 	OUT(value!=None): List[Tuple[str, float]]
 	"""
-	verbose = _verbose()
+	verbose = False #_verbose() ## DevDebug only
 	useEN = local_state.get("useEN", False)
 	def compileRGX(text):
 		if infix: text = re.sub(".zzz", f".{infix[1:]}", text)
@@ -362,7 +362,7 @@ Will override existing morphs, which allows "repairing" cursed Impact-Values.
 	putAuxIntoGroup(pmx)
 	choices[choice][2](pmx);
 	sort_bones_into_frames(pmx)
-	sort_morphs(pmx)
+	#sort_morphs(pmx)
 	
 	from _dispframe_fix import dispframe_fix
 	if moreinfo:
@@ -753,7 +753,7 @@ def sort_morphs(pmx):
 	oldMorphs = {}; names = [nameExt, nameGr1, nameGr2, nameMat, nameVrt]
 	
 	#: idk why these cause a KeyError, but lets skip them for now
-	errIdx = []
+	errIdx = []; skipIdx = [];
 	if find_morph(pmx, nameVrt, False) != -1:
 		errIdx.append(find_morph(pmx, nameExp, False))
 		errIdx.append(find_morph(pmx, nameVrt, False))
@@ -763,10 +763,17 @@ def sort_morphs(pmx):
 		errIdx.append(find_morph(pmx, nameExt, False))
 		errIdx = [a for a in errIdx if a != -1]
 	
+	aux = find_disp(pmx, c_AuxMorphName); auxArr = []
+	if aux != -1:
+		auxDisp = pmx.frames[aux].items
+		auxArr = [item[1] for item in auxDisp]
+	
 	## Collect all
 	for i,m in enumerate(pmx.morphs):
-		if m.name_jp in names: continue
+		if m.name_jp in names: continue ## Ignore headers since they are added back later
 		oldMorphs[m.name_jp] = [i, -1]
+		##-- Keep anything that was added to Extras in it
+		if i in auxArr: bones.append(m); continue
 		
 		if (m.morphtype == 0): # groups
 			if re.match("\[\w\]", m.name_jp): groups2.append(m)
@@ -794,12 +801,12 @@ def sort_morphs(pmx):
 			oldMorphs[m.name_jp][1] = baseIdx + i
 		baseIdx = len(newMorphs)
 		return baseIdx
-	baseIdx = sorter(baseIdx, exported)
-	baseIdx = sorter(baseIdx, materials, nameMat)
-	baseIdx = sorter(baseIdx, groups, nameGr1)
-	baseIdx = sorter(baseIdx, bones, nameExt)
-	baseIdx = sorter(baseIdx, groups2, nameGr2)
-	baseIdx = sorter(baseIdx, vertices, nameVrt)
+	baseIdx = sorter(baseIdx, exported)           ; skipIdx.append(baseIdx)
+	baseIdx = sorter(baseIdx, materials, nameMat) ; skipIdx.append(baseIdx)
+	baseIdx = sorter(baseIdx, groups, nameGr1)    ; skipIdx.append(baseIdx)
+	baseIdx = sorter(baseIdx, bones, nameExt)     #; skipIdx.append(baseIdx)
+	baseIdx = sorter(baseIdx, groups2, nameGr2)   ; skipIdx.append(baseIdx)
+	baseIdx = sorter(baseIdx, vertices, nameVrt)  #; skipIdx.append(baseIdx)
 	
 	morphMap = {a[0]: a[1] for a in oldMorphs.values() if a[1] != -1}
 	for m in newMorphs:
@@ -813,6 +820,7 @@ def sort_morphs(pmx):
 			try:
 				if item[0] and not item[1] in errIdx: item[1] = morphMap[item[1]]
 			except KeyError as ke: util.throwIfDebug(DEBUG, f'{ke}')
+		df.items = [item for item in df.items if item[1] not in skipIdx]
 
 
 ##############
@@ -827,21 +835,33 @@ def find_or_replace_disp(pmx, name, _frames=None): ## Returns index
 find_or_replace_disp.__doc__ = """ Return index of the requested Frame -- Append a new empty one if not found """
 
 def putAuxIntoGroup(pmx):
+	from kkpmx_special import get_special_morphs
 	showWarning = False
 	names = [
-		"bounce", "unbounce","Move for Shoes","Move to Barefeet",
+		"bounce", "unbounce",
 		"hitomiX-small", "hitomiY-small", "hitomiX-big", "hitomiY-big", 
 		"hitomi-up", "hitomi-down", "hitomi-left", "hitomi-right",
 		"hitomi-small",
 		"Move Model downwards", "Move Body downwards",
-		"chikubi_in", "chikubi_out", 
 	]
-	name = c_AuxMorphName
-	print(f"-- Add misc Morphs to combined group '{name}'...")
-	frames = [find_morph(pmx, name, showWarning) for name in names]
-	frames += [find_morph(pmx, "OwO Morph", False)]
-	frames = [[1,_idx] for _idx in frames if _idx != -1]
-	find_or_replace_disp(pmx, name, frames)
+	names += util.flatten([x.__extraNames__ for x in [
+		add_heels_morph, add_ground_morph
+	]])
+	
+	
+	morph_name = c_AuxMorphName
+	print(f"-- Add misc Morphs to combined group '{morph_name}'...")
+	frames  = [find_morph(pmx, name, showWarning) for name in names]
+	frames += [find_morph(pmx, name, False) for name in get_special_morphs()]
+	
+	frame_items = [[1,_idx] for _idx in frames if _idx != -1]
+	find_or_replace_disp(pmx, morph_name, frame_items)
+	#--- Remove duplicates from [moremorphs]
+	mm = find_disp(pmx, c_moremorphs)
+	if mm != -1:
+		disp = pmx.frames[mm]
+		disp.items = list(filter(lambda x: x[1] not in frames, disp.items))
+	
 
 def sort_morphs_into_frames(pmx): ## Intended for UniVRM models
 	eyes = ["smile", "wink", "^blink", "eyelid", "look", "grin", "highlight"] + ["jitome", "tsurime", "tareme", "hitomi", "doukou"] + ["><", "=="]
@@ -921,7 +941,7 @@ def sort_bones_into_frames(pmx):
 	# Vertex Bones and Any JP
 	reKeep = re.compile(r"cf_s_|[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]+", re.U)
 	
-	reExt = re.compile(r"^cf_s_|腕捩|手捩", re.U)
+	reExt = re.compile(r"^cf_s_|^[左右](腕捩|手捩)$", re.U)
 	reSlot = re.compile(r"^a_n_|cf_s_spine02", re.U)
 	
 	for d,bone in enumerate(pmx.bones):
@@ -930,7 +950,7 @@ def sort_bones_into_frames(pmx):
 			name = bone.name_jp
 			if reSkip.match(name):
 				## Group by Slot-Parent
-				if name.startswith("a_n_"):
+				if reSlot.match(name):
 					curSlot = name
 					slot_bones[curSlot] = [d]
 				continue
@@ -949,15 +969,17 @@ def sort_bones_into_frames(pmx):
 	name = cName_extraBones
 	idx = find_or_replace_disp(pmx, name)
 	pmx.frames[idx] = pmxstruct.PmxFrame(name_jp=name, name_en=name, is_special=False, items=[[0, x] for x in extra_bones])
+	[used_bones.add(x) for x in extra_bones]
 	
 	## Create Slot-Morphs Frame
 	delIdx = []
 	for k,v in slot_bones.items():
 		idx = find_or_replace_disp(pmx, k)
 		#print(f"[{k}]:{idx} {v}")
-		if len(v) < 2:
+		if len(v) < 2: ## If Slot has no items besides itself, discard frame again
 			delIdx.append(idx)
 			continue
+		used_bones.add(v[0]) ## mark the rest as used
 		pmx.frames[idx] = pmxstruct.PmxFrame(name_jp=k, name_en=k, is_special=False, items=[[0, x] for x in v])
 	for idx in reversed(sorted(delIdx)):
 		del pmx.frames[idx]
@@ -971,33 +993,33 @@ def sort_bones_into_frames(pmx):
 	idx = find_disp(pmx, cName_morebones, False)
 	if idx != -1:
 		oldFrame = pmx.frames[idx]
-		oldItems = []
-		for idx in reversed(sorted(moreIdx)):
-			if idx < len(pmx.frames):
-				[oldItems.append(y) for y in list(filter(lambda x: x[1] not in used_bones, pmx.frames[idx].items))]
-				del pmx.frames[idx]
+		del pmx.frames[idx]
+		oldItems = [y for y in list(filter(lambda x: x[1] not in used_bones, oldFrame.items))]
 		oldFrame.items = oldItems
 		pmx.frames.append(oldFrame)
 	
 	idx = find_morph(pmx, "== Vocal Components ==", False)
 	if idx != -1:
-		moremorphs = find_disp(pmx, "moremorphs", False)
+		moremorphs = find_disp(pmx, c_moremorphs, False)
 		if moremorphs == -1: return
 		moremorphs = pmx.frames[moremorphs]
 		for i,x in enumerate(moremorphs.items):
 			if x[1] != idx: continue
 			moremorphs.items = moremorphs.items[0:i];
 			break
-	
-
-
+	sort_morphs(pmx)
+sort_bones_into_frames.__doc__ = """ Sort the existing morphs/bones into respective DisplayFrames.
+	This also removes the Vocal Components from any Frame since they are not needed in favor of the combined ones.
+	"""
 
 ##############
 ### BoneMorph
 ##############
 
 def make_bone_morph(pmx, name, items=[], override=False): return make_any_morph(pmx, name, items, override, 2)
-def make_bone_item(pmx, name, pos, rot): return pmxstruct.PmxMorphItemBone(find_bone(pmx, name, False), pos, rot)
+def make_bone_item(pmx, name, pos, rot):
+	if type(name) == type(0): name = pmx.bones[name].name_jp
+	return pmxstruct.PmxMorphItemBone(find_bone(pmx, name, False), pos, rot)
 ## =/BoneMorph,".+?",(".+?"),([\-\d\.]+,[\-\d\.]+,[\-\d\.]+),([\-\d\.]+,[\-\d\.]+,[\-\d\.]+)/ --> =/make_bone_item\(pmx, \1, [\2], [\3]\),/
 
 def make_separator(pmx, name):
@@ -1019,6 +1041,7 @@ def add_heels_morph(pmx):
 		make_bone_item(pmx, "cf_j_toes_L", [0,0,0], [-21,0,0]),
 		make_bone_item(pmx, "cf_j_toes_R", [0,0,0], [-21,0,0]),
 	])
+add_heels_morph.__extraNames__ = ["Move for Shoes", "Move to Barefeet"]
 
 def add_finger_morph(pmx):
 	## add ROT.Z (-4 Left, +4 Right) for all 1st Finger Segments
@@ -1053,6 +1076,7 @@ def add_ground_morph(pmx):
 		make_bone_item(pmx, "右足ＩＫ",   [0, -abs(delta), 0], [0, 0, 0]),
 		make_bone_item(pmx, bone_name, [0, -abs(delta), 0], [0, 0, 0]),
 	])
+add_ground_morph.__extraNames__ = ["Adjust for Ground"]
 
 ##############
 ### VertexMorph
@@ -1105,6 +1129,9 @@ def cleanup_invalid(pmx): ## Cleanup invalid morph_idx
 		elif morph.morphtype == 10: pass
 		else: #if morph.morphtype in [1, 3, 4, 5, 6, 7]:
 			morph.items = [m for (idx,m) in enumerate(morph.items) if -1 < m.vert_idx < vert_len]
+	
+	for disp in pmx.frames:
+		disp.items = list(filter(lambda x: x[1] not in [-1,None], disp.items))
 
 
 #########

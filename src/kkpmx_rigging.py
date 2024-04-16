@@ -2184,7 +2184,7 @@ def AddBodyChainWithJoints(pmx, boneIndex: List[int], mode: int, radius: float, 
 	
 	dictionary2 = {}
 	
-	def isVisible(_bone): return pmxBone != None and (not uvFlag or pmxBone.has_visible)
+	def isVisible(_bone): return _bone != None and (not uvFlag or _bone.has_visible)
 	
 	for bone_idx in boneIndex:
 		# Don't add more Joints than bodies
@@ -2296,8 +2296,8 @@ def AddBaseBody(pmx, boneIndices: List[int], mode: int, radius: float, uvFlag: b
 		body.name_jp = name + ":" + bone.name_jp
 		body.bone_idx = idx
 		body.phys_mode = mode
-		body.phys_move_damp = 0.9
-		body.phys_rot_damp = 0.99
+		body.phys_move_damp = 0.999
+		body.phys_rot_damp = 0.9999
 		body.group = group
 		body.nocollide_mask = mask
 
@@ -2489,7 +2489,7 @@ def get_delta_map(pmx, boneMap, relative=True):
 		vecDict[bone] = delta
 	return vecDict
 
-def get_children_map(pmx, bones, returnIdx=False, add_first=True, find_all=True):
+def get_children_map(pmx, bones, returnIdx=False, add_first=True, find_all=True):# -> Dict[str, List[Union[PmxBone, int]]]:
 	"""
 	Arranges @bones into a dict of the form { "name": [list of children] }
 	

@@ -16,16 +16,16 @@ I made it to allow others exploring the possibility of using KK as alternative t
 
 This mod should work with most versions of KK, Party, or Sunshine.
 
- - Confirmed to work with Madevil's modpack too!
+ - Confirmed to work with Madevil's modpack too! (although certain Shaders refuse to export properly)
  - I'm crunching through for HoneyComb support, but that may take a while
 ![Comparisons](img/Comparisons.png)
 
-Comparing 'Bare minimum', '5min of manual edits', 'running the script' (old pic from 2022-06, needs update)
+Comparing 'Bare minimum', '5min of manual edits', 'running the script' (old pic from 2022-06, see [img] folder for more)
 
 
 #DISCLAIMER: The release section consists of two parts
 
- - The KK Plugin which exports all necessary data
+ - The KK Plugin DLL which exports all necessary data
     - It will NOT export a complete model -- that would cause the game to freeze for even longer
  - The kkpmx_core.exe, which does the majority of the post-processing -- See below for some instructions
 
@@ -88,12 +88,17 @@ Alternatively (instead of 'Looking at') you can focus on yourself py pressing '5
 Any Eye and/or Mouth Position works, as long as the Eyes stay open and the mouth closed (aka Smiling, Sleepy, ...)
     - While the Tool-Chain is indifferent of whatever pose is used, it might produce funny results in MMD.
     - The same goes for facial expressions, which are further morphed by MMD-Sequences.
+    - IMPORTANT: Since the textures are now rendered, the current Light/Shadow Settings apply to them.
+	When keeping the default settings, most textures will get a darker tint due to that.
+	For the time being, this can be fixed by setting the Light Settings in the [Heart] Menu to [No Shading].
+	
  0. Click on [Export] in the upper left corner -- It may take a short moment depending on size.
  - Will add a folder called `ModelFullName + Random 4-Digit number` under `C:\koikatsu_model` with the following contents
     - The model.pmx file and the main textures associated with it
     - A file called `{CharName}.json` which contains technical details for the kkpmx_core.exe
-    - A folder called `extra` which contains additional texture masks for Color, Detail, or Alpha.
- - Note: Some assets lack a Main-Texture (like the default Fox-Tail). In such cases, the ColorMask (if any) will be used to generate a base texture later on.
+    - A folder called `extra` which may contain additional texture masks (Color, Detail, or Alpha), as well as NormalMaps.
+ - Note: Most assets should be generated completely, but in rare cases, that may fail. Export these manually then.
+ - Note2: In legacy mode, some assets lack a Main-Texture (like the default Fox-Tail). In such cases, the ColorMask (if any) will be used to generate a base texture later on.
 
 See the [next subsection](#tldr-minimum-steps-to-make-the-exported-model-work-immediately) for how to use the model immediately without having to use/wait for KKPMX_core.exe.<br/>
 Or the [one after](#what-i-do-when-working-on-a-model-aka-what-to-do-if-you-dont-know-what-to-do) if you want a more detailed step-by-step guide for how I usually do things with it.
@@ -103,13 +108,14 @@ Or the [one after](#what-i-do-when-working-on-a-model-aka-what-to-do-if-you-dont
 
 The model should be (almost) ready, but some last adjustments have to be done manually.
 
+ 0. Delete all materials called DELETE_ME - These are cleanup artifcats
  0. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
  0. Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
- 0. When making heavy use of morph sliders, adjust the order of the materials to prevent them getting invisible (inner sorted above outer).
 
 ## tl;dr: Minimum steps to make the exported model work immediately
 
 
+[LEGACY]<br/>
 If you just want to test out some things without having to wait for KKPMX to do its thing, then this is the minimum work to do to make the models usable.<br/>
 This (and a couple other things) is also done by selecting Option (1) within KKPMX, but you can always do them manually:
 
@@ -130,33 +136,39 @@ The model should now work in MMD without crashing it, but testing with most Danc
 
 ## What I do when working on a model (aka What to do if you don't know what to do)
 
- - After exporting, usually looking at the raw model to see how it looks (just out of curiosity)
+ - After exporting, sometimes looking at the raw model to see how it looks (just out of curiosity)
     - This can also save some hassle in case something obvious isn't correct to re-export instead of wasting time.
     - And don't worry if things are visible which are hidden in KK -- This will be taken care of later.
  - Hiding materials that should stay hidden initially; They will receive a 'Show X' morph later (except if called Bonelyfans).
- - Run the 'All-in-one' mode, keeping defaults as needed
-    - On the first run, this will generate '{modelname}_org' as backup to preserve the original import (or load if it already exists)
-    - If asked, use the generated *.json (usually chosen automatically if the sole option).
-    - Sorting is optional, but helps reducing the clutter of textures
- - Opening 'model_better.pmx' for additional edits.
-    - The script (except sorting) takes care to not overwrite any files and appends '_2', '_3' etc, so take care to use the latest version or delete anything not needed anymore.
+ - Run the 'All-in-one' mode, this will generate several model files:
+    - '{modelname}_org': (Only on the first run) as backup to preserve the original import (or load if it already exists)
+    - '#generateJSON.json': Transforms the preexisting *.json into a dedicated order list for Materials
+    - '{modelname}_mat_backup': The model with GameSettings applied, but before cleaning up invisible faces.
+    - '{modelname}_better': After all transformations are done.
+    - '{modelname}_better2': Deeper cleanup of unused bones, rigids, and joints.
+    - '{modelname}': The end result is stored back into the original file (aka a copy of [better2])
+ - Opening 'model.pmx' for additional edits.
+    - The script takes care to not overwrite any other PMX files and appends '_2', '_3' etc, so take care to use the latest version or delete anything not needed anymore.
  - Checking / Cleaning up Physics that cause issues in TransformView:
     - Going through Rigids, setting noisy ones to 'all green' (or deleting if not needed)
-    - Also detangling some chains if necessary (See [Rigging Mode 3])
 > Since there is no enforeced naming structure on the bones, sometimes it may fail to get auto-rigged and require manual edits.
     - This involves either removing Rigids + Joints -or- rewire bones & rigids to split chains
- - Verifying Morphs (especially A E I O U & Blinking, again via TransformView):
+ - Adjusting Morphs:
+    - Verifying Morphs (especially A E I O U & Blinking, again via TransformView):
+       - If the eye does not fully close (or closes too deep), you can adjust the factor with [Mode 09] in the Script
     - Adjusting morph items that should always stay hidden / always stay visible
-    - Combining other things as needed
     - Cleanup the [Display] Group from morphs I don't need for this model.
  - Adjusting Materials:
-    - Reorder clothes into proper order for alpha layering
-       - Proper order means 'inside' is sorted before 'outside' (e.g. Socks before Shoes, Bra before Shirt before Jacket, etc.
-    - Untick 'Edge (Outline)' in severe cases (those with lots of 'black textures')
+    - Deleting cleanup artifacts ('DELETE_ME')
+    - Reorder some materials to fine-tune for alpha layering
+       - 'Proper order' means 'inside' is sorted before 'outside' (e.g. Socks before Shoes, Bra before Shirt before Jacket, etc.
+    - Merge materials that seem save to do so (as well as textures)
+    - Untick 'Edge (Outline)' in severe cases (those with lots of 'black texture')
        - A lot of that should already be covered by [Prune invisible faces].
- - Re-adjust the model to ground level
+ - Re-adjust the model to ground level (with the 'Adjust for Ground' Morph)
  - Adding the extra bones from 'Semi-Standard Bones Plugin (PMX)'
- - Applying the 'bounce' morph.
+ - Saving as 'model_beta.pmx'
+ - Applying some readjustment morphs like 'bounce', 'Adjust for Ground', 'RetractEye', etc.
  - Saving as 'model.pmx'
 
 ## Help
@@ -228,7 +240,7 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  
 >  `[Output]`: PMX File '`[filename]`_cleaned.pmx'
 
-### (3) ║┬  Apply Plugin-Properties
+### (3) ╟┬  Apply Plugin-Properties
 
 >  This is the second of two main methods to make KK-Models look better.
 >  - Note: Current/Working directory == same folder as the *.pmx file.
@@ -276,7 +288,7 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  
 >  `[Output]`: PMX file '`[modelname]`_props.pmx'
 
-### (4) ╟└─  Re-parse Result from Plugin
+### (4) ║└─  Re-parse Result from Plugin
 
 >  Parses the raw output from the `[KKPMX]` mod.
 >  The result can be found in the same folder as `[PmxExport]` puts its models ("C:\koikatsu_model")
@@ -335,7 +347,7 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  
 >  `[Output]`: PMX file '`[modelname]`_rigged.pmx'
 
-### (7) ╟─  Make Material morphs
+### (7) ╟┬  Make Material morphs
 
 >  Generates a Material Morph for each material to toggle its visibility (hide if visible, show if hidden).
 >  - Note: This works for any model, not just from KK (Sorting into body-like and not might be less accurate when obscure names are used).
@@ -377,7 +389,11 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  
 >  `[Output]`: PMX file '`[modelname]`_morphs.pmx' -- only if 'write_model' is True
 
-### (8) ╟┬  Add Emotion Morphs
+### (8) ║└─  Rerun Special Morphs
+
+>  << no help for '║└─  Rerun Special Morphs' >>
+
+### (9) ╟┬  Add Emotion Morphs
 
 >  Utilizes the emotion morphs extracted from KK to construct TDA morphs.
 >  Will override existing morphs, which allows "repairing" cursed Impact-Values.
@@ -392,19 +408,20 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  
 >  `[Output]`: PMX file '`[modelname]`_emote.pmx'
 
-### (9) ║└─  Sort DisplayFrames
+### (10) ║└─  Sort DisplayFrames
 
->  << no help for '║└─  Sort DisplayFrames' >>
+>  Sort the existing morphs/bones into respective DisplayFrames.
+>  	This also removes the Vocal Components from any Frame since they are not needed in favor of the combined ones.
 
-### (10) ╟─  Main Sorter
+### (11) ╟─  Main Sorter
 
 >  << no help for '╟─  Main Sorter' >>
 
-### (11) ╟─  Main Cleanup
+### (12) ╟─  Main Cleanup
 
 >  << no help for '╟─  Main Cleanup' >>
 
-### (12) ╟┬  Re-run Simplify
+### (13) ╟┬  Re-run Simplify
 
 >  Attempts to simplify the bone structure
 >   - Simplify Accessories by removing empty bones
@@ -426,11 +443,11 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >   - PMX file '`[modelname]`_reduced.pmx' when called on its own
 >    - If unhappy with the result, call this again using `[modelname]`_better.pmx
 
-### (13) ║└─  Cleanup Physics
+### (14) ║└─  Cleanup Physics
 
 >  << no help for '║└─  Cleanup Physics' >>
 
-### (14) ╙─  Isolate protruding surfaces
+### (15) ╙─  Isolate protruding surfaces
 
 >  Scans the given material(s) against bleed-through of vertices / faces poking through the surface of another.
 >  > Currently will only find all protrusions going towards negative Z-Axis, and may not work for X or Y Axis.
@@ -451,11 +468,11 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  
 >  `[Logging]`: Stores which mode, materials, and bounding box was used.
 
-### (15)   ----------
+### (16)   ----------
 
 >  Separator between Main and Minor Methods. Will exit the program if chosen.
 
-### (16)   Export Material to CSV
+### (17)   Export Material to CSV
 
 >  Input: STDIN -> Material ID or name, default = cf_m_body <br/>
 >  Input: STDIN -> Offset to shift vertices (updates ref in faces) <br/>
@@ -474,7 +491,7 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  
 >  Output: CSV file '`[modelname]`_`[mat.name_jp]`.csv'
 
-### (17)   Move material weights to new bones
+### (18)   Move material weights to new bones
 
 >  Input(1): STDIN -> Material ID or name, default = cf_m_body <br/>
 >  Input(2): STDIN -> Flag to create a root bone to attach all new bones to. <br/>
@@ -506,13 +523,13 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >    - This also allows utilizing the "outside parent" (OP) setting in MMD without the need of individual *.pmx files
 >    - which is usually required (but also more powerful) for things like throwing / falling of clothes
 
-### (18)   Print material bones
+### (19)   Print material bones
 
 >  Input: STDIN -> Ask for Material ID or name <br/>
 >  	Action: mat -> faces -> vertices -> bones <br/>
 >  	Output: STDOUT -> Unique list of used bones (Format: id, sorted) <br/>
 
-### (19)   Slice helper
+### (20)   Slice helper
 
 >  Cuts a surface along given vertices and allows them to be pulled apart at the new gap.
 >  It is recommended that the vertices form one continuous line; Use the `[Selection Guide]` for help.
@@ -531,7 +548,7 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  
 >  Note: Unless there is an explicit need to keep them separate, Step `[3]` and `[5]` can be combined, as their morphs produce messy results most of the time and can be deleted, keeping only the initial 2 from Step `[2]`.
 
-### (20)   Draw Shader
+### (21)   Draw Shader
 
 >  Allows to manually generate a toon shader. `[pmx]` is only needed for the storage path & not loaded
 >  	Asks for a RGB color in the form '123,123,123'
@@ -539,7 +556,7 @@ Most modes will always create a new file and append a suffix (see [Output]).
 >  	Because usually the card uses precolored textures which means the `[Color]` attributes are ignored
 >  	and thus contain mismatched values.
 
-### (21)   Adjust for Raycast
+### (22)   Adjust for Raycast
 
 >  Reads out the #generateJSON.json and applies the "Color" attribute as Diffuse color for the asset (if it has any)
 >  This may not always be implicit desireable as certain materials are colored by their textures, hence an extra function

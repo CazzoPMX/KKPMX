@@ -21,7 +21,10 @@ def chooser():
 	## Choose between the options
 	pass
 
-
+def get_special_morphs(): ## Lazy convenience method so that new ones can be added implicitly
+	return util.flatten([x.__extraNames__ for x in [
+		add_chest_morph, add_nether_morph, add_sirome_morph
+	]])
 
 ######################
 ### Morph Body
@@ -30,9 +33,9 @@ def chooser():
 def scan_for_special(pmx):
 	add_chest_morph(pmx)
 	add_nether_morph(pmx)
+	add_sirome_morph(pmx)
 	######
 	pass##
-
 
 def add_chest_morph(pmx):
 	from kkpmx_core import __append_bonemorph
@@ -73,6 +76,7 @@ def add_chest_morph(pmx):
 	createMorph("L", arrIN, arrOUT); createMorph("R", arrIN, arrOUT)
 	__append_bonemorph(pmx, idx=find_morph(pmx, nameIn, False), name=nameIn, arr=arrIN)
 	__append_bonemorph(pmx, idx=find_morph(pmx, nameOut, False), name=nameOut, arr=arrOUT)
+add_chest_morph.__extraNames__ = ["chikubi_out", "chikubi_in"]
 
 def alt_chest_bounce(): pass ## Impl. that other bounce system
 
@@ -95,6 +99,74 @@ def add_nether_morph(pmx):
 			pmxstruct.PmxMorphItemBone(find_bone(pmx, "cf_J_Vagina_R.002", False), [-0.15,0,0], [  0,0,0]),
 			pmxstruct.PmxMorphItemBone(find_bone(pmx, "cf_J_Vagina_R.001", False), [-0.15,0,0], [  0,0,0]),
 		]))
+add_nether_morph.__extraNames__ = ["OwO Morph"]
+
+def add_sirome_morph(pmx):
+	from kkpmx_core import from_material_get_faces, from_faces_get_vertices
+	from kkpmx_morphs import make_vert_item, make_vert_morph, make_bone_item, make_bone_morph
+	
+	def devPrint(msg):
+		if util.is_prod(): return
+		return #[Debug]
+		print(msg)
+	
+	#--- Sub Method with MaterialIdx of either Sirome
+	def processSirome(mat_idx, morph_items):
+		if mat_idx == -1: return morph_items
+		# Get Vertices
+		# Verify it being standard form
+		faces = from_material_get_faces(pmx, mat_idx, returnIdx=False)
+		cntMap = util.DictAppend(0)
+		# Get Center Vertex
+		[cntMap.extend(vertIdx, 1) for vertIdx in util.flatten(faces)]
+		devPrint(cntMap)
+		maxVert = max(cntMap.items(), key=lambda kv: kv[1])[0]
+		devPrint(f"--> maxVert is {maxVert}")
+		# Get all faces containing that Vertex (and their vertices)
+		faces = from_material_get_faces(pmx, mat_idx, returnIdx=True)
+		face_list = []
+		for face_idx in faces:
+			face = pmx.faces[face_idx]
+			if maxVert in face:
+				devPrint(f"- Found maxVert in {face_idx}: {face}")
+				face_list.append(face)
+		target_list = set(util.flatten(face_list))
+		devPrint(f"Affected Vertices: {len(target_list)}")
+		# Pull them backwards (+Z) by -0.05 to -0.07
+		move_arr = [0, 0, 0.07]
+		for item in target_list: morph_items.append(make_vert_item(pmx, item, move_arr))
+		return morph_items
+	################
+	def processHitomiV(item_idx, morph_items):
+		if item_idx == -1: return morph_items
+		faces = from_material_get_faces(pmx, item_idx, returnIdx=False)
+		vertices = set(util.flatten(faces))
+		move_arr = [0, 0, 0.07]
+		for item in vertices: morph_items.append(make_vert_item(pmx, item, move_arr))
+		return morph_items
+	def processHitomiB(item_idx, morph_items): ## Seems to be even better if you additionally push it outwards by ~1/3rd of that WITHOUT moving verts
+		if item_idx == -1: return morph_items
+		mov_arr = [0, 0, 0.015]
+		rot_arr = [0, 0, 0.000]
+		morph_items.append(make_bone_item(pmx, item_idx, mov_arr, rot_arr))
+		return morph_items
+	################
+	morph_items = []
+	morph_items = processSirome(find_mat(pmx, "cf_m_sirome_00"), morph_items)
+	morph_items = processSirome(find_mat(pmx, "cf_m_sirome_00*1"), morph_items)
+	make_vert_morph(pmx, "RetractEyeWhite", morph_items, override=True)
+	################
+	morph_items = []
+	morph_items = processHitomiB(find_bone(pmx, "左目"), morph_items)
+	morph_items = processHitomiB(find_bone(pmx, "右目"), morph_items)
+	make_bone_morph(pmx, "RetractEyeIris_B", morph_items, override=True)
+	morph_items = []
+	morph_items = processHitomiV(find_mat(pmx, "cf_m_hitomi_00"), morph_items)
+	morph_items = processHitomiV(find_mat(pmx, "cf_m_hitomi_00*1"), morph_items)
+	make_vert_morph(pmx, "RetractEyeIris_V", morph_items, override=True)
+	######
+	pass #
+add_sirome_morph.__extraNames__ = ["RetractEyeWhite", "RetractEyeIris_B", "RetractEyeIris_V"]
 
 ## Super Simplifier
 def simplify_armature(pmx, input_file_name, _opt = { }):

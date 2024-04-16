@@ -29,8 +29,8 @@ OPT_AUTO = "automatic"
 ALL_YES = "all_yes"
 OPT_INFO = "moreinfo"
 
-VERSION_DATE = "2024-03-08"
-VERSION_TAG = "2.4.3"
+VERSION_DATE = "2024-04-13"
+VERSION_TAG = "3.0.0"
 
 def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
@@ -392,6 +392,8 @@ def unify_names(arr):
 class DictAppend(dict):
 	def __init__(self, initVal: int):
 		self.initVal = initVal
+	def extend(self, key, value):
+		self[key] = self[key] + value
 	def addOrInit(self, key, default, func):
 		self[key] = func(self.getdefault(key, default))
 	#__getitem__: https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence
@@ -399,6 +401,15 @@ class DictAppend(dict):
 		#self.__setitem__
 		return self.initVal
 
+class ListAppend(list):
+	def __init__(self):
+		pass
+	
+	safeAppend = list.append
+	def append(self, x):
+		if type(x) == tuple:
+			if x[0] == "饰品.MECopy1": raise Exception("饰品.MECopy1")
+		self.safeAppend(x)
 
 #############
 ### Texts ###
@@ -505,17 +516,25 @@ def find_joint(pmx,name,e=True,idx=0): return __find_in_pmxsublist(name, pmx.joi
 find_bone.__doc__ = find_mat.__doc__ = find_disp.__doc__ = find_morph.__doc__ = find_rigid.__doc__ = find_joint.__doc__ = find_info
 ### Technically could also be just -- core.my_list_search(arr, lambda x: (x.name_jp == "name_jp" ... ))
 def find_all_in_sublist(name, arr, returnIdx=True):
-	result = []
-	idx = -1
-	if not PRODUCTIONFLAG:
-		if name in [None, ""]: raise Exception("Empty Name!")
-	if name in [None, ""]: return result
-	for item in arr:
-		idx += 1
-		_name = f"{item.name_jp};{item.name_en}"
-		if not contains(_name, name): continue
-		result.append(idx if returnIdx else item)
-	return result
+	try:
+		result = []
+		idx = -1
+		if not PRODUCTIONFLAG:
+			if name in [None, ""]: raise Exception("Empty Name!")
+		if name in [None, ""]: return result
+		safeName = re.escape(name)
+		for item in arr:
+			idx += 1
+			_name = f"{item.name_jp};{item.name_en}"
+			if not contains(_name, safeName): continue
+			result.append(idx if returnIdx else item)
+		return result
+	except Exception as err:
+		print(err)
+		arrType = "<n.a.>"
+		if arr and len(arr) > 0: arrType = str(type(arr[0]))
+		print(f"[!!] Error while retrieving find_all_in_sublist using arguments: {name}, {arrType}(len={len(arr)}), {returnIdx}")
+		return []
 
 def find_bones(pmx, arr, flag=True, returnIdx=True):
 	result = []
@@ -592,6 +611,8 @@ def replace_with_parent(pmx, boneName):
 #	get_parent_map
 #	get_children_map
 
+def isVisible(_bone): return _bone != None and (not uvFlag or _bone.has_visible)
+
 ######
 ## Common (3:Materials)
 #####
@@ -615,10 +636,15 @@ def updateCommentRaw(_comment:str, _token, _value=None, _replace=False, _append=
 	if len(_comment.strip()) == 0: return _str
 	if _replace:
 		if readFromCommentRaw(_comment, _token, exists=True):
-			return re.sub(re.escape(_token) + r".*", f"{_str}", _comment)
+			_comment = re.sub(re.escape(_token) + r"[^\r\n]*", f"{_str}", _comment)
+			_comment = re.sub("\r?\n", f"\r\n", _comment)
+			return _comment
 	else: _comment = re.sub(r"(\r?\n)?" + re.escape(_token) + r".*", "", _comment)
 	if _append: return "\r\n".join([_comment, _str])
 	return "\r\n".join([_str, _comment])
+
+def deleteComment(_comment:str, _token):    return deleteCommentRaw(_comment, f"[:{_token}:]")
+def deleteCommentRaw(_comment:str, _token): return re.sub("\s*" + re.escape(_token) + r".*", "", _comment)
 
 def readFromComment(_comment:str, _term:str, exists:bool = False):    return _readFromCommentRaw(_comment, r'\[:' + f"{_term}" + r':\]', exists)
 def readFromCommentRaw(_comment:str, _term:str, exists:bool = False): return _readFromCommentRaw(_comment, re.escape(_term), exists)
@@ -652,12 +678,10 @@ def find_all_mats_by_name(pmx, name, withName=False):
 def find_bodyname(pmx): return "cf_m_body" if find_mat(pmx, "cm_m_body", False) == -1 else "cm_m_body"
 def find_bodypar(pmx): return "p_cf_body_00" if find_mat(pmx, "cm_m_body", False) == -1 else "p_cm_body_00"
 def is_male(pmx): return find_bodyname(pmx) != "cf_m_body"
-
 def is_bodyMat(mat):
 	return re.search("ct_head", mat.comment) or \
 		mat.name_jp in ["cf_m_face_00", "cf_m_body", "cm_m_body", "cf_m_mm"] or \
 		mat.name_jp in ["cf_m_eyeline_kage", "cf_m_tooth", "cf_m_sirome"]
-
 def is_primmat(mat): return mat.name_jp.startswith("mf_m_primmaterial")
 
 def findMat_Face(pmx):
@@ -669,6 +693,64 @@ def findMat_Face(pmx):
 		if (MatType == "Face"): return idx
 		if (slot == "ct_head" and MatType == "Body"): return idx
 	return -1
+
+## [Disable a material internally] --> [kkpmx_core.cleanup_texture]
+## [Uniquefy all material names (incl. MECopy)] --> [kkpmx_core.cleanup_texture]
+
+def uniquefy_material(mat: str, names: list):
+	"""
+	Uniquefy a name based on a list of provided names.
+	Also removes 'Instance' & @slot / #id suffix before checking.
+	Adds the element to [names] before returning.
+	"""
+	kk_re = re.compile(r"( \(Instance\))*(@\w+|#\-\d+)")
+	mat = kk_re.sub("", mat)
+	suffix = 0
+	if mat in names:
+		while True:
+			suffix += 1
+			if ("{}*{}".format(mat, suffix)) not in names: break
+		mat = "{}*{}".format(mat, suffix)
+	names.append(mat)
+	return mat
+
+
+#async def uniquefy_names(pmx, preAct = None):
+def uniquefy_names(pmx, preAct = None):
+	## Maybe use it with [async def _ag():  yield] ?
+	## Short-circuit when no work needs to be done?
+	# x = [m.name_jp for m in pmx.materials]; if len(x) == len(set(x)): return
+	kk_re = re.compile(r" ?\(Instance\)_?(\([-0-9]*\))?")
+	names = []
+	names_MECopy = {}
+	def apply(mat, suffix):
+		oldName = mat.name_jp
+		mat.name_jp = "{}*{}".format(mat.name_jp, suffix)
+		mat.name_en = "{}*{}".format(mat.name_en, suffix)
+		#print(f"{oldName} --> {mat.name_jp}")
+		
+	for (idx, name) in enumerate([m.name_jp for m in pmx.materials]):
+		suffix = 0
+		mat = pmx.materials[idx]
+		name = kk_re.sub("", name)
+		if preAct: preAct(idx, name)
+		flag = False
+		if "MECopy" in mat.name_jp:
+			m = re.match("(.+)\.(MECopy\d+)", mat.name_jp)
+			if m[1] in names_MECopy:
+				suffix = names_MECopy[m[1]]
+				apply(mat, suffix)
+				flag = True
+		if (not flag) and (name in names):
+			while True:
+				suffix += 1
+				if ("{}*{}".format(name, suffix)) not in names: break
+			names_MECopy[mat.name_jp] = suffix
+			apply(mat, suffix)
+		names.append(mat.name_jp)
+		#yield (idx, mat)
+	######
+	pass #
 
 ######
 ## Common (3b:Textures)
@@ -784,6 +866,8 @@ def get_vertex_box(pmx, mat_idx, returnIdx=False):
 		})
 	######
 	pass #
+
+# Among Faces, get Vertex with most edges --> kkpmx_special.add_sirome_morph
 
 ######
 ## Constants
@@ -1247,7 +1331,8 @@ def __typePrinterDir(arg, full=False):
 	for elem in dir(arg): print(elem); break
 	#x = vars(arg)
 	""" Shorthand for printing all elements of locals() or globals() """
-	for elem in dir(arg): __typePrinter(getattr(arg, elem), name=elem, full=full)
+	## Could use a [mode="DIR"] flag, which inlines
+	for elem in dir(arg): __typePrinter(getattr(arg, elem), name=elem, flat=True, full=True)
 
 def __typePrinter_List(arg):
 	""" Shorthand for printing all elements of a list """
@@ -1258,7 +1343,7 @@ def __typePrinter_Dict(arg, shallow=False):
 	print(f":: {type(arg)} of length {len(arg)}")
 	for (k,v) in arg.items(): __typePrinter(v, enum=k, shallow=shallow)
 
-def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False,full=False,flat=False,Idx=None):
+def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False,full=False,flat=False,Idx=None,mode=None):
 	"""
 	:param arg     [any]          : The object to print
 	:param prefix  [str]  = ""    : The prefix to use for each printed line
@@ -1277,7 +1362,9 @@ def __typePrinter(arg, prefix="",name=None,test=None,enum=None, shallow=False,fu
 	## https://docs.python.org/3/reference/datamodel.html#object.__len__
 	def defines(obj, func): return func in dir(obj)
 	rowStart = ""
-	if name is not None:
+	if mode == "DIR":
+		rowStart = "::{}::".format(name)
+	elif name is not None:
 		rowStart = "::{}::".format(name)
 		if not flat: print(rowStart)
 	if test is not None: prefix = ":: Test {:10} :: ".format(test)

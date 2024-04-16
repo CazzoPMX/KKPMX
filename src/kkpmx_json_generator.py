@@ -172,19 +172,12 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 	
 	#[X]: Populate Map with (pmx.materials).name_jp being unique
 	#### dict --> { name: { name, idx } }
-	kk_re = re.compile(r" ?\(Instance\)_?(\([-0-9]*\))?")
-	kk_skip = re.compile('|'.join(["Bonelyfans","shadowcast","Standard"]))
+	#### dict --> { name: True or False }
 	mat_filter = {}
+	util.uniquefy_names(pmx)
 	for (idx, mat) in enumerate(pmx.materials):
 		name = mat.name_jp
-		suffix = 0
-		name = kk_re.sub("", name)
 		mat_filter[name] = mat_filter.get(name, 0) + 1
-		if name in mat_dict:
-			while True:
-				suffix += 1
-				if ("{}*{}".format(name, suffix)) not in mat_dict: break
-			name = "{}*{}".format(name, suffix)
 		matId = util.readFromCommentRaw(mat.comment, "[MatId]:")
 		mat_dict[matId] = mat.name_jp
 	def adjustNames(raw_json):
@@ -192,7 +185,7 @@ def GenerateJsonFile(pmx, input_filename_pmx):
 			raw_json = re.sub(f"\".+?(#{val[0]})\"", f"\"{val[1]}#{val[0]}\"", raw_json)
 		if genFiles: util.write_json(raw_json, "_gen\#raw_json");
 		return raw_json
-	
+		
 	##--- Verify Sanity check
 	mat_filter = [f'- {k}: x{v}' for (k,v) in mat_filter.items() if v > 1]
 	if len(mat_filter) > 0:
@@ -545,8 +538,8 @@ def write_entity(pmx, arr, json_tree, opt):
 	isDict = type(opt) == dict
 	if isDict: name = opt.get(opt_Name)
 	else: opt = {}
+	_verbose = verbose()
 	
-	if verbose(): print(f"------------- {name}")
 	targetBase = {}
 	_filter = re.compile(re.escape(name) + r'([#*]-?\d+)*$')
 	#_elem = filter(lambda kv: kv[0].startswith(name), json_tree.items())
@@ -569,7 +562,7 @@ def write_entity(pmx, arr, json_tree, opt):
 		return
 	#prDEBUG("-------------------------------")
 	prDEBUG(elem[0], f"> [{suffix}]: {reduceDictData(elem[1])}")
-	if verbose(): print(elem[0], f"> [{suffix}]: {reduceDictData(elem[1])}")
+	if _verbose: print(elem[0], f"> [{suffix}]: {reduceDictData(elem[1])}")
 	
 	#---#
 	token = re.sub(r"( \(Instance\))+", "", elem[0]) ## the full name that started with [name], without (instance)
@@ -640,13 +633,36 @@ def write_entity(pmx, arr, json_tree, opt):
 	if mat.get(mat_Special, None):
 		local_state[mat_Special] = True
 		prDEBUG(elem[0], f"Special Token: {token}")
-		##-- Retrieve the new name
+		##-- Retrieve the render name we have to reassociate
 		r1 = mat[ren_Render]
-		#token = r1[list(r1.keys())[0]][ren_Target] ## Target is NAME*X
+		token2 = r1[list(r1.keys())[0]][ren_Target] ## Target is NAME*X
+		renBet = r1[list(r1.keys())[0]][ren_Render]
 		#tmp = re.sub(r"[*#\-]+\d+","",token) + '#' + str(mat[mat_MatId])
-		##-- Copy the previous render
-		(key, value) = deepcopy(arr[-1])
-		prDEBUG(elem[0], f">> {key} -> {token} -- {value}")
+		##-- Copy the previous render that was responsible for this material
+		elem = arr[-1] ## [Start with previous] in case we run through the whole thing, so that we don't end with nothing
+		#::[Bugfix]: in rare cases, an asset with sub-materials could have subsequent renderers which messes with "refer to previous". Find the correct one
+		for x in range(len(arr)-1, len(arr)-8, -1):
+			_elem = arr[x]
+			if type(_elem) != tuple:   continue ## Skip [Comment] entries
+			if len(_elem) == 3:                 ## >>> arr.append((token, targetBase, opt.get(opt_Comment)))
+				(_key, _value, XXX) = _elem
+			else: (_key, _value) = _elem
+			if type(_value) == str:    continue ## Skip [Inline inherit] entries
+			if raw_meta not in _value: continue ## Skip [Texture] entries
+			_tmp = _value[raw_meta].get(ren_Render, "<.>")
+			#prDEBUG(elem[0], f">> [{_tmp}] vs. {renBet}")
+			if _tmp != renBet:
+				prDEBUG(elem[0], f">>->> [!] Skip possible mis-association of special material! ({token} to [{x}]={arr[x][0]} << {_tmp})")
+				continue
+			prDEBUG(elem[0], f">=> Found correct Meta-Entry [{x}]={arr[x][0]}!")
+			elem = _elem
+			break
+		(key, value) = deepcopy(elem)
+		if (value[raw_meta].get(ren_Render, "<.>") != renBet):
+			print(f"[!] Possible wrong association of special material! ({token} to {key})")
+		
+		prDEBUG(f">> {key} -> {token} -- {value}") ### [Key of previous Value-Owner], [My Key, under which value is copied], [the meta/inherit to copy] 
+		# prDEBUG(elem[0], f">> {key} -> {token} -- {value}")
 		key = token ## Name is NAME*X
 		arr.append((key, value)) ## Key is NAME*X, Inherit is NAME#matId
 		########
@@ -694,7 +710,7 @@ def write_entity(pmx, arr, json_tree, opt):
 		### add to arr
 		#mat_comment = opt.get(opt_Comment) ## generate some based on data
 		arr.append((key, { "meta": val, out_inherit: token }))
-
+	
 
 ### Goal with Comment
 # Show original slot (mapped with dict) ++ Name (mapped with dict ?)
@@ -924,7 +940,7 @@ def generate_material_tree(pmx, tree, render_tree: dict, json_mats: dict):
 	
 	idxOvr = [x[0] for x in local_state[renTag_idxOvr].items()]
 	
-	## Collect Materials based on InstanceID
+	## Collect Materials based on InstanceID (so that only those who exist in both JSON and PMX are picked)
 	matIdDict = {}
 	for mat in pmx.materials:
 		m = util.readFromCommentRaw(mat.comment, '[MatId]:')
@@ -979,8 +995,8 @@ def generate_material_tree(pmx, tree, render_tree: dict, json_mats: dict):
 					if mat in json_mats and ren_Render not in json_mats[mat]:
 						json_mats[mat].setdefault(ren_Render, {})
 						json_mats[mat][ren_Render][ren[0]] = deepcopy(ren[1])
-						### Set the Target to use the Unique extra key too (Verify: When did I not have to set it?)
-						json_mats[mat][ren_Render][ren[0]][ren_Target] = re.sub(r"[*#\-]+\d+","",mat)
+						### Set the Target to use the Unique extra key too (names are already correct by Uniquefy at the start)
+						json_mats[mat][ren_Render][ren[0]][ren_Target] = re.sub(r"[#\-]+\d+$","",mat)
 						
 						prDEBUG2(mat, f"Setting ren_Render to {json_mats[mat][ren_Render][ren[0]].get(ren_Target, '<<error>')}");
 					else: print(f"[W] Non-unique extra mat '{mat}' in '{_mat}'.Render")
@@ -994,6 +1010,7 @@ def generate_material_tree(pmx, tree, render_tree: dict, json_mats: dict):
 							prDEBUG2(f">(3) Check extra mat '{xMat}' == '{matId}' ....")
 							#### If we have an Asset with more (effective) materials than renders, then we have to duplicate the render instead.
 							## We also can't just add another item to the original object because we don't have a bone for that.
+							#+++ If a Mat ends up in [Found overlapping names], it will get checked repeatedly
 							if json_mats[xMat].get(mat_MatId, "<<>>") == matId:
 								zMat = uniquefy_material(xMat, uniqueMats) ## MAT#MATID --> MAT*X
 								#-- First create a new Render Entry like usual, but using the MaterialName
@@ -1058,7 +1075,7 @@ def prDEBUG(token, text=None):
 	elif "o_bot_skirt01" in str(token): print(text)
 def prDEBUG2(token, text=None):
 	if DEVDEBUG: prDEBUG(token if text is None else text, None)
-	else: prDEBUG(token, text)
+	else:        prDEBUG(token, text)
 
 def reduceDictData(obj):
 	import copy

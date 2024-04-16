@@ -66,19 +66,24 @@ Output: STDOUT -> Unique list of used bones (Format: id, sorted)
 
 '''}
 def get_choices():
-	from kkpmx_special import simplify_armature
+	from kkpmx_special import simplify_armature, scan_for_special
 	from kkpmx_morphs import sort_bones_into_frames
 	import file_sort_textures
 	import model_overall_cleanup
+	def main_wrapper(pmx, input_filename_pmx, callback, log_suffix):
+		callback(pmx, input_filename_pmx)
+		end(pmx, input_filename_pmx, log_suffix, None)
+	
 	arr = [ ## https://en.wikipedia.org/wiki/Box-drawing_character :: ┌┬┐ ├┼┤ └┴┘ ─ │ 
 		("",	 0, "Show help for all",None),
 		("╦",	 5, "All-in-one converter", kk_quick_convert), 
 		("╟─",	 1, "Cleanup Model", cleanup_texture),
-		("║┬",	 3, "Apply Plugin-Properties", PropParser.parseMatComments),
-		("╟└─",	 7, "Re-parse Result from Plugin", GenerateJsonFile),
+		("╟┬",	 3, "Apply Plugin-Properties", PropParser.parseMatComments),
+		("║└─",	 7, "Re-parse Result from Plugin", GenerateJsonFile),
 		("╟─",	15, "Prune invisible Faces", delete_invisible_faces),
 		("╟─",	12, "Run Rigging Helpers", kkrig.run),
-		("╟─",	 2, "Make Material morphs", make_material_morphs),
+		("╟┬",	 2, "Make Material morphs", make_material_morphs),
+		("║└─",	 0, "Rerun Special Morphs", lambda p,f: main_wrapper(p,f, lambda p,f: scan_for_special(p), "_specialMorphs")),
 		("╟┬",	16, "Add Emotion Morphs", emotionalize),
 		("║└─",	18, "Sort DisplayFrames", lambda p,f: main_wrapper(p,f, lambda p,f: sort_bones_into_frames(p), "_morphsSort")),
 		("╟─",   0, "Main Sorter", lambda p,f: file_sort_textures.__main(f, False)),
@@ -94,6 +99,12 @@ def get_choices():
 		("",	13, "Draw Shader", PropParser.draw_toon_shader, True),
 		("",	14, "Adjust for Raycast", PropParser.convert_color_for_RayMMD),
 	]
+	for x in [z[3] for z in arr]:
+		if x is None: continue
+		if x.__name__ == "<lambda>":
+			docRef = x.__closure__[-1].cell_contents
+			if docRef.__name__ != "main_wrapper":
+				x.__doc__ = docRef.__doc__
 	return [(f"{x[0]}  {x[2]}", x[3]) for x in arr]
 
 def main(moreinfo=True):
@@ -112,10 +123,10 @@ def main(moreinfo=True):
 			doc = "{}===({}) {} ({}):\n{}{}".format(line, _idx, name, choice.__name__, "", doc)
 		core.MY_PRINT_FUNC(doc if doc is not None else (f"<< no help for '{choices[_idx][0]}' >>"))
 	if idx == 0: return [print_help(idx) for idx in range(1,len(choices))]
-	elif idx == 15:
+	elif idx == 16:
 		if not util.PRODUCTIONFLAG:
 			from kkpmx_internal import main2
-			main2();
+			main2(); exit()
 		sys.exit()
 	else: print_help(idx)
 	# prompt PMX name
@@ -186,7 +197,7 @@ Which is why this also standardizes color and toon,
 		_mat.flaglist[4] = False
 	
 	kk_re = re.compile(r"( ?\(?Instance\)?)*(_\([-0-9]*\))?")
-	flag = opt.get("colors", None)
+	flag = opt.get("colors", False)
 	if flag is None: flag = util.ask_yes_no("Standardize Colors")
 	for mat in pmx.materials:
 		mat.name_jp = kk_re.sub("", mat.name_jp)
@@ -198,6 +209,7 @@ Which is why this also standardizes color and toon,
 			mat.toon_idx  = 1 ## toon02.bmp
 		
 		if not flag: continue
+		flag2 = util.readFromCommentRaw(mat.comment, "[:Processed:]", exists=True)
 		
 		### KK Materials with own texture rarely use the diffuse color
 		### So replace it with [1,1,1] to make it fully visible
@@ -205,16 +217,19 @@ Which is why this also standardizes color and toon,
 		
 		if (mat.tex_idx != -1 and not re.search("cf_m_mayuge", mat.name_jp)):
 			if str(mat.diffRGB) not in ["[0.5, 0.5, 0.5]", "[1.0, 1.0, 1.0]"]:
+				if flag2: continue
 				mat.comment = util.updateCommentRaw(mat.comment, "[Old Diffuse]:", str(mat.diffRGB))
 				mat.diffRGB = [1,1,1]
 		elif mat.diffRGB != [1,1,1]:
 			## Otherwise replicate it into specular to avoid white reflection
 			skip_r = skip + [str(mat.diffRGB)]
 			if str(mat.specRGB) not in skip_r:
+				if flag2: continue
 				mat.comment = util.updateCommentRaw(mat.comment, "[Old Specular]:", str(mat.specRGB))
 			mat.specRGB = mat.diffRGB
 		else:
 			if str(mat.specRGB) not in skip:
+				if flag2: continue
 				mat.comment = util.updateCommentRaw(mat.comment, "[Old Specular]:", str(mat.specRGB))
 			mat.specRGB = [0,0,0]
 		
@@ -224,22 +239,15 @@ Which is why this also standardizes color and toon,
 	#-------
 	## Make sure that all materials have unique names
 	names = []
-	for (idx, name) in enumerate([m.name_jp for m in pmx.materials]):
-		suffix = 0
-		mat = pmx.materials[idx]
+	names_MECopy = {}
+	def uniquefied_preAct(idx, name):
 		if name.startswith("Bonelyfans"): disable_mat(idx)
 		if name.startswith("Standard"): disable_mat(idx)
 		if name.startswith("acs_head_hana_botan"):
 			pmx.materials[idx].flaglist[4] = False
 		if name.startswith("mf_m_primmaterial"):
 			pmx.materials[idx].flaglist[4] = False
-		if name in names:
-			while True:
-				suffix += 1
-				if ("{}*{}".format(name, suffix)) not in names: break
-			pmx.materials[idx].name_jp = "{}*{}".format(mat.name_jp, suffix)
-			pmx.materials[idx].name_en = "{}*{}".format(mat.name_en, suffix)
-		names.append(mat.name_jp)
+	util.uniquefy_names(pmx, uniquefied_preAct)
 	
 	## Maybe sort them:
 	# [shadowcast], [<<face stuff>>], [<<hair>>], [body, "mm"], [shorts, bra, socks], [shoes,...],
@@ -608,18 +616,8 @@ Which is why this also standardizes color and toon,
 	sortFingers()
 	kkmorph.sort_bones_into_frames(pmx)
 	
-	### Clean up invalid dispframes (which can crash MMD)
-	for disp in pmx.frames:
-		disp.items = list(filter(lambda x: x[1] not in [-1,None], disp.items))
-	
-	## Maybe make a DisplayFrame with all the "other useful" bones
-	## and then one where to add all of the k_f, slots, etc
-	
-	### Clean up invalid morphs (which can crash MMD)
-	vert_len = len(pmx.verts)
-	for morph in pmx.morphs:
-		if morph.morphtype != 1: continue
-		morph.items = [m for (idx,m) in enumerate(morph.items) if m.vert_idx < vert_len]
+	### Clean up invalid morphs & dispframes (which can crash MMD)
+	kkmorph.cleanup_invalid(pmx)
 	
 	return end(pmx if write_model else None, input_filename_pmx, "_cleaned", "Performed minimal cleanup for working MMD")
 
@@ -734,7 +732,6 @@ There are some additional steps that cannot be done by a script; They will be me
 		path = emotionalize(pmx, input_filename_pmx, write_model, moreinfo=moreinfo, _opt={ "automatic": True })
 		if write_model: util.copy_file(path, input_filename_pmx)
 	#-------------#
-	#-------------#
 	if has_univrm and not util.ask_yes_no("Do some general cleanup", "n", extra="This may break some things needed for reexporting"):
 		import _translate_to_english as pmxTL
 		## Todo: Correctly disable that Google stuff from polluting the log
@@ -847,9 +844,9 @@ def __append_vertexmorph(items, idx, move, name, arr=None): ## morphtype: 1
 	:[move]  [list]        -- A list of three int being "Move in X Y Z direction"
 	:[name]  [str]         -- The name to create the final morph with. 
 	"""
-	if idx == None: return
 	
 	if arr is None:
+		if idx == None: return
 		item = pmxstruct.PmxMorphItemVertex(idx, move)
 		if name != None:
 			items.morphs.append(pmxstruct.PmxMorph(name, name, 4, 1, [ item ]))
@@ -1025,13 +1022,14 @@ Mode Interactions:
 		isBodyAcc  = False
 		isTrueClo  = False
 		
-		if isDisabled or mat.faces_ct == 0:
+		if isDisabled or mat.faces_ct == 0: ## The only way to catch MECopy that are disabled but their [base] is not
 			mat.ambRGB  = [1, 0, 0] ## Mark it red so that it can be spotted fast for deletion
 			## Remove their texture references so they don't count as used
 			mat.tex_idx = -1
 			mat.sph_idx = -1
 			if mat.toon_mode == 0: mat.toon_idx = -1
 			mat.name_jp = "DELETE ME"
+			mat.alpha = 0
 			continue
 		### Filter out what we do not want
 		if re.search(rgxSkip, mat.name_jp): continue
@@ -1042,6 +1040,11 @@ Mode Interactions:
 		
 		### Check if comments contain Slot names (added by Plugin Parser)
 		m = util.readFromComment(mat.comment, 'Slot')
+		cta = util.readFromComment(mat.comment, 'CTASlot')
+		
+		if cta is not None:
+			isTopId = cta in ['ct_top_parts_A', 'ct_top_parts_B', 'ct_top_parts_C']
+			m = 'ct_clothesTop' if isTopId else cta
 		if m is not None:
 			itemsSlots["slotMatch"] = True
 			if m in slotBody   : isBody = True
@@ -1071,7 +1074,7 @@ Mode Interactions:
 				### Add extra slots for ct_clothesTop
 				# ct_clothesTop, ct_top_parts_A, ct_top_parts_B, ct_top_parts_C
 				if m == 'ct_clothesTop':
-					mm = util.readFromComment(mat.comment, 'TopId')
+					mm = cta if isTopId else util.readFromComment(mat.comment, 'TopId')
 					if mm is not None:
 						dictSlots[mm] = dictSlots.get(mm, [])
 						appender(dictSlots[mm], idx)
@@ -1507,7 +1510,7 @@ If all faces of a given material are considered invisible, it will be ignored an
 		print("\nThese materials have been skipped because they have less than 50 vertices.\n " + str(small))
 		log_line += ["> Skipped(TooSmall): " + str(small)]
 	if len(disabled) > 0:
-		print("\nThese disabled materials have been deleted because User-Input said yes.\n " + str(disabled))
+		print("\nThese disabled materials have been deleted because it was allowed to do so.\n " + str(disabled))
 		log_line += ["> Disabled deleted: " + str(disabled)]
 		if write_model:
 			for idx in disabled:
@@ -1925,6 +1928,8 @@ def ask_to_rename_extra(pmx, base):
 		elif basename == (newname+ftype): continue
 		names.append(newname)
 		dst = newname + ftype
+		if (dst.endswith(".png.png")): dst = dst.sub("(\.png)+", ".png", dst)
+		
 		print(f"[{idx}] Rename '{basename}' to '{dst}'")
 		pmx.textures[idx] = dst
 		## Also rename the physical file
@@ -1950,10 +1955,6 @@ def ask_to_rename_extra(pmx, base):
 			os.renames(fpath+basename, fpath+dst)
 
 def __do(pmx, input_filename_pmx): pass
-
-def main_wrapper(pmx, input_filename_pmx, callback, log_suffix):
-	callback(pmx, input_filename_pmx)
-	end(pmx, input_filename_pmx, log_suffix, None)
 
 def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 	"""
@@ -1986,10 +1987,24 @@ def end(pmx, input_filename_pmx: str, suffix: str, log_line=None):
 		if type(log_line) is str: log_line = [ log_line ]
 		msg = "\n---- ".join([""] + log_line)
 		## Add name of target file that contains the change 
-		if has_model:
-			with open(path, "a") as f: f.write(f"\n--[{util.now()}][{paths[1][0:-4]}]{msg}")
-		else:
-			with open(path, "a", encoding='utf-8') as f: f.write(f"\n--[{util.now()}]{msg}")
+		try:
+			if has_model:
+				with open(path, "a") as f: f.write(f"\n--[{util.now()}][{paths[1][0:-4]}]{msg}")
+			else:
+				with open(path, "a", encoding='utf-8') as f: f.write(f"\n--[{util.now()}]{msg}")
+		except:
+			try:
+				with open(path, "a", encoding='utf-8') as f: f.write(f"\n--[{util.now()}]{msg}")
+			except Exception as err:
+				_msg = f"-----\n[!!] Error while persiting the following log line"
+				if not has_model: _msg += " with Encoding 'utf-8'"
+				elif   has_model: _msg += " with default Encoding"
+				_msg += ":"
+				print(_msg)
+				print(msg)
+				print("-[Original Error]------------------")
+				print(err)
+				print("-[end]------------------")
 	if has_model:
 		pmxlib.write_pmx(output_filename_pmx, pmx, moreinfo=True)
 		return output_filename_pmx
