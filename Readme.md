@@ -81,6 +81,12 @@ Some less obvious things when working with Console applications
 
 ## Recommended chain of actions
 
+![Shading Workaround](img/ShadingWorkaround.png)
+
+IMPORTANT: Since the textures are now rendered in-game, the current Light/Shadow Settings apply to them.<br/>
+When keeping the default settings, most textures will get a darker tint due to that.<br/>
+For the time being, this can be fixed by setting the Light Settings in the [Visual Settings] to [No Shadows].
+
  0. Load the desired character and costume.
  0. Change Pose, Expression, Clothing State, or Accessory Visibility as necessary.
     - Recommended: Pose='T-Pose' (one to the left), Blinking=Off, Looking at='Top' (Slider on 0%), Mouth=Neutral.<br/>
@@ -88,10 +94,6 @@ Alternatively (instead of 'Looking at') you can focus on yourself py pressing '5
 Any Eye and/or Mouth Position works, as long as the Eyes stay open and the mouth closed (aka Smiling, Sleepy, ...)
     - While the Tool-Chain is indifferent of whatever pose is used, it might produce funny results in MMD.
     - The same goes for facial expressions, which are further morphed by MMD-Sequences.
-    - IMPORTANT: Since the textures are now rendered, the current Light/Shadow Settings apply to them.
-	When keeping the default settings, most textures will get a darker tint due to that.
-	For the time being, this can be fixed by setting the Light Settings in the [Heart] Menu to [No Shading].
-	
  0. Click on [Export] in the upper left corner -- It may take a short moment depending on size.
  - Will add a folder called `ModelFullName + Random 4-Digit number` under `C:\koikatsu_model` with the following contents
     - The model.pmx file and the main textures associated with it
