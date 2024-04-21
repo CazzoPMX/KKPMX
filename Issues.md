@@ -15,6 +15,26 @@ Recollection of certain answers given as part of an issue.
 
  - [I need help with [Mode 04], can you help me out?](https://github.com/CazzoPMX/KKPMX/issues/4#issuecomment-1122760640)
 
+## Not a bug (or I cannot do anything against it)
+
+
+Certain weird / wrong looking things are simply how the assets already exist within the game, or are solved differently with Unity magic.
+
+
+|  | |
+| --- | --- |
+| The model looks completely different! | Not everything can be exported as neither PMXE nor MMD are written in Unity.<br/>Certain things are simply 'runtime magic' that is calculated on-the-fly and hence impossible to recreate in a static context.<br/>Your only option here is to write your own shader for RayMMD or hope that your model destination has some support for it. |
+| Some textures are black | Sometimes the shader just flat out refuses to emit the processed texture. (see below for a list)<br/>It can also be that the model maker literally used black/empty texture masks for unknown reasons, instead of disabling or 'not using' certain fields.<br/>These cases cannot be predicted nor prevented, so all you can do is either switching out shaders, export with Legacy mode, or (in the latter case) manually fixing the problematic textures in-game. |
+| Iris is (almost) invisible | If the EyeWhite is not complex enough to have 'a dent' behind the Iris, then it may render in front of it.<br/>There is nothing I can do about that except for inserting extra vertices when detecting such a situation (which is in itself messy enough).<br/>To indicate this situation, the EyeWhite is made transparent so that this can be solved manually. |
+| Leftovers when cleaning up transparency | Cleanup may be incomplete in certain cases with messy texture cut-outs (or the UV is weird). Please cleanup the remaining bits yourself. |
+| Too much was cut away when cleaning up! | Same issue as above but the other way around, which is why [model_mat_backup.pmx] is created as backup before cleaning up. Please replace the affected materials with those from the backup in these cases. |
+| Weird Hair Physics/Bone Structure | In some assets, the bones are not aligned with the mesh; In others, the surface has messy weight painting which prevents proper cleanup at the end.<br/>Nothing can be done in either case, as it could as well be intentional (even if it is unlikely), so please clean up manually in these cases. |
+| Missing Skirt Physics | Skirts are only recognized as such if they are part of the intended Bone structure created by 'Bottom Clothing'.<br/>If any other accessories (except CTA) inject their own skirt physics, they will not be recognized as such and hence not rigged properly. |
+
+Currently the following Shaders are known to cause problems and hence always use legacy regardless of export mode:
+
+ - KKUSS and KKUTS
+
 ## Troubleshooting
 
 
@@ -76,4 +96,3 @@ Things that are worked on or haven't been fixed yet.
  - Extra textures for face are ignored. -- overtex2 stays optional
  - Knee looks broken when kneeling too much.
     - It seems that in most motions, this can be fixed by 'not moving the leg too far', as it is simply an IK stretching issue. Simply adjust the waist / feet IK according to the character height
- - AlphaMask on Clothes.

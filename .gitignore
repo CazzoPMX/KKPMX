@@ -4,3 +4,4 @@ build
 release
 /#github.7z
 /plugin
+*.lnk

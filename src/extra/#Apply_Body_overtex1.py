@@ -28,6 +28,7 @@ nipsize_def  = 0.6677417
 nipsize      = data.get("size", nipsize_def) ## Increases Factor for nip (== Areola Size)
 details      = data.get("showinfo", False)
 overcolor    = data.get("color",  [1, 0.7771759, 0.7261904, 1])
+legacy       = data.get("legacy", False)
 ###
 #-- tex1mask = 1
 # 0 = Org of [White] and [Red] are equal
@@ -45,6 +46,7 @@ tex1mask     = 1
 args = sys.argv[1:]
 if details: print((f"\n=== Running overtex1(Body) Script with arguments:" + "\n-- %s" * len(args)) % tuple(args))
 else: print(f"\n=== Running overtex1(Body) Script")
+if legacy: print(f": Running in legacy mode")
 
 if (nipsize < 0.01): print (f"[Warning]: Nipsize is very small or negative({nipsize}), may cause weird effects")
 
@@ -221,7 +223,7 @@ def add_maskB(_img_seg):
 	_image = imglib.blend_segmented(blend_modes.normal, conv(_img_seg), conv(img_tex), 1)
 	DisplayWithAspectRatio(opt, "Great", _image, 256)
 	return _image
-# img_seg = add_maskB(img_segR)
+if legacy: img_seg = add_maskB(img_segR)
 
 ####
 ## Apply Specularity
@@ -233,7 +235,7 @@ def add_maskG(_img_seg):
 	_image = imglib.blend_segmented(blend_modes.overlay, _img_seg, maskG, nip_specular)
 	DisplayWithAspectRatio(opt, "Great 2", _image, 256)
 	return _image
-# img_seg = add_maskG(img_seg)
+if legacy: img_seg = add_maskG(img_seg)
 
  ## Looks good, but needs more testing if actually required.
 def add_maskR(_img_seg):## -- Adds back a bit of contrast
@@ -241,28 +243,30 @@ def add_maskR(_img_seg):## -- Adds back a bit of contrast
 	_image = imglib.blend_segmented(blend_modes.multiply, _img_seg, maskR, 1)
 	DisplayWithAspectRatio(opt, "Great 3", _image, 256)
 	return _image
-# img_seg = add_maskR(img_seg)
+if legacy: img_seg = add_maskR(img_seg)
 
 # DisplayWithAspectRatio(opt, 'Final Seg[CV2]', conv(img_seg), 256)
 def modeTest2(src, dst, name): pass
 modeTest = modeTest2
 
 #### Paste back
-####--- Hard reset since we have a white one now
-# testOutModes_wrap
-img_seg = imglib.blend_segmented(blend_modes.multiply, conv(img_segR), conv(maskRes), 1)
-#--- multiply and SoftLight
+if not legacy:
+	####--- Hard reset since we have a white one now
+	# testOutModes_wrap
+	img_seg = imglib.blend_segmented(blend_modes.multiply, conv(img_segR), conv(maskRes), 1)
+	#--- multiply and SoftLight
 
 image = cutHelper(image, [cY, cX_R], img_seg)
 
 ###################### Other side
 img_segL  = cutHelper(image, [cY, cX_L], None)
 
-# img_seg = add_maskB(img_segL)
-# img_seg = add_maskG(img_seg)
-# img_seg = add_maskR(img_seg)
-
-img_seg = imglib.blend_segmented(blend_modes.multiply, conv(img_segL), conv(maskRes), 1)
+if legacy:
+	img_seg = add_maskB(img_segL)
+	img_seg = add_maskG(img_seg)
+	img_seg = add_maskR(img_seg)
+else:
+	img_seg = imglib.blend_segmented(blend_modes.multiply, conv(img_segL), conv(maskRes), 1)
 
 image = cutHelper(image, [cY, cX_L], img_seg)
 ######################

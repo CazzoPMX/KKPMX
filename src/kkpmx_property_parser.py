@@ -78,6 +78,7 @@ NO_FILES = "no_files"
 PARENT   = "parentMat"
 PARSED   = "parsed"
 ROOT     = "root"
+LEGACY   = "legacy"   ### If the asset was rendered in-game or uses Legacy processing
 #---- added by plugin
 SHADER     = "shader"
 AVAILABLE  = "available"
@@ -404,6 +405,7 @@ def __parse_json_file(pmx, data: dict, root: str):
 		if verbose: print(">--> Found {} attributes to process".format(len(attr)))
 		attr[ROOT] = root
 		attr[PARSED] = True
+		attr[LEGACY] = not util.readFromCommentRaw(mat.comment, "[:Processed:]", exists=True)
 		parseDict = {
 			'cloth': parse_acc, 'acc': parse_acc, 'item': parse_acc,
 			'body': parse_body, 'face': parse_face,
@@ -597,6 +599,8 @@ def parse_acc(pmx, mat, attr): ## Shader actually ignores Alpha and always uses 
 			del attr[Color_Shadow]
 	
 	process_common_attrs(pmx, mat, attr)
+	if (mat.specRGB == [1,1,1]):
+		mat.specRGB = [0,0,0]
 	process_color_and_detail(pmx, mat, attr)
 	if t__Line in attr: process_line_mask(pmx, mat, attr)
 	
@@ -699,11 +703,23 @@ def parse_alpha(pmx, mat, attr): ## @todo -- Acc Shader that respects Alpha in C
 	process_common_attrs(pmx, mat, attr)
 	process_color_and_detail(pmx, mat, attr)
 	if t__Line in attr: process_line_mask(pmx, mat, attr)
-	if Color_1 in attr:
-		mat.diffRGB = attr[Color_1][:3]
-		mat.alpha = attr[Color_1][3]
-	 ## main_alpha just means it can have alpha, not that it must have it
-	else: mat.alpha = 0.9
+	
+	#util.__typePrinter_Dict(attr)
+	
+	if "alpha" in attr:
+		if Color_1 in attr:
+			mat.diffRGB = attr[Color_1][:3]
+		mat.alpha = attr["alpha"]
+		if mat.alpha == 0: 
+			mat.comment = util.updateCommentRaw(mat.comment, "[:OpacityInfo:]", "This material was exported with an explicit opacity of 0. Verify if this was intended.")
+			#util.disable_mat(mat)
+	else:
+		if Color_1 in attr:
+			mat.diffRGB = attr[Color_1][:3]
+			mat.alpha = attr[Color_1][3]
+		## main_alpha just means it can have alpha, not that it must have it
+		else: mat.alpha = 0.9
+	print(f"--- With alpha = {attr.get('alpha', mat.alpha)}")
 
 def parse_glass(pmx, mat, attr):
 	mat.specpower = 1.0
@@ -1138,7 +1154,10 @@ def handle_body_overtex1(pmx, attr):
 	
 	arg1 = quote(get_working_texture(attr))
 	arg2 = quote(attr[t__overtex1])
-	js = { "color": attr[Color_Tex1], "nip":   attr["nip"], "size":  attr["nipsize"], "spec":  attr["nip_specular"] }
+	
+	legacyFlag = GROUP.startswith("KKU") or attr.get(LEGACY, True)
+	
+	js = { "color": attr[Color_Tex1], "nip":   attr["nip"], "size":  attr["nipsize"], "spec":  attr["nip_specular"], "legacy": legacyFlag }
 	js[state_info] = local_state[debug_file]
 	arg3 = quoteJson(js)
 	call_img_scripts((pathBOver1, arg1, arg2, arg3), "body1", [3])
@@ -1698,7 +1717,7 @@ shader_dict = {
 	# 			t__Another, t__Color,	t__Detail, t__Line, 		t__Main, t__NorMap
 	"main_item": "item",              ##2450[KK,?_?] AnotherRampFull, DetailBLineG, DetailRLineR, LineWidthS, NUTS RP RV SE SEA SH SP
 	"main_item_studio": "item",       ##2450[KK,?_?] ++ Add [z__EmissionPower] \\ Add PatternMask things
-	"main_item_studio_alpha": "item", ##3000[KK,?_?] ++ Add [alpha, z__ambientshadowOFF, z__EmissionPower], Remove [LineWidthS] \\ Add PatternMask things
+	"main_item_studio_alpha": "alpha", ##3000[KK,?_?] ++ Add [alpha, z__ambientshadowOFF, z__EmissionPower], Remove [LineWidthS] \\ Add PatternMask things
 	#:KK: PatternMask1+2+3 \\ Color 1_2,2,2_2,3,3_2, Patternuv1+3+4 \\ pattern(clamp,rotator)1+2+3
 	"main_item_emission": "item",     ##2450[KK,?_?] ++ z__AnimationMask \\ z__EmissionPower // Remove [SH SP]
 	#:KK: z__AnimationMask, t__Another, t__Color, t__Detail, t__Line, t__Main, t__NorMap
@@ -1743,7 +1762,9 @@ shader_dict = {
 	## WAY TOO MANY OPTIONS
 	"KKUTS": "skin",
 	"KKUTShair": "hair",
+	"KKUTSeyew": "item",
 	"KKUTSitem": "item",
+	"KKUSSitem": "item",
 	"xukmi/MainAlphaPlusTess": "alpha", ## t__Alpha, t__Another, t__Detail, t__Emission, t__Line, t__Liquid, t__Main, t__NorMap, ...
 	"xukmi/MainOpaquePlusTess": "cloth", ## t__Alpha, t__Another, t__Detail, t__Emission, t__Line, t__Liquid, t__Main, t__NorMap, ...
 	"xukmi/MainOpaquePlus": "cloth", ## t__Alpha, t__Another, t__Detail, t__Emission, t__Line, t__Liquid, t__Main, t__NorMap, ...

@@ -127,7 +127,7 @@ def main(moreinfo=True):
 		if not util.PRODUCTIONFLAG:
 			from kkpmx_internal import main2
 			main2(); exit()
-		sys.exit()
+		exit()
 	else: print_help(idx)
 	# prompt PMX name
 	core.MY_PRINT_FUNC(">> The script can be terminated at any point by pressing Ctrl+C")
@@ -1042,6 +1042,7 @@ Mode Interactions:
 		m = util.readFromComment(mat.comment, 'Slot')
 		cta = util.readFromComment(mat.comment, 'CTASlot')
 		
+		isTopId = False
 		if cta is not None:
 			isTopId = cta in ['ct_top_parts_A', 'ct_top_parts_B', 'ct_top_parts_C']
 			m = 'ct_clothesTop' if isTopId else cta
@@ -1072,7 +1073,7 @@ Mode Interactions:
 				appender = __append_itemmorph_sub if isHidden else __append_itemmorph_mul
 				appender(dictSlots[m], idx)
 				### Add extra slots for ct_clothesTop
-				# ct_clothesTop, ct_top_parts_A, ct_top_parts_B, ct_top_parts_C
+				# ct_clothesTop, 'ct_top_parts_A', 'ct_top_parts_B', 'ct_top_parts_C'
 				if m == 'ct_clothesTop':
 					mm = cta if isTopId else util.readFromComment(mat.comment, 'TopId')
 					if mm is not None:

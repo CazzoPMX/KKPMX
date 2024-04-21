@@ -125,11 +125,17 @@ def add_sirome_morph(pmx):
 		# Get all faces containing that Vertex (and their vertices)
 		faces = from_material_get_faces(pmx, mat_idx, returnIdx=True)
 		face_list = []
-		for face_idx in faces:
-			face = pmx.faces[face_idx]
-			if maxVert in face:
-				devPrint(f"- Found maxVert in {face_idx}: {face}")
-				face_list.append(face)
+		if (len(faces) == 34): ## Actually the default Head Sirome
+			face_list = [pmx.faces[face_idx] for face_idx in faces]
+			_mat = pmx.materials[mat_idx]
+			_mat.alpha = 0.75
+			_mat.comment = util.updateCommentRaw(_mat.comment, "[:IrisNote:]", f"Not enough vertices to allow proper EyeMorphing.")
+		else:
+			for face_idx in faces:
+				face = pmx.faces[face_idx]
+				if maxVert in face:
+					devPrint(f"- Found maxVert in {face_idx}: {face}")
+					face_list.append(face)
 		target_list = set(util.flatten(face_list))
 		devPrint(f"Affected Vertices: {len(target_list)}")
 		# Pull them backwards (+Z) by -0.05 to -0.07
@@ -341,6 +347,18 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 	multiSlot  = {} # For unique splitnames, keep track how many subchains of this slot have been processed
 	multiMap   = {} # Based on the [multiList] Idx, return the original slot & boneName (in case it was replaced)
 	soloFixMap = {} # Map for additional edits of chains only using the last bone
+	
+	_=""" Dump Research
+	::[acc_hair] from Azusa
+	>	root(Vertices) -> (twin_0_1.L -> twin_0_1.L)[Buggy], (hair_0_1.L ...) [fine], <right>
+	::[Len_001_necktie_CH_CLOTH_SD006T5H0Z] from Azusa
+	>	ca_slot -> "Bones"(either infront or behind) -> kl_mune_b_wj (Vertices) -> ...
+	>	:: They also have no BoneLink to their sole child
+	::[Wings] from Azusa -- Falling through [Morph] filter, and good example for testing
+	>	to turn "on split, treat original chain as independent"
+	"""
+	
+	
 	for idx in checkSlot:
 		slotName  = pmx.bones[idx].name_jp ## The original Slot Name for Physics
 		slotRB    = util.find_all_in_sublist(slotName, pmx.rigidbodies, False)
@@ -367,7 +385,8 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 		
 		# Down here instead of at fetch to include the redirect-check
 		if len(slotRB) < 1: print(f"[!]: No rigids found for idx={idx} ('{slotName}')!");
-		elif slotRB[0].name_jp.endswith("_r"): slotRB = slotRB[1:] ## Skip the _r one
+		elif slotRB[0].name_jp.endswith("_r"): slotRB = slotRB[1:] ## Skip the _r one (reason? <forgot....>)
+		
 		
 		if doPrint: print(f":--- Start {idx}: {slotName} (in multiList: {orgPar != -1})")
 		###--- [A] Keep ca_slot (use this for Tails ?)
@@ -415,7 +434,7 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 				cIdx = cMap[0] ## [child index]: First child since Parent that is used -- Target of RigidBody (will have FULL own subtree)
 				isMulti = (diff > 1)
 				
-				(flag, editRB) = reduceSlots(slotRB, boneIdx)  ## Use the current bone, since we want to clean that up
+				(flag, editRB) = reduceSlots(slotRB, boneIdx)  ## Use the current bone, since we want to clean that up (flag filters to avoid magic without rigids)
 				#[CASE] :: UnusedBone <after< UsedBone >followed-by> TailBone
 				#> [Issue]: There is simply no "next bone" to reconnect onto since Tails are handled differently
 				if (newParent == False) and (not boneIdx in usedBones) == True:
@@ -510,6 +529,53 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 		#: Set parent variables : newParent, hadOneUsedParent, storedRbkID
 		#:    Scoped vars : cIdx, flag, editRB \\ newRB, breakVar
 	##-- End Loop "for idx in checkSlot"
+	#########
+	#[TODO] Do 2nd Loop over the slots
+	# -- [First]: Re-validate Rigging
+	#		If [1] is Root, then its Rigid must be Green if any
+	#		If [1] is Root with multiple children, then
+	#		- No RigidBody from Root to Child (apart from [Step02]) --> Log if it exists, then cleanup size to small sphere
+	#			Seems to be general problem on chains reduced to [root], that the first is always orange, but the 2nd green
+	#		- All children must have Green as Anchor
+	#		- Test if the chain contains Vertices -- cleanup otherwise
+	# -- [Second]: Make "smoother" chains by cloning a split bone times "numChild +1"
+	# - [0]: Parent of [1]
+	# - [1]: Original split bone
+	# - [N+1]: Inherit POS/ROT[1], Link to/from [nth Child]
+	# --- Unless [1] is "ca_slot" (aka [0] is outside the slot)
+	#		Redo chain between [1] and [Child] -> Set Rigid to Yellow -- UpperJoint = [0 -> N+1], LowerJoint = [N+1 -> Child]+
+	# -- [Third]: Check if Hair would get stuck into Skirt, and provide a Morph [Rot.XNeg = -8] on first Orange of any chain that overlaps with a skirt rigid
+	#[boneIdx for boneIdx in range(len(pmx.bones)) if pmx.bones[boneIdx].name_jp.startswith("ca_slot")]
+	
+	if not util.is_prod() and False:
+		newList = util.DictAppend([])
+		for boneIdx in range(len(pmx.bones)):
+			if boneIdx not in usedBones: continue
+			bone        = pmx.bones[boneIdx]
+			boneName    = bone.name_jp
+			if boneName.startswith("ca_slot"): newList.append(boneIdx)
+		for idx in newList: ## idk, could be too early
+			bone      = pmx.bones[idx]
+			slotName  = bone.name_jp = re.sub(r"\*\d", "", bone.name_jp)
+			slotRB    = util.find_all_in_sublist(slotName, pmx.rigidbodies, False) ## Skip the _r one
+			## Redo the map (outside)..... >.<
+			## Get from map
+			myMap = fullMap[slotName]
+			for cIdx in myMap: navMap[pmx.bones[cIdx].parent_idx].append(cIdx)
+			# do [First] magic
+			for cIdx in myMap: 
+				# if root, set RigidBody to Green ++++ Logging if it exists but was not
+				if cIdx in (verifyUsed + verifyMark): continue # or just don't do the above loop
+				if split:
+					flag = boneHasWeights()
+					for _cIdx in arr:
+						flag = flag or recursiveCheck(_cIdx)
+					if flag: verifyUsed.append(_cIdx) ## is fine
+					else: verifyMark.append(_cIdx) ## Can be deleted I guess
+					if flag: morphSplit.append(_cIdx)
+			## Outside
+			# do [Second] magic for all in morphSplit with regards to root
+		
 	#########
 	
 	from kkpmx_utils import process_weight
@@ -608,6 +674,7 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 			bone.parent_idx = grandparent
 	
 	#--##--#
+	# -- TODO: if from [auto_mode], ignore 2nd Translation attempt
 	import model_overall_cleanup
 	model_overall_cleanup.__main(pmx, input_file_name, False, False)
 	_opt["fullClean"] = _opt.get("fullClean", flag_all)
@@ -637,4 +704,3 @@ User Choices:
  - PMX file '[modelname]_reduced.pmx' when called on its own
   - If unhappy with the result, call this again using [modelname]_better.pmx
 """
-

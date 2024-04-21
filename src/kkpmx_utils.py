@@ -29,8 +29,8 @@ OPT_AUTO = "automatic"
 ALL_YES = "all_yes"
 OPT_INFO = "moreinfo"
 
-VERSION_DATE = "2024-04-13"
-VERSION_TAG = "3.0.0"
+VERSION_DATE = "2024-04-21"
+VERSION_TAG = "3.0.1"
 
 def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
@@ -660,6 +660,21 @@ def _readFromCommentRaw(_comment:str, _term:str, exists:bool = False):
 		return None
 def isDisabled(mat): return re.search(r'\[:Disabled?:\]', mat.comment) is not None
 
+def disable_mat(pmx, name_mat = None, no_tex_only=False):
+	if (not name_mat is None):
+		mat_idx = name_mat
+		if type(name_mat) == str:
+			mat_idx = find_mat(pmx, name_mat, False)
+			if mat_idx == -1: return
+		if no_tex_only:
+			if pmx.materials[mat_idx].tex_idx != -1:
+				return
+		_mat = pmx.materials[mat_idx]
+	else: _mat = pmx
+	_mat.comment = util.updateCommentRaw(_mat.comment, "[:Disabled:]")
+	_mat.alpha = 0.0
+	_mat.edgesize = 0
+	_mat.flaglist[4] = False
 
 def find_all_mats_by_name(pmx, name, withName=False):
 	result = []
