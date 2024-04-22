@@ -345,8 +345,10 @@ def __parse_json_file(pmx, data: dict, root: str):
 			name = re.sub(r"\*\d+","",name) #@todo_note "<< smt about '* not allowed in filename' >>"
 			
 			ignErrors = False
+			attr[LEGACY] = True
 			if util.readFromCommentRaw(mat.comment, "[:Processed:]", exists=True):
 				attr[PROCESS] = ignErrors = True
+				attr[LEGACY] = False
 				mat.comment = util.deleteCommentRaw(mat.comment, "[:Processed:]")
 				if verbose: print("Texture was already exported preprocessed, resetting Textures...")
 				
@@ -405,7 +407,7 @@ def __parse_json_file(pmx, data: dict, root: str):
 		if verbose: print(">--> Found {} attributes to process".format(len(attr)))
 		attr[ROOT] = root
 		attr[PARSED] = True
-		attr[LEGACY] = not util.readFromCommentRaw(mat.comment, "[:Processed:]", exists=True)
+
 		parseDict = {
 			'cloth': parse_acc, 'acc': parse_acc, 'item': parse_acc,
 			'body': parse_body, 'face': parse_face,
@@ -1155,7 +1157,7 @@ def handle_body_overtex1(pmx, attr):
 	arg1 = quote(get_working_texture(attr))
 	arg2 = quote(attr[t__overtex1])
 	
-	legacyFlag = GROUP.startswith("KKU") or attr.get(LEGACY, True)
+	legacyFlag = GROUP.startswith("KKU") or attr.get(LEGACY, False)
 	
 	js = { "color": attr[Color_Tex1], "nip":   attr["nip"], "size":  attr["nipsize"], "spec":  attr["nip_specular"], "legacy": legacyFlag }
 	js[state_info] = local_state[debug_file]
@@ -1634,7 +1636,10 @@ def set_clean_texture(pmx, input_file_name):
 					try:
 						util.copy_file(alphaPath, texAlpha)
 					except Exception as ex:
-						if not os.path.exists(texFile): raise ## Ignore errors if the file already exists
+						if not os.path.exists(texAlpha): raise ## Ignore errors if the file already exists
+					##-- Replace texture with alphaCut unless its body / bra
+					if token and not token in ["body", "ct_bra"]:
+						pmx.textures[texIdx] = os.path.relpath(texAlpha, basePath)
 			
 	except Exception as ex:
 		print(ex)
