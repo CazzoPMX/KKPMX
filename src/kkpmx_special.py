@@ -289,10 +289,12 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 	#	bones = util.find_bones(pmx, ["cf_s_leg01_R", "cf_s_kneeB_R", "cf_d_kneeF_R",], False)
 	#	if bones[0] != -1: weightMap[bones[1]] = bones[0]; weightMap[bones[2]] = bones[0]
 	
+	
 	if flag_all or util.ask_yes_no("Merge Toe Bones", "n"):
-		RemoveAndMerg(fullMap["cf_j_toes_L"])
-		RemoveAndMerg(fullMap["cf_j_toes_R"])
-		flagToes = True
+		flagToes = find_bone(pmx, "cf_j_toes_L", False)
+		RemoveAndMerg(fullMap.get("cf_j_toes_L", []))
+		RemoveAndMerg(fullMap.get("cf_j_toes_R", []))
+		#flagToes = True
 	
 	#--##--#
 	if flag_all or util.ask_yes_no("Simplify non-head slots too", "y"):
@@ -673,6 +675,15 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 			grandparent = pmx.bones[bone.parent_idx].parent_idx
 			bone.parent_idx = grandparent
 	
+	SemiStd_05_Waist(pmx)  # Create WaistCancel for DBones to attach onto
+	SemiStd_09_DBones(pmx) # Move vertices from Legs/Feet/IK into D-Bones
+	
+	#-- TODO:
+	# Move Twists  into DispFrame "腕" or "腕Twist" -- currently in [ExtraBones]
+	# Move D-Bones into DispFrame "足OP"
+	# Fix extra entry of [moremorphs]
+	
+	
 	#--##--#
 	# -- TODO: if from [auto_mode], ignore 2nd Translation attempt
 	import model_overall_cleanup
@@ -680,7 +691,7 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 	_opt["fullClean"] = _opt.get("fullClean", flag_all)
 	cleanup_free_things(pmx, _opt)
 	if _opt.get("soloMode", True):
-		return end(pmx if True else None, input_file_name, "_reduced", ["Simplified Face Vertices"])
+		return end(pmx if True else None, input_file_name, "_reduced", ["Simplified Armature"])
 	########################
 	pass ## Scroll Mark
 simplify_armature.__doc__ = """
@@ -704,3 +715,221 @@ User Choices:
  - PMX file '[modelname]_reduced.pmx' when called on its own
   - If unhappy with the result, call this again using [modelname]_better.pmx
 """
+
+
+
+def EntryBoneNext(pmx, newParent, newBone):
+	from _prune_unused_bones import insert_single_bone
+	from kkpmx_utils import find_bone
+	idx = find_bone(pmx, newParent.name_jp)
+	insert_single_bone(pmx, newBone, idx+1)
+
+def EntryBoneFore(pmx, newChild, newBone):
+	from _prune_unused_bones import insert_single_bone
+	from kkpmx_utils import find_bone
+	idx = find_bone(pmx, newChild.name_jp)
+	insert_single_bone(pmx, newBone, idx)
+
+def SemiStd_05_Waist(pmx):
+	from kkpmx_utils import Vector3, find_bone, find_disp
+	from kkpmx_rigging import add_bone
+	from kkpmx_utils import process_weight
+	from kkpmx_morphs import find_or_replace_disp
+	
+	currentState = pmx
+	def SearchBone(p,n):
+		_idx = find_bone(p, n, False)
+		if _idx == -1: return None
+		return p.bones[_idx]
+	GetFrameBone = lambda p,n,f: p.frames[find_disp(p, n, f)]
+	toIdx = lambda b: find_bone(pmx, b.name_jp, True)
+	def ToOffset(bone, value):
+		bone.tail_usebonelink = False
+		bone.tail = value
+	def ToBone(bone, value):
+		bone.tail_usebonelink = True
+		bone.tail = toIdx(value)
+	
+	#// Waist Bone --> Add if LowerBody & Lower.Parent & Right Leg Exist -- Also adds WaistCancel L + R
+	text = "腰" # string 
+	nameE = "waist" # string 
+	name = "下半身" # string 
+	iPXBone7_LowerParent = None # IPXBone 
+	iPXBone8_FindLower = None # IPXBone 
+	iPXBone9_FindLegR = None # IPXBone 
+	iPXBone10_FindWaist = SearchBone(currentState, text) # IPXBone
+	
+	if (iPXBone10_FindWaist == None):
+		iPXBone8_FindLower = SearchBone(currentState, name);
+		iPXBone7_LowerParent_idx = iPXBone8_FindLower.parent_idx;
+		iPXBone7_LowerParent = pmx.bones[iPXBone7_LowerParent_idx]
+		iPXBone9_FindLegR = SearchBone(currentState, "右足");
+		
+		if (iPXBone7_LowerParent != None and iPXBone8_FindLower != None and iPXBone9_FindLegR != None):
+			float6 = Vector3.FromList(iPXBone8_FindLower.pos) # float3 
+			float7 = Vector3.FromList(iPXBone9_FindLegR.pos) # float3 
+			float8 = Vector3.Zero() # float3 
+			float8.Y = Vector3.LerpS(float6.Y, float7.Y, 0.6);
+			float8.Z = float6.Y * 0.02;
+			iPXBone10_FindWaist = add_bone(pmx,
+				has_rotate = True,                            
+				has_translate = False,                        
+				name_jp = text,                               
+				pos = float8.ToList(),                        
+				parent_idx = toIdx(iPXBone7_LowerParent),     
+				name_en = nameE,                              
+				deform_layer = iPXBone7_LowerParent.deform_layer,
+				_solo=True
+			);
+			ToOffset(iPXBone10_FindWaist, Vector3.__rmul__((Vector3.FromList(iPXBone8_FindLower.pos) - Vector3.FromList(iPXBone10_FindWaist.pos)), 0.8).ToList())
+			
+			EntryBoneNext(currentState, iPXBone7_LowerParent, iPXBone10_FindWaist); # Insert 腰 after Parent of 下半身
+			for IPXBone12_item in currentState.bones:
+				#// If Bone is not "Center End" and has same Parent as [LowerBody], then set as Waist
+				if (IPXBone12_item.parent_idx != -1 and IPXBone12_item.parent_idx == iPXBone7_LowerParent_idx and IPXBone12_item.name_jp != "センター先"):
+					if IPXBone12_item.name_jp == iPXBone10_FindWaist.name_jp: continue
+					IPXBone12_item.parent_idx = toIdx(iPXBone10_FindWaist);
+			
+			frameBone = GetFrameBone(currentState, "センター", True) # IPXNode 
+			frameBone.items.append([False, toIdx(iPXBone10_FindWaist)])
+	if True:
+		if True:
+			for i in range(2):
+				text3 = None # string
+				
+				if (i == 0):
+					text3 = "右足";
+					name = "腰キャンセル右";
+				else:
+					text3 = "左足";
+					name = "腰キャンセル左";
+				iPXBone7_LowerParent = SearchBone(currentState, text3);
+			
+				if (text3 != None and find_bone(pmx, name) == -1):
+					iPXBone8_FindLower = add_bone(pmx,
+						name_jp = name,
+						pos = iPXBone7_LowerParent.pos,
+						parent_idx = iPXBone7_LowerParent.parent_idx,
+						inherit_rot = True,
+						inherit_parent_idx = toIdx(iPXBone10_FindWaist),
+						inherit_ratio = -1.0,
+						has_visible = False,
+						_solo = True
+					)
+					#iPXBone7_LowerParent.Parent = iPXBone8_FindLower; 
+					EntryBoneFore(currentState, iPXBone7_LowerParent, iPXBone8_FindLower); # Insert 腰キャンセル右 before 右足
+					iPXBone7_LowerParent.parent_idx = toIdx(iPXBone8_FindLower)
+
+def SemiStd_09_DBones(pmx):
+	from kkpmx_utils import Vector3, find_bone
+	from kkpmx_rigging import add_bone
+	from kkpmx_utils import process_weight
+	from kkpmx_morphs import find_or_replace_disp
+	
+	def clone_bone(b):
+		#add_bone(pmx, *iPXBone16_FindLeg.list())
+		bone = pmxstruct.PmxBone.clone(b)
+		pmx.bones.append(bone)
+		return len(pmx.bones) - 1
+	
+	for i in range(2):
+		text4 = "左" if (i != 0) else "右"
+		text5 = "_L" if (i != 0) else "_R"
+		text = text4 + "足先EX";
+		idx_iPXBone15_ToeD_Op   = find_bone(pmx, text, False)    
+		idx_iPXBone16_FindLeg   = find_bone(pmx, text4 + "足")   
+		idx_iPXBone17_FindKnee  = find_bone(pmx, text4 + "ひざ")  
+		idx_iPXBone18_FindFoot  = find_bone(pmx, text4 + "足首") 
+		idx_iPXBone19_FindToeIK = find_bone(pmx, text4 + "つま先") ## Instead of つま先ＩＫ
+		if (idx_iPXBone15_ToeD_Op != -1 or idx_iPXBone16_FindLeg == -1 or idx_iPXBone17_FindKnee == -1 or idx_iPXBone18_FindFoot == -1 or idx_iPXBone19_FindToeIK == -1):
+			continue;
+		
+		iPXBone16_FindLeg   = pmx.bones[idx_iPXBone16_FindLeg   ]
+		iPXBone17_FindKnee  = pmx.bones[idx_iPXBone17_FindKnee  ]
+		iPXBone18_FindFoot  = pmx.bones[idx_iPXBone18_FindFoot  ]
+		iPXBone19_FindToeIK = pmx.bones[idx_iPXBone19_FindToeIK ]
+		idx_iPXBone20_CloneLeg  = clone_bone(iPXBone16_FindLeg ); iPXBone20_CloneLeg  = pmx.bones[idx_iPXBone20_CloneLeg ]
+		idx_iPXBone21_CloneKnee = clone_bone(iPXBone17_FindKnee); iPXBone21_CloneKnee = pmx.bones[idx_iPXBone21_CloneKnee]
+		idx_iPXBone22_CloneFoot = clone_bone(iPXBone18_FindFoot); iPXBone22_CloneFoot = pmx.bones[idx_iPXBone22_CloneFoot]
+		idx_iPXBone15_ToeD_Op   = add_bone(pmx)                            ; iPXBone15_ToeD_Op   = pmx.bones[idx_iPXBone15_ToeD_Op  ]
+		
+		idx_iPXBone20_CloneLeg  = clone_bone(iPXBone16_FindLeg ); iPXBone20_CloneLeg  = pmx.bones[idx_iPXBone20_CloneLeg ]
+		idx_iPXBone21_CloneKnee = clone_bone(iPXBone17_FindKnee); iPXBone21_CloneKnee = pmx.bones[idx_iPXBone21_CloneKnee]
+		idx_iPXBone22_CloneFoot = clone_bone(iPXBone18_FindFoot); iPXBone22_CloneFoot = pmx.bones[idx_iPXBone22_CloneFoot]
+		idx_iPXBone15_ToeD_Op   = add_bone(pmx)                            ; iPXBone15_ToeD_Op   = pmx.bones[idx_iPXBone15_ToeD_Op  ]
+	
+		iPXBone20_CloneLeg.inherit_parent_idx = idx_iPXBone16_FindLeg;
+		iPXBone20_CloneLeg.inherit_ratio = 1.0;
+		iPXBone20_CloneLeg.inherit_rot = True;
+		iPXBone20_CloneLeg.has_enabled = True#form.checkLegDControll.Checked;
+		iPXBone20_CloneLeg.has_visible = True#form.checkLegDControll.Checked;
+		#iPXBone20_CloneLeg.ToBone = None;
+		#iPXBone20_CloneLeg.ToOffset = Vector3.Zero();
+		iPXBone20_CloneLeg.tail_usebonelink = False;
+		iPXBone20_CloneLeg.tail = Vector3.Zero().ToList()
+		
+		iPXBone20_CloneLeg.deform_layer += 1;
+		iPXBone20_CloneLeg.name_jp += "D";
+		iPXBone20_CloneLeg.name_en += "D";
+		iPXBone21_CloneKnee.parent_idx = idx_iPXBone20_CloneLeg;
+		iPXBone21_CloneKnee.inherit_parent_idx = idx_iPXBone17_FindKnee;
+		iPXBone21_CloneKnee.inherit_ratio = 1.0;
+		iPXBone21_CloneKnee.inherit_rot = True;
+		iPXBone21_CloneKnee.has_enabled = True#form.checkLegDControll.Checked;
+		iPXBone21_CloneKnee.has_visible = True#form.checkLegDControll.Checked;
+		#iPXBone21_CloneKnee.ToBone = None;
+		#iPXBone21_CloneKnee.ToOffset = Vector3.Zero();
+		iPXBone21_CloneKnee.tail_usebonelink = False;
+		iPXBone21_CloneKnee.tail = Vector3.Zero().ToList()
+		iPXBone21_CloneKnee.deform_layer += 1
+		iPXBone21_CloneKnee.name_jp += "D";
+		iPXBone21_CloneKnee.name_en += "D";
+		iPXBone22_CloneFoot.parent_idx = idx_iPXBone21_CloneKnee;
+		iPXBone22_CloneFoot.inherit_parent_idx = idx_iPXBone18_FindFoot;
+		iPXBone22_CloneFoot.inherit_ratio = 1.0;
+		iPXBone22_CloneFoot.inherit_rot = True;
+		iPXBone22_CloneFoot.has_enabled = True#form.checkLegDControll.Checked;
+		iPXBone22_CloneFoot.has_visible = True#form.checkLegDControll.Checked;
+		#iPXBone22_CloneFoot.ToBone = None;
+		#iPXBone22_CloneFoot.ToOffset = Vector3.Zero();
+		iPXBone22_CloneFoot.tail_usebonelink = False;
+		iPXBone22_CloneFoot.tail = Vector3.Zero().ToList()
+		iPXBone22_CloneFoot.deform_layer += 1
+		iPXBone22_CloneFoot.name_jp += "D";
+		iPXBone22_CloneFoot.name_en += "D";
+		iPXBone15_ToeD_Op.name_jp = text;
+		iPXBone15_ToeD_Op.name_en = "toe2" + text5;
+		iPXBone15_ToeD_Op.has_rotate = True;
+		iPXBone15_ToeD_Op.has_translate = False;
+		#iPXBone15_ToeD_Op.Position = lerp(new float3(iPXBone18_FindFoot.Position), new float3(iPXBone19_FindToeIK.Position), 2.0 / 3.0).ToV3();
+		iPXBone15_ToeD_Op.pos = Vector3.LerpS(Vector3.FromList(iPXBone18_FindFoot.pos), Vector3.FromList(iPXBone19_FindToeIK.pos), 2.0 / 3.0).ToList();
+		iPXBone15_ToeD_Op.parent_idx = idx_iPXBone22_CloneFoot;
+		#iPXBone15_ToeD_Op.ToOffset = Vector3(0.0, 0.0, -1.0);
+		iPXBone15_ToeD_Op.tail_usebonelink = False;
+		iPXBone15_ToeD_Op.tail = Vector3(0.0, 0.0, -1.0).ToList()
+		iPXBone15_ToeD_Op.deform_layer = iPXBone22_CloneFoot.deform_layer;
+		#currentState.Bone.Add(iPXBone20_CloneLeg );
+		#currentState.Bone.Add(iPXBone21_CloneKnee);
+		#currentState.Bone.Add(iPXBone22_CloneFoot);
+		#currentState.Bone.Add(iPXBone15_ToeD_Op  );
+		
+	##--------------- Fix the weights
+	fb = lambda x: find_bone(pmx, x, True)
+	fbx = lambda x: find_bone(pmx, x, False)
+	idxArr = [fb("左足"), fb("左ひざ"), fb("右足"), fb("右ひざ"), fb("左足首"), fb("左つま先"), fb("右足首"), fb("右つま先")]
+	soloFixMap = {}; frames = []
+	idx = fbx("左足D");    soloFixMap[idxArr[0]] = idx; frames.append(idx); pmx.bones[idx].parent_idx = fb("腰キャンセル左")
+	idx = fbx("左ひざD");   soloFixMap[idxArr[1]] = idx; frames.append(idx)
+	idx = fbx("右足D");    soloFixMap[idxArr[2]] = idx; frames.append(idx); pmx.bones[idx].parent_idx = fb("腰キャンセル右")
+	idx = fbx("右ひざD");   soloFixMap[idxArr[3]] = idx; frames.append(idx)
+	idx = fbx("左足首D");  soloFixMap[idxArr[4]] = idx; frames.append(idx)
+	idx = fbx("左足先EX"); soloFixMap[idxArr[5]] = idx; frames.append(idx)
+	idx = fbx("右足首D");  soloFixMap[idxArr[6]] = idx; frames.append(idx)
+	idx = fbx("右足先EX"); soloFixMap[idxArr[7]] = idx; frames.append(idx)
+	threshold = pmx.bones[fb("下半身")].pos[1]
+	for vert in pmx.verts:
+		if vert.pos[1] > threshold: continue
+		process_weight(vert, lambda x: soloFixMap.get(x, x))
+	##--------------- Fix the display
+	util.adHocFrame(pmx, "足OP", ["右足D", "右ひざD", "右足首D", "右足先EX", "左足D", "左ひざD", "左足首D", "左足先EX"], "足")
+	

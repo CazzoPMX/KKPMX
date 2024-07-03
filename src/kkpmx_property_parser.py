@@ -420,8 +420,9 @@ def __parse_json_file(pmx, data: dict, root: str):
 			elif not DEBUG_RUN:
 				msgs['no_action'].append(msgsPre + mat.name_jp + f" ({attr[GROUP]})")
 				print(">--> [MissingAction]: " + msgs['no_action'][-1])
-				if util.is_prod(): parseDict["item"](pmx, mat, attr)#; exit()
 				else: exit()
+				if util.is_prod():  parseDict["item"](pmx, mat, attr)
+		except Exception as err:
 			print("--- Error while processing this Material")
 			for (k,v) in attr.items():
 				print(f"[{k}: {v}")
@@ -430,6 +431,9 @@ def __parse_json_file(pmx, data: dict, root: str):
 		if TEST_EYES and SECOND: break
 		SECOND = True
 		
+		##--- Reset them here in a uniform way cause they cause weird reflections
+		mat.specRGB = [0.0, 0.0, 0.0]
+		mat.ambRGB  = [0.5, 0.5, 0.5]
 		
 		## Clear texture cache after every run when reuse is disabled
 		if not local_state[OPT_CACHE]: local_state[ARGSTR] = {}
@@ -903,7 +907,7 @@ In specific:
 				mat.specpower = attr[Color_Specular][3]
 			else: mat.specRGB = col
 		_handler(name)
-	return kklib.end(pmx, input_file_name, "_toon")
+	return kklib.end(pmx, input_file_name, "_raycast")
 
 #### Regular
 
@@ -922,6 +926,8 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 	#if Color_Specular in attr:  mat.specRGB   = attr[Color_Specular][:3] :: Individual per group
 	if "SpecularPower" in attr: mat.specpower = attr["SpecularPower"]
 	if "LineWidthS" in attr:    mat.edgesize  = attr["LineWidthS"]
+	
+	
 	if Color_Shadow in attr:# and attr[GROUP] not in ["hair"]:
 		# smt smt only if not already set
 		#if mat.ambRGB == [1,1,1]: mat.ambRGB    = attr[Color_Shadow][:3]
@@ -1430,9 +1436,6 @@ def ask_to_rename_extra(base):
 			continue
 		os.renames(basename, newname)
 
-##############
-	pass
-
 def decorate_dimensions(attr, data, name):
 	_key = name + "_dim"
 	if _key not in attr: return data
@@ -1739,6 +1742,8 @@ shader_dict = {
 	"main_hair": "hair",       ##2000[KK,?_?] ++ Color, Color2, Color3, LineColor, ShadowColor, rimpower, rimV, ShadowExtend [KK]+ SpeclarHeight
 	"main_hair_front": "hair", ##3040[KK,?_?] ++ [^] + SpecularHeight
 	"KKUTShair": "hair",
+	"KKUTSalpha": "item",
+	"skin": "item",
 	
 	# t__Color, t__Detail, t__Line, t__Main, t__NorMap
 	"main_texture": "acc",			##2450[KK,?_?] C+2+3+S, AnotherRampFull, DetailBLineG, DetailRLineR, SE SEA SH	//[KK]

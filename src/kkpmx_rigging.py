@@ -952,12 +952,33 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit): ## TODO: Make the tail end 
 	
 	#--- Merge the secondary roots into the primary to keep things simple (hopefully)
 	mergeDict = {}
+	reSlot    = re.compile(r"ca_slot\d+", re.U)
+	reSlotPar = re.compile(r"^a_n_|cf_s_spine02|^ct_", re.U)
+	def printBone(_idx, _prefix=""):
+		_bone = pmx.bones[b]
+		_parent = pmx.bones[_bone.parent_idx]
+		print(f"{_prefix}{_bone.name_jp} -Parent-> {_parent.name_jp}")
+		
 	if len(bones2) > 0:
 		for bone in bones2:
 			b = bone
-			while (b and not pmx.bones[b].name_jp.startswith("ca_slot")): b = pmx.bones[b].parent_idx
+			while (b and not reSlot.match(pmx.bones[b].name_jp)): b = pmx.bones[b].parent_idx
 			name = pmx.bones[b].name_jp
 			mergeDict[name] = mergeDict.get(name, []) + [bone]
+	#--- Do the same for fancy MADEVIL sub-slots (this also includes the 'bones2' array)
+	if len(bones) > 0:
+		for bone in bones:
+			b = bone
+			#printBone(b)
+			while (b and not reSlot.match(pmx.bones[b].name_jp)): b = pmx.bones[b].parent_idx
+			_bone = pmx.bones[b].parent_idx
+			if not (reSlotPar.match(pmx.bones[_bone].name_jp)):
+				#printBone(b, ">Root> ")
+				b = _bone
+				while (b and not reSlot.match(pmx.bones[b].name_jp)): b = pmx.bones[b].parent_idx
+				#printBone(b, ">->Super> ")
+				name = pmx.bones[b].name_jp
+				mergeDict[name] = mergeDict.get(name, []) + [bone]
 	
 	local_state[OPT__NODUPES] = True
 	local_state.setdefault(RBD__CLEANUP, {})

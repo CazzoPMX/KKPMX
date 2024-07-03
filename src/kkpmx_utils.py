@@ -29,8 +29,8 @@ OPT_AUTO = "automatic"
 ALL_YES = "all_yes"
 OPT_INFO = "moreinfo"
 
-VERSION_DATE = "2024-04-22"
-VERSION_TAG = "3.0.2"
+VERSION_DATE = "2024-07-06"
+VERSION_TAG = "3.1.0"
 
 def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
@@ -555,6 +555,13 @@ def find_or_return_bone(pmx, nameOrIdx, errFlag=True):
 	return nameOrIdx
 find_or_return_bone.__doc__ = """ if [nameOrIdx] is a string, return result of [find_bone], otherwise return directly. """
 
+def get_idx_and_name(pmx, nameOrIdx, errFlag=True):
+	if type(nameOrIdx) == type(""):
+		return (find_bone(pmx, nameOrIdx, errFlag), nameOrIdx)
+	if nameOrIdx > 0 and nameOrIdx < len(pmx.bones):
+		return (nameOrIdx, pmx.bones[nameOrIdx].name_jp)
+	return (-1, "<invalid>")
+
 def rename_bone(pmx, org, newJP, newEN):
 	tmp = find_bone(pmx, org, False)
 	if tmp != -1:
@@ -807,6 +814,53 @@ def add_to_facials(pmx, name):
 		if type(target).__name__ == "str": target = find_morph(pmx, name, False)
 		if target != -1: pmx.frames[idx].items += [[1, target]]
 
+def print_frame(pmx, frame, extra=""):
+	if PRODUCTIONFLAG: return
+	if type(frame) == list:  print(f"------------{extra}")
+	elif type(frame) == str: print(f"------------{extra} {frame}"); frame = pmx.frames[find_disp(pmx, frame)].items
+	else:                    print(f"------------{extra} {frame.name_jp}"); frame = frame.items
+	for item in frame:
+		i = item[1]
+		baseList = pmx.morphs if item[0] == 1 else pmx.bones
+		if i == -1: print(f"> [ -1]")
+		else:       print(f"> [{i:3}]: {baseList[i].name_jp}")
+
+def frameContains(pmx, _frame, _name):
+	idx = find_disp(pmx, _frame, False)
+	if idx == -1: return False
+	_frame = pmx.frames[idx]
+	idx = find_bone(pmx, _name)
+	if idx == -1: return False
+	return idx in [x[1] for x in _frame.items]
+
+def insertFrameAt(pmx, _frame, _name, _idxOrName):
+	from kkpmx_morphs import find_or_replace_disp
+	idx = find_or_replace_disp(pmx, _frame)
+	bone_idx = find_bone(pmx, _name, True)
+	if bone_idx != -1:
+		if type(_idxOrName) == type(""):
+			_target = pmx.frames[idx].items
+			tmp = find_bone(pmx, _idxOrName, False)
+			dst = ([i for (i,f) in enumerate(_target) if f[1] == tmp] + [len(_target)])[0]
+			pmx.frames[idx].items.insert(dst, [0, bone_idx])
+		else: pmx.frames[idx].items.insert(_idxOrName, [0, bone_idx])
+		#used_bones.add(bone_idx)
+		
+def adHocFrame(pmx, _name, _items, _dst=None):
+	from nuthouse01_pmx_struct import PmxFrame
+	from kkpmx_morphs import find_or_replace_disp
+	idx = find_or_replace_disp(pmx, _name)
+	arr = []
+	for b in _items:
+		bone_idx = find_bone(pmx, b, False)
+		if bone_idx != -1:
+			arr.append(bone_idx)
+	newFrame = PmxFrame(name_jp=_name, name_en=_name, is_special=False, items=[[0, x] for x in arr])
+	if _dst == None: pmx.frames[idx] = newFrame
+	else:
+		del pmx.frames[idx]
+		_dst = find_or_replace_disp(pmx, _dst)
+		pmx.frames.insert(_dst+1, newFrame)
 
 ######
 ## Common (1:Vertices)

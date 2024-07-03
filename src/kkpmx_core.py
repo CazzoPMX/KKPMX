@@ -614,7 +614,7 @@ Which is why this also standardizes color and toon,
 			if bone == -1: continue
 			pmx.frames[disp].items.append([0, bone])
 	sortFingers()
-	kkmorph.sort_bones_into_frames(pmx)
+	kkmorph.sort_bones_into_frames(pmx, doSort=False)
 	
 	### Clean up invalid morphs & dispframes (which can crash MMD)
 	kkmorph.cleanup_invalid(pmx)
@@ -1324,7 +1324,7 @@ If all faces of a given material are considered invisible, it will be ignored an
 	## Slots which usually contain only one-dimensional meshes
 	careful_mats = '|'.join(["ct_bra", "ct_shorts", "ct_socks", "ct_panst"])
 	careful_mats += '|' + '|'.join(["ct_clothesBot"])
-	fragile_name = '|'.join(["acs_m_necktielong01", "mf_m_primmaterial", "necklace", "cf_m_bodytights", "ls_t_high_neck01"])
+	fragile_name = '|'.join(["acs_m_necktielong01", "mf_m_primmaterial", "necklace", "cf_m_bodytights", "ls_t_high_neck01", "acs_m_hair_butterfly"])
 	breakin_name = '|'.join(["acs_m_necklace_"])
 	def get_uv(w,h,v): return [int(h * (v.uv[1] % 1)), int(w * (v.uv[0] % 1)), 3]
 	

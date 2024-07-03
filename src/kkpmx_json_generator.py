@@ -350,7 +350,7 @@ def GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree):
 		opt_Comment: Comment("If Eyes look weird, use (0.0, -0.05) as offset", idx="Right Eye"),
 		})
 	##	>	cf_m_tang
-	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_tang",
+	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_tang|cf_m_tangchan",
 		opt_texUse: [ t__Color, t__Detail, t__Main ],
 		#// t__Another, t__Color, t__Detail, t__Line, t__Main, t__NorMap
 		opt_Comment: Comment("Tongue may or may not be Gray or Cyan by default.", idx="Tongue")
@@ -540,8 +540,17 @@ def write_entity(pmx, arr, json_tree, opt):
 	else: opt = {}
 	_verbose = verbose()
 	
+	#-- Support for multiple names of an entity
+	isBody = local_state[opt_Mode] == "Body"
+	if isBody:
+		if "|" in name: nameFilter = name.split('|')
+		else: nameFilter = [ name ]
+	
 	targetBase = {}
-	_filter = re.compile(re.escape(name) + r'([#*]-?\d+)*$')
+	#_filter = re.compile(name + r'(#-\d+|\*\d+)?$')
+	#_filter = re.compile(name + r'(\*\d+)?(#-\d+)?$')
+	if not isBody: _filter = re.compile(re.escape(name) + r'([#*]-?\d+)*$')
+	else: _filter = re.compile('(' + '|'.join([re.escape(n) for n in nameFilter])  + ')' + r'([#*]-?\d+)*$')
 	#_elem = filter(lambda kv: kv[0].startswith(name), json_tree.items())
 	
 	_elem = filter(lambda kv: _filter.match(kv[0]), json_tree.items())
@@ -621,10 +630,14 @@ def write_entity(pmx, arr, json_tree, opt):
 	render = mat.get("render",{})
 	
 	targetBase[out_temp] = len(render) > 0 ## Generate Warning about "template without render" (+ add special case for kage)
-	## Prevent unused Kage from raising a warning later on
-	if token.startswith(KAGE_MATERIAL):
-		token = re.sub(r"#-\d+","",token)
-		targetBase[out_temp] = True
+	if isBody:
+		## Prevent unused Kage from raising a warning later on
+		if token.startswith(KAGE_MATERIAL):
+			token = re.sub(r"#-\d+","",token)
+			targetBase[out_temp] = True
+		## Some notes in case anything breaks
+		if not targetBase[out_temp]:
+			print(f"[W] Body Part {token} does not have any Render Entries!")
 	
 	#-- Add to list for weirdness detection
 	local_state[local_state[opt_Mode]] += [re.sub(r"[*#\-]+\d+","",token)]
@@ -715,70 +728,6 @@ def write_entity(pmx, arr, json_tree, opt):
 ### Goal with Comment
 # Show original slot (mapped with dict) ++ Name (mapped with dict ?)
 
-
-def Generate__main_cloth(arr, retObj):
-	org    = retObj.get(ret_Self)
-	if org is None: raise Exception("INVALID DATA: No Org found")
-	render = retObj.get(ret_Render, "<org:{}>".format(org))
-	mat    = retObj.get(ret_Mat, "<{}>".format(render))
-	name   = retObj.get(ret_Name)
-	cat    = retObj.get(ret_Cat)
-	meta   = { "render": render }
-	if cat:
-		meta[ren_Slot] = cat
-		cat = cat_to_Title[cat]
-	com    = None
-	if name: com = Comment(name, idx=cat)
-	elif cat: com = Comment("<Acc>", idx=cat)
-	arr.append((mat, {# [Outer Layer] Puffer Jacket Long
-		"group": "cloth", #// ShaderForge/main_opaque
-		"meta": meta,
-		"available": "#// t__Alpha, t__Another, t__Detail, t__Line, t__Main, t__NorMap",
-		"textures": [ "t__Detail", "t__Main" ], #// Sometimes only has Main
-		"ShadowColor":          [  0.7881584,  0.8663371, 0.9803922 ],
-		"SpecularColor":        [  1,  1,  1, 0],
-		"notusetexspecular":    0,
-		"rimpower":             0.75,
-		"rimV":                 0.2,
-		"ShadowExtend":         0.6,
-		"ShadowExtendAnother":  0,
-		"SpecularHeight":       0.98,
-		"SpecularPower":        0,
-		"SpecularPowerNail":    0,
-	}, com))
-
-def Generate__main_item(arr, retObj):
-	org    = retObj.get(ret_Self)
-	if org is None: raise Exception("INVALID DATA: No Org found")
-	render = retObj.get(ret_Render, "<org:{}>".format(org))
-	mat    = retObj.get(ret_Mat, "<{}>".format(render))
-	name   = retObj.get(ret_Name)
-	parent = retObj.get(ret_Parent)
-	com    = None
-	if name: com = Comment(name, idx=parent)
-	arr.append((mat, {
-		"group": "item", #// ShaderForge/main_item
-		"meta": {
-			"render": render,
-			"slot": parent,
-		},
-		"available": "#// t__Another, t__Color, t__Detail, t__Line, t__Main, t__NorMap",
-		"textures": [ ],
-		"Color":                [ 0.0, 0.0, 0.0 ],
-		"Color2":               [ 0.0, 0.0, 0.0 ],
-		"Color3":               [ 0.0, 0.0, 0.0 ],
-		"ShadowColor":          [ 0.0, 0.0, 0.0 ],
-		"AnotherRampFull":      0,
-		"LineWidthS":           1,
-		"notusetexspecular":    0,
-		"rimpower":             0.5,
-		"rimV":                 0.2,
-		"ShadowExtend":         0.5,
-		"ShadowExtendAnother":  0,
-		"SpecularHeight":       0.98,
-		"SpecularPower":        0,
-	}, com))
-
 ##############
 ###
 
@@ -812,7 +761,7 @@ def collectSubTree(pmx, tree, _start, _forceEnd=False):
 	return subTree
 
 kk_re = re.compile(r"( \(Instance\))*(@\w+|#\-\d+)")
-kk_skip = re.compile(r"bonelyfans|shadowcast")
+kk_skip = re.compile(r"bonelyfans|shadowcast|Highlight_(cf_O_face|o_body_a)_rend")
 def uniquefy_material(mat: str, names: list):
 	"""
 	Uniquefy a name based on a list of provided names.
