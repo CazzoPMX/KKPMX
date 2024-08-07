@@ -127,7 +127,7 @@ def main(moreinfo=True):
 		if not util.PRODUCTIONFLAG:
 			from kkpmx_internal import main2
 			main2(); exit()
-		exit()
+		return None
 	else: print_help(idx)
 	# prompt PMX name
 	core.MY_PRINT_FUNC(">> The script can be terminated at any point by pressing Ctrl+C")
@@ -505,13 +505,13 @@ Which is why this also standardizes color and toon,
 		
 		if find_morph(pmx, "まばたき", False) != -1:
 			morph = pmx.morphs[find_morph(pmx, "まばたき")].items
-			if len(morph) != 0:
+			if len(morph) > 2:
 				morph[0].value = 0.32
 				morph[1].value = 0.32
 				morph[2].value = 0.66
 		if find_morph(pmx, "笑い", False) != -1:
 			morph = pmx.morphs[find_morph(pmx, "笑い")].items
-			if len(morph) != 0:
+			if len(morph) > 2:
 				morph[0].value = 0.32
 				morph[1].value = 0.32
 				morph[2].value = 0.66
@@ -565,7 +565,16 @@ Which is why this also standardizes color and toon,
 	if find_disp(pmx, "SkirtGravity", False) == -1:
 		src = find_bone(pmx, "cf_d_sk_top", False)
 		dst = find_bone(pmx, "cf_j_sk_07_05", False)
+		sortHolder = { "idx": 100 }
 		if src != -1 and dst != -1:
+			def filter_skirt(_src, _dst):
+				_arr = []
+				for _item in range(_src, _dst+1):
+					name = pmx.bones[_item].name_jp
+					if name == "cf_d_sk_top": _arr.append(_item)
+					elif re.match(r"cf_d_sk_(\d+)_(\d+)", name) is not None: _arr.append(_item)
+					elif re.match(r"cf_j_sk_(\d+)_(\d+)", name) is not None: _arr.append(_item)
+				return [[0,idx] for idx in _arr]
 			#-- Sort the skirt frames horizontally, e.g. by row
 			def sort_skirt(_item):
 				name = pmx.bones[_item[1]].name_jp
@@ -576,7 +585,7 @@ Which is why this also standardizes color and toon,
 				# Turn 00_00 into (1st row, 1st segment) = 10
 				m = re.match(r"cf_j_sk_(\d+)_(\d+)", name)
 				return (int(m[2])+1)*10 + int(m[1])
-			frames = [[0,idx] for idx in range(src, dst+1)]
+			frames = filter_skirt(src, dst)
 			frames.sort(reverse=False, key=sort_skirt) # sort in-place
 			pmx.frames.append(pmxstruct.PmxFrame("SkirtGravity", "SkirtGravity", False, frames))
 	

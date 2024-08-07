@@ -608,13 +608,17 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 		if weight == idx_LT: return idx_RT
 		if weight == idx_RL: return idx_RF
 		return weight
+	replPrev = replLeft # Cause we start with the left leg (?)
 	for vert in pmx.verts:
 		process_weight(vert, lambda x: soloFixMap.get(x, x))
 		##--- Cleanup some messy feet vertices that happen now and then
 		# Ignore if too high
 		if vert.pos[1] > threshold: continue
-		if vert.pos[0] > 0: process_weight(vert, replLeft)
-		else:               process_weight(vert, replReight)
+		if vert.pos[0] > 0:   process_weight(vert, replLeft);  replPrev=replLeft
+		elif vert.pos[0] < 0: process_weight(vert, replReight);replPrev=replReight
+		else:                 process_weight(vert, replPrev)   ## If exactly 0, do like the previous
+			
+	
 	
 	#################
 	##### Clean up some other Body Nodes
@@ -805,7 +809,7 @@ def SemiStd_05_Waist(pmx):
 					name = "腰キャンセル左";
 				iPXBone7_LowerParent = SearchBone(currentState, text3);
 			
-				if (text3 != None and find_bone(pmx, name) == -1):
+				if (text3 != None and find_bone(pmx, name, False) == -1):
 					iPXBone8_FindLower = add_bone(pmx,
 						name_jp = name,
 						pos = iPXBone7_LowerParent.pos,

@@ -29,8 +29,8 @@ OPT_AUTO = "automatic"
 ALL_YES = "all_yes"
 OPT_INFO = "moreinfo"
 
-VERSION_DATE = "2024-07-06"
-VERSION_TAG = "3.1.0"
+VERSION_DATE = "2024-08-07"
+VERSION_TAG = "3.1.1"
 
 def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
@@ -373,6 +373,7 @@ def arrAvg(x, y, asInt=False):
 	return arr
 def arrInvert(x): return (-(Vector3.FromList(x))).ToList()
 def arrCmp(x, y): return Vector3.FromList(x) == Vector3.FromList(y)
+def clamp(x, arr): return max(min(len(arr)-1, n), 0)
 
 def addOrExt(d,key,val):
 	arr = d.getdefault(key,[])
