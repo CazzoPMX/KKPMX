@@ -1685,6 +1685,8 @@ def cleanup_free_things(pmx, _opt = { }):
 	from _prune_unused_bones import prune_unused_bones, identify_unused_bones_base
 	from _prune_unused_vertices import newval_from_range_map, delme_list_to_rangemap
 	unusedBones = identify_unused_bones_base(pmx, False, True) + [-1, None]
+	if type(_opt) is str: _opt = { "flag": False }
+	else: _opt.setdefault("flag", False)
 	
 	rgx = re.compile(r'^((cf_J_hair)|(ca_slot))')# or body.name_jp.startswith("cf_j_j_sk"):
 	

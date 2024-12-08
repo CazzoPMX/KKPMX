@@ -153,7 +153,18 @@ suffixes = [ # ["Text", "Morph", "", "EN"]
 	]
 ########
 def genGroupItem(pmx, arr): ## only existing morphs are added
+	verbose = local_state.get("printDebug", False)
+	if verbose:
+		print(f">> {len(arr)} to figure out: {arr}")
+		seen = set();
+		arr = [elem for elem in arr if elem not in seen and (seen.add(elem) or True)]
+		print(f">> {len(arr)} unique remaining: {arr}")
+		arr = [elem for elem in arr if len(pmx.morphs[find_morph(pmx, elem[0], False)].items) > 1]
+	else: seen = set(); arr = [elem for elem in arr if elem not in seen and len(pmx.morphs[find_morph(pmx, elem[0], False)].items) > 1 and (seen.add(elem) or True)]
 	lst = [find_morph(pmx, elem[0], False) for elem in arr]
+	if verbose:
+		print(f">> {len(lst)} non-empty remaining: {lst}")
+		print(f">>-- {[pmx.morphs[x].name_jp for x in lst]}")
 	return [pmxstruct.PmxMorphItemGroup(lst[idx], elem[1]) for (idx,elem) in enumerate(arr) if lst[idx] != -1]
 def replaceItems(pmx, name, arr): ## Does nothing if [name] is not found
 	morph = find_morph(pmx, name, False)
@@ -224,6 +235,7 @@ def addOrReplace(pmx, name_jp:str, name_en:str, panel:int, items:List[Tuple[str,
 	""" IN: PMX, str, str, int, List<Tuple<str, float>> or PmxMorph** ==> OUT: void """
 	# if exist: get from store & set Idx \\ else: create new, append, set Idx
 	idx = find_morph(pmx, name_jp, False)
+	#printIt = name_en == "[M] angry.open"
 	if idx == -1:
 		idx = len(pmx.morphs)
 		pmx.morphs.append(pmxstruct.PmxMorph(name_jp, "", 0, 0, []))
@@ -231,7 +243,9 @@ def addOrReplace(pmx, name_jp:str, name_en:str, panel:int, items:List[Tuple[str,
 	morph.name_en = name_en
 	morph.panel   = panel
 	if morphtype == 0:
+		#if printIt: print(items); print("-----------")
 		morph.items   = genGroupItem(pmx, items)
+		#if printIt: [print(x) for x in morph.items]
 	else:
 		morph.morphtype = morphtype
 		morph.items     = items
@@ -260,7 +274,7 @@ def find_all_morphs(_morphs, prefix=None, infix=None, suffix=None, value=None, i
 	OUT(value==None): List[str]
 	OUT(value!=None): List[Tuple[str, float]]
 	"""
-	verbose = False #_verbose() ## DevDebug only
+	verbose = local_state.get("printDebug", False) #_verbose() ## DevDebug only
 	useEN = local_state.get("useEN", False)
 	def compileRGX(text):
 		if infix: text = re.sub(".zzz", f".{infix[1:]}", text)
@@ -357,12 +371,19 @@ Will override existing morphs, which allows "repairing" cursed Impact-Values.
 		print(">> Skipping because model has no standard face texture.")
 		return input_file_name
 	####
-	CH__TDA = 0;
+	CH__TDA = 0; CH__VRM = 1; CH__TLS = 2;
 	choice = CH__TDA
 	choices = [
 		("TDA           -- Try to assemble morphs resembling TDA", CH__TDA, add_TDA),
+		#("UniVRM        -- Categorize morphs on imported model ", CH__VRM, sort_morphs_into_frames),
+		#("VRChat        -- Convert to VRC Morphs", CH__TLS, prepare_for_export),
 		]
+	if not util.is_auto():
+		if _univrm(): choice = CH__VRM
+		#elif find_morph(pmx, "hitomi-small", True) == -1: choice = CH__TDA
+		#else: choice = util.ask_choices("Select the target collection", choices)
 	####
+	util.unify_names(pmx.morphs)
 	putAuxIntoGroup(pmx)
 	choices[choice][2](pmx);
 	sort_bones_into_frames(pmx)
@@ -669,10 +690,21 @@ def hotfix_generate_all_morphs(pmx, morphs, eyeOpenness):
 	addOrReplaceBrow  = lambda jp,en,it: addOrReplace(pmx, jp, en, 1, it)
 	addOrReplaceOther = lambda jp,en,it: addOrReplace(pmx, jp, en, 4, it)
 	arr = [x[0] for x in infixes][6:]
+	#for x in infixes_2:
+	#	## Figure out smt -- Must separate the "infix suffix" to make lookup work, but also keep it when looking for morphs
+	#	#y = translateItem("eye" + x[0])
+	#	#print(f"'{x[0]}' --> '{y}'")
+	#	#if y: y = y[4:]
+	#	#arr.append(y)
+	#	arr.append(x[0])
 	
 	#arr += [x[0] for x in infixes_2]
 	
 	local_state["useEN"] = find_morph(pmx, "eyes.default.close", False) != -1
+	
+	defT_Op = find_one_morph(morphs, "kuti_ha.ha00_def_op")   ## Default open teeth
+	defY_Op = find_one_morph(morphs, "kuti_yaeba.y00_def_op") ## Default open canine
+	defZ_Op = find_one_morph(morphs, "kuti_sita.t00_def_op")  ## Default Tongue
 	
 	def action(act, _name, _arr):
 		if act == "O" and _arr[0] == ('', eyeOpenness): return
@@ -686,12 +718,25 @@ def hotfix_generate_all_morphs(pmx, morphs, eyeOpenness):
 		name_en = translateItem_2(_name, False).strip(".")
 		#print(f"---Translate '{act}::{_name}' into {name_en}")
 		
+		if act == "M" and _name.endswith("_op"):
+			names = [x[0] for x in _arr]
+			def doIt(defElem):
+				if defElem == "": return True
+				prefix = defElem.split(".")[0]
+				return any([x.startswith(prefix) for x in names])
+			if not doIt(defT_Op): _arr.append((defT_Op, 1))
+			if not doIt(defY_Op): _arr.append((defY_Op, 1))
+			if not doIt(defZ_Op): _arr.append((defZ_Op, 1))
+		
 		if act == "E": addOrReplaceEye  (f"[E] {name_jp}", f"[E] {name_en}", _arr)
-		if act == "M": addOrReplaceMouth(f"[M] {name_jp}", f"[M] {name_en}", _arr)
+		### TODO: Some morphs need default teeth & tongue: eating cat triangle
+		### TODO: Some morphs need default         tongue: niko
+		if act == "M": addOrReplaceMouth(f"[M] {name_jp}", f"[M] {name_en}", _arr) 
 		if act == "B": addOrReplaceBrow (f"[B] {name_jp}", f"[B] {name_en}", _arr)
 		if act == "O": addOrReplaceOther(f"[O] {name_jp}", f"[O] {name_en}", _arr)
 	
 	for infix in arr:
+		#if !util.is_prod(): verbose = local_state["printDebug"] = infix == "_ikari"
 		#print(f"----- Generate '{infix}'")
 		action("E", infix, find_all_morphs(morphs, "eye", infix+"%", [None,"_op"], eyeOpenness, exclude="_siro[LR]"))
 		action("M", f"{infix}_op", find_all_morphs(morphs, "kuti", infix+"%", [None,"_op"], 1))
@@ -734,6 +779,7 @@ def combine_standards(pmx): ## Replace EN Name for Standard Morphs.. (but most a
 	## Make Face Morph with all these parts
 	######
 	pass##
+
 
 def sort_morphs(pmx):
 	""" Sort all morphs into groups and add separators """
@@ -867,12 +913,13 @@ def putAuxIntoGroup(pmx):
 	find_or_replace_disp(pmx, morph_name, frame_items)
 	
 	#--- Remove duplicates from [moremorphs]
-	mm = find_disp(pmx, c_moremorphs)
+	mm = find_disp(pmx, c_moremorphs, False)
 	if mm != -1:
 		disp = pmx.frames[mm]
 		disp.items = list(filter(lambda x: x[1] not in frames, disp.items))
 	
 	
+
 def sort_morphs_into_frames(pmx): ## Intended for UniVRM models
 	eyes = ["smile", "wink", "^blink", "eyelid", "look", "grin", "highlight"] + ["jitome", "tsurime", "tareme", "hitomi", "doukou"] + ["><", "=="]
 	mouth = ["mouth", "tongue", "teeth"] + ["^kuchi", "^bero", "pero"]
@@ -930,11 +977,13 @@ def sort_morphs_into_frames(pmx): ## Intended for UniVRM models
 	frames = [[1,_idx] for _idx in frames if _idx != -1]
 	find_or_replace_disp(pmx, name, frames)
 	
+
 def sort_bones_into_frames(pmx, doSort=True):
 	used_bones = set()
 	curSlot = "global_slot"
 	moreIdx = [] # FrameIdx of "morebones"
 	reSlot = re.compile(r"^a_n_|cf_s_spine02", re.U)
+	#Technically needs a [reBody] with ct_hairB
 	
 	for (d,frame) in enumerate(pmx.frames):
 		if frame.name_jp.startswith(cName_morebones): moreIdx.append(d); continue
@@ -1113,6 +1162,39 @@ add_ground_morph.__extraNames__ = ["Adjust for Ground"]
 
 def make_vert_morph(pmx, name, items=[], override=False): return make_any_morph(pmx, name, items, override, 1)
 def make_vert_item(pmx, vert_idx, move): return pmxstruct.PmxMorphItemVertex(vert_idx, move)
+
+def calculate_stretch_morph_X(pmx, idx, name, targetRatio = 0.60):
+	if idx == -1: return
+	##### I guess..? Everything is gone at Change=0.40, but otherwise works...
+	(verts, bounds) = util.get_vertex_box(pmx, idx, True)
+	# Get far left & right
+	farLeft = bounds["Left"][0]; farRight = bounds["Right"][0]
+	# Get center
+	center = (farLeft + farRight) / 2
+	# set target width -> get ratio
+	orgWidth    = (farLeft + abs(farRight)) if farLeft > 0 else abs(farLeft - farRight)
+	# Calc % of pos between original -> mul by ratio
+	items = []
+	
+	relLeft  = max(farLeft, center) - min(farLeft, center)
+	relRight = (max(farRight, center) - min(farRight, center))
+	for vert_idx in verts:
+		vert = pmx.verts[vert_idx]
+		pos_x = vert.pos[0]
+		if pos_x > center: ## is left of Center
+			# Get Pos to farLeft: ((-2) - (-3)) = 1
+			relPos = (pos_x - center) / relLeft
+			newPos = relPos * targetRatio
+			move = [-newPos, 0, 0]
+			items.append(make_vert_item(pmx, vert_idx, move))
+		else:
+			relPos = (center - pos_x) / relRight
+			newPos = relPos * targetRatio
+			move = [+newPos, 0, 0]
+			items.append(make_vert_item(pmx, vert_idx, move))
+	#adjust_pos(items)
+	make_vert_morph(pmx, name, items, True)
+
 
 ##############
 ### More Morph Helpers

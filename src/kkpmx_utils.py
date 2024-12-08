@@ -29,8 +29,8 @@ OPT_AUTO = "automatic"
 ALL_YES = "all_yes"
 OPT_INFO = "moreinfo"
 
-VERSION_DATE = "2024-08-07"
-VERSION_TAG = "3.1.1"
+VERSION_DATE = "2024-12-01"
+VERSION_TAG = "3.1.4"
 
 def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
@@ -896,8 +896,8 @@ def process_weight(vert, action):
 def get_weightIdx(vert):
 	w = vert.weight
 	if vert.weighttype == 0:   return [w[0]]
-	elif vert.weighttype == 1: return w[0:1]
-	elif vert.weighttype == 2: return w[0:3]
+	elif vert.weighttype == 1: return w[0:2]
+	elif vert.weighttype == 2: return [w[0], w[1], w[2], -1 if (w[3] == 0 and w[7] == 0.0) else w[3]]
 	raise Exception("....")
 def get_weightVal(vert):
 	w = vert.weight
@@ -1267,8 +1267,21 @@ def __dataPrinter_List(arr):
 	print(":Len="+str(len(arr)))
 	def __Printer(elem, idx=0, indent="- ", lvl=0):
 		if type(elem) in [list, tuple]:
-			print("{}[{}]: {} as {}".format(indent*lvl, idx, len(elem), type(elem).__name__))
+			print("{}[{}]: as {}({})".format(indent*lvl, idx, type(elem).__name__, len(elem)))
 			for (j,item) in enumerate(elem): __Printer(item,j,indent,lvl+1)
+		else: print("{}[{}]: {}".format(indent*lvl, idx, elem))
+	for idx,elem in enumerate(arr): __Printer(elem, idx)
+
+def __dataPrinter_ListBones(arr, pmx):
+	print(":Len="+str(len(arr)))
+	maxLen = len(pmx.bones)
+	def __Printer(elem, idx=0, indent="- ", lvl=0):
+		if type(elem) in [list, tuple]:
+			print("{}[{}]: as {}({})".format(indent*lvl, idx, type(elem).__name__, len(elem)))
+			for (j,item) in enumerate(elem): __Printer(item,j,indent,lvl+1)
+		elif type(elem) in [int]:
+			if -1 < elem and elem < maxLen: print("{}[{}]: {} ({})".format(indent*lvl, idx, elem, pmx.bones[elem].name_jp))
+			else: print("{}[{}]: {}".format(indent*lvl, idx, elem))
 		else: print("{}[{}]: {}".format(indent*lvl, idx, elem))
 	for idx,elem in enumerate(arr): __Printer(elem, idx)
 

@@ -844,7 +844,7 @@ def SemiStd_09_DBones(pmx):
 		idx_iPXBone16_FindLeg   = find_bone(pmx, text4 + "足")   
 		idx_iPXBone17_FindKnee  = find_bone(pmx, text4 + "ひざ")  
 		idx_iPXBone18_FindFoot  = find_bone(pmx, text4 + "足首") 
-		idx_iPXBone19_FindToeIK = find_bone(pmx, text4 + "つま先") ## Instead of つま先ＩＫ
+		idx_iPXBone19_FindToeIK = find_bone(pmx, text4 + "つま先") ## Original looks in つま先ＩＫ instead
 		if (idx_iPXBone15_ToeD_Op != -1 or idx_iPXBone16_FindLeg == -1 or idx_iPXBone17_FindKnee == -1 or idx_iPXBone18_FindFoot == -1 or idx_iPXBone19_FindToeIK == -1):
 			continue;
 		

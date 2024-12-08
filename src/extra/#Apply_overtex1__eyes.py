@@ -185,9 +185,11 @@ if verbose: print(f">Resized[Y]: {image.shape}")
 
 #### Restore original size
 padX = 0; padY = 0; tmp = np.zeros(orgShape, dtype='uint8')
-if image.shape[0] < orgShape[0]: padY = int((orgShape[0] - image.shape[0])/2) ## for (*, big)
-if image.shape[1] < orgShape[1]: padX = int((orgShape[1] - image.shape[1])/2) ## for (big,*)
-if verbose: print(f">Restore to Org: {image.shape} --> Pad Y={padY}, X={padX}") ## Should say the exact same thing
+
+import math
+if image.shape[0] < orgShape[0]: padY = math.floor((orgShape[0] - image.shape[0])/2) ## for (*, big)
+if image.shape[1] < orgShape[1]: padX = math.floor((orgShape[1] - image.shape[1])/2) ## for (big,*)
+#if verbose: print(f">Restore to Org: {image.shape} --> Pad Y={padY}, X={padX}") ## Should say the exact same thing
 changed = False
 try:
 	#print(f"[Y:Y,X+1:X] tmp:{tmp.shape} vs. {image.shape}")
@@ -196,26 +198,21 @@ try:
 	elif padY > 0:            tmp[padY:-padY,:,:]            = image; changed=True
 except: ## Fixing rare one-off cases
 	try:
-		#print(f"[Y:Y,X:X] tmp:{tmp.shape} vs. {image.shape}")
-		if padX > 0 and padY > 0: tmp[padY:-padY,padX:-padX,:] = image; changed=True
-		elif padX > 0:            tmp[:,padX:-padX,:]          = image; changed=True
-		elif padY > 0:            tmp[padY:-padY,:,:]          = image; changed=True
-	except:
-		try:
-			#print(f"[Y-1:Y,X:X] tmp:{tmp.shape} vs. {image.shape}")
-			if padX > 0 and padY > 0: tmp[padY+1:-padY,padX+1:-padX,:] = image; changed=True
-			elif padX > 0:            tmp[:,padX+1:-padX,:]            = image; changed=True
-			elif padY > 0:            tmp[padY+1:-padY,:,:]            = image; changed=True
-		except:
+		##-- If default failed, forcibly constrain the image to max boundary of orgShape
+		image2 = image[0:min(orgShape[0],image.shape[0]),0:min(orgShape[1],image.shape[1]),:]
+		import itertools
+		combos = itertools.product([-1, 0, 1], repeat=2);
+		for (xtrY, xtrX) in combos:
 			try:
-				#print(f"[Y-1:Y,X:X] tmp:{tmp.shape} vs. {image.shape}")
-				if padX > 0 and padY > 0: tmp[padY+1:-padY,padX:-padX,:] = image; changed=True
-				elif padX > 0:            tmp[:,padX:-padX,:]            = image; changed=True
-				elif padY > 0:            tmp[padY+1:-padY,:,:]          = image; changed=True
+				#print(f"[Y+{xtrY}:Y,X+{xtrX}:X] tmp:{tmp.shape} vs. {image2.shape}")
+				if padX > 0 and padY > 0: tmp[padY+xtrY:-padY,padX+xtrX:-padX,:] = image2; changed=True
+				elif padX > 0:            tmp[:,padX+xtrX:-padX,:]               = image2; changed=True
+				elif padY > 0:            tmp[padY+xtrY:-padY,:,:]               = image2; changed=True
+				break
 			except:
-				print(f"[??????] tmp:{tmp.shape} vs. {image.shape}")
-				raise
-		
+				pass
+		if not changed: raise
+	except: raise
 DisplayWithAspectRatio(opt, 'Fixed', tmp, 256)
 if changed: image = tmp
 

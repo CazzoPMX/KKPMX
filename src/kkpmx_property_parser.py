@@ -644,7 +644,9 @@ def parse_hair(pmx, mat, attr): ## [HasTodo] @open: t__Color, t__Detail, t__Hair
 	# :: After some tests, it seems to work WAY BETTER (in PMXE at least) when adding TIPS to Diffuse & Specular, keeping MAIN in Ambient
 	
 	## This may notify users about a maybe-wrong color configuration for this asset -- 
-	if attr[Color_1] == attr[Color_2] == attr[Color_3] == [1,1,1,1] and os.path.exists(attr.get(t__Main, "")):
+	hasMonoColor = True
+	if Color_1 in attr: hasMonoColor = attr[Color_1] == attr[Color_2] == attr[Color_3] == [1,1,1,1]
+	if hasMonoColor and os.path.exists(attr.get(t__Main, "")):
 		print("::-- Detected mono ColorMask on Hair piece with MainTex -- Ignoring ColorMask")
 		if verbose: print("::-->> That way you can at least fix the colors manually either here or in KK")
 		parse_hair2(pmx, mat, attr)

@@ -256,7 +256,7 @@ Which is why this also standardizes color and toon,
 	
 	idx = find_mat(pmx, "cf_m_tang", False)
 	if idx != -1: pmx.materials[idx].diffRGB = [1, 0.6985294, 0.6985294]
-
+	
 	####----- Cleanup bones ahead of time to reduce file size
 	### Clothes-to-Accessories cleanup (clones a full body mesh per asset)
 	#- but the materials are attached to the real bones & vertices, so they can be safely deleted
@@ -762,9 +762,13 @@ There are some additional steps that cannot be done by a script; They will be me
 	_opt["soloMode"] = False
 	from kkpmx_special import simplify_armature
 	simplify_armature(pmx, input_filename_pmx, _opt)
+	section("Final Cleanup over the whole model - KKRIG")
 	kkrig.cleanup_free_things(pmx, _opt)
 	from kkpmx_morphs import sort_bones_into_frames
-	sort_bones_into_frames(pmx)
+	section("Final Cleanup over the whole model - Sort Bones")
+	try:
+		sort_bones_into_frames(pmx)
+	except KeyboardInterrupt as ki: print(ki)
 	
 	path = end(pmx, input_filename_pmx, "_better2", "Cleaned up Physics")
 	util.copy_file(path, input_filename_pmx)
@@ -1396,7 +1400,7 @@ If all faces of a given material are considered invisible, it will be ignored an
 		if re.search(breakin_name, mat.name_jp): print("> Material too fragile, ignored"); continue
 		isCareful = re.search(careful_mats, mat.comment) is not None
 		isFragile = (re.search(fragile_name, mat.name_jp) is not None)
-		isCareful |= isPrim or isFragile
+		isCareful = isCareful or isPrim or isFragile
 		recCareful = False
 		## Everything is filtered now
 		img = None
