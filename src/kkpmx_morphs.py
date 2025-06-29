@@ -8,6 +8,7 @@ import kkpmx_core as kklib
 import kkpmx_utils as util
 from kkpmx_utils import find_bone, find_mat, find_disp, find_morph, find_rigid, __typePrinter
 import kkpmx_rigging as kkrig
+from _translation_tools import is_jp, is_latin
 
 try:
 	import nuthouse01_core as core
@@ -367,7 +368,9 @@ Will override existing morphs, which allows "repairing" cursed Impact-Values.
 	local_state["moreinfo"] = moreinfo or DEBUG
 	local_state["univrm"] = util.is_univrm()
 	####
-	if not _univrm() and not util.findMat_Face(pmx):
+	# TODO: Add input prompt to make user aware that it IS a HeadMod and morphs WILL need to be sorted manually
+	#	Add a disclaimer somewhere what things don't work with headmods (or need manual edits) like moving eyes
+	if not _univrm() and util.findMat_Face(pmx) == -1:
 		print(">> Skipping because model has no standard face texture.")
 		return input_file_name
 	####
@@ -830,6 +833,10 @@ def sort_morphs(pmx, _opt = {}):
 			if re.match("vr[mc]\.|Brow|Face|Mouth", m.name_jp): exported.append(m)
 			##-- Keep these so that someone can still adjust them if needed
 			elif flag_vrc and re.search("Retract", m.name_jp): exported.append(m)
+			##-- Delicate deleter
+			elif not flag_vrc and flag_vmorph:
+				if not is_latin(m.name_jp): groups.append(m)
+				elif re.match("\[\w\]", m.name_jp): groups2.append(m)
 			else: vertices.append(m)
 		elif (m.morphtype == 8): materials.append(m) # materials
 		elif (m.morphtype == 9): groups.append(m) # flip
@@ -882,9 +889,10 @@ def sort_morphs(pmx, _opt = {}):
 	## Fix Display Frames
 	for df in pmx.frames:
 		arr = []
+		if df.name_jp == c_moremorphs: df.items = arr; continue
 		for item in frameMap[df.name_jp]:
 			baseList = find_morph if item[0] == 1 else find_bone
-			if flag_vrc:
+			if flag_vrc or flag_vmorph:
 				_idx =  baseList(pmx, item[1], False)
 				if _idx != -1: arr.append([item[0], _idx])
 			else: arr.append([item[0], baseList(pmx, item[1])])
@@ -1106,6 +1114,7 @@ def addExtraVocals(pmx):
 	print(f"-- Add MiscVocals to combined group '{name}'...")
 	src = find_morph(pmx, "== Vocals 2 ==", False)
 	dst = find_morph(pmx, "== Vocal Components ==", False)
+	if dst == -1 and find_morph(pmx, "eye_face.f00_def_cl", False) == -1: dst = len(pmx.morphs) - 1 ## Baking fallback
 	#print(f"-> Boundary: {src} -> {dst}")
 	if src != -1 and dst != -1:
 		find_or_replace_disp(pmx, name, [[1,idx] for idx in range(src, dst)])

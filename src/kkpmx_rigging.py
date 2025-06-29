@@ -954,17 +954,23 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit): ## TODO: Make the tail end 
 	mergeDict = {}
 	reSlot    = re.compile(r"ca_slot\d+", re.U)
 	reSlotPar = re.compile(r"^a_n_|cf_s_spine02|^ct_", re.U)
+	reSlot2   = re.compile(r"ca_slot\d+|N_move$", re.U)
 	def printBone(_idx, _prefix=""):
 		_bone = pmx.bones[b]
 		_parent = pmx.bones[_bone.parent_idx]
 		print(f"{_prefix}{_bone.name_jp} -Parent-> {_parent.name_jp}")
 		
 	if len(bones2) > 0:
+		_invalid = []
 		for bone in bones2:
 			b = bone
-			while (b and not reSlot.match(pmx.bones[b].name_jp)): b = pmx.bones[b].parent_idx
+			while (b and not reSlot2.match(pmx.bones[b].name_jp)): b = pmx.bones[b].parent_idx
 			name = pmx.bones[b].name_jp
+			if name == __root_Name: _invalid.append(bone); continue; ##--[250626] Remove again if any parent is called N_move (weird ymd assets)
 			mergeDict[name] = mergeDict.get(name, []) + [bone]
+		for bone in _invalid:
+			bones2.remove(bone); bones.remove(bone)
+			pmx.bones[bone].name_jp = "_" + pmx.bones[bone].name_jp
 	#--- Do the same for fancy MADEVIL sub-slots (this also includes the 'bones2' array)
 	if len(bones) > 0:
 		for bone in bones:
@@ -999,7 +1005,7 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit): ## TODO: Make the tail end 
 		while (b and not pmx.bones[b].name_jp.startswith("ca_slot")): b = pmx.bones[b].parent_idx
 		name = pmx.bones[b].name_jp
 		#dRigAcc = name in ["ca_slot16", "ca_slot20", "ca_slot07", "ca_slot06"]
-		if dRigAcc: print(f"---- Parse [{bone}] > [{b}]: {name}")
+		if dRigAcc: print(f"\n---- Parse [{bone}] > [{b}]: {name}")
 		#Example: [487] > [486]: ca_slot16 with N_move: 488 till 497
 		#Example: [498] > [486]: ca_slot16 with N_move2: 499 till 504
 		
@@ -1108,7 +1114,7 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit): ## TODO: Make the tail end 
 			shift_weird_end_bone(child_arr)
 			evaluate_chains(child_arr, root_arr1[0]);continue
 		##################
-		#-- AS01 Handling  -- contains "SCENE_ROOT"
+		#-- AS01 Handling  -- contains "SCENE_ROOT" (AA2 ports)
 		root_arr1 = finder("AS01_N_kami")
 		if any(root_arr1):
 			##[C] Descend onto Hair_R etc.
@@ -1282,7 +1288,173 @@ def rig_rough_detangle(pmx, custArr=None): ## << HAS TODO
 	######
 	arr = [item[0] for item in enumerate(pmx.rigidbodies) if collect(item)]
 	print(f"> Found {len(arr)} entries to verify")
-	return split_rigid_chain(pmx, arr)
+	
+	resArr = split_rigid_chain(pmx, arr)
+	####[Extra Step: Check if the chains *should* be connected but at a different spot]
+	# Split 124: ca_slot00_0:Ctr_B_HairA_05_end and ca_slot00_0:Ctr_B_HairA_07 (at bone 283 = Ctr_B_HairA_05_end)
+	# 124: Not connected by joint with 125, so no need to change any. (ca_slot00_0:Ctr_B_HairA_05_end vs ca_slot00_0:Ctr_B_HairA_07)
+	# Need: Iterate backwards, so that Bone insert does not destroy everything
+	def figureOutName(idx):
+		devPrint = False
+		rigid  = pmx.rigidbodies[idx]; ## The Tail one
+		rigid2 = pmx.rigidbodies[idx+1]; ## The new Head
+		
+		##-- Best case simply collect the name of all these bones before hand so that order won't matter later ?
+		bone  = pmx.bones[rigid.bone_idx]
+		boneB = pmx.bones[rigid2.bone_idx]
+		
+		## Get parent of boneB
+		
+		parIdx = boneB.parent_idx
+		parBoneB = pmx.bones[parIdx]
+		if parBoneB.name_jp == "root":
+			## TODO: do this cleaner (ignore if self, parent, or grandparent is ca_slot or N_move) == means is Anchor
+			# Log says root joint has rb1_idx as a_n_headfront, so could also check that (never matches by default)
+			# Actually, I never want these. Maybe even delete that as well
+			if devPrint: print("\nIgnore root bones....")
+			if devPrint: print(f">> Not needed: {bone.name_jp} is a child of {parBoneB.name_jp}")
+			if devPrint: print(f">-- Indices: rigid={idx} on {rigid.bone_idx} / {rigid2.bone_idx}, parent={parIdx}")
+			return
+			
+		## Get children -> omit or ignore boneB
+		# -> iterate (break if empty)
+		# -> descend child chain and test if any == boneA
+		# -> break if found or exhausted
+		# return if not found, otherwise DO WORK \o/
+		arr = get_children_map(pmx, boneB.parent_idx, returnIdx=True, add_first=False, find_all=True)
+		arr = arr.get(parIdx, [])
+		if (not rigid.bone_idx in arr):
+			if devPrint: print(f"\n>> Not needed: {bone.name_jp} is not a child of {parBoneB.name_jp}")
+			if devPrint: print(f">-- Indices: rigid={idx} on {rigid.bone_idx} / {rigid2.bone_idx}, parent={parIdx}")
+			if devPrint: print(f">-- Array: {arr}")
+			return
+		print(f"\n>> Edit Physics: {bone.name_jp} is a child of {parBoneB.name_jp} (len={len(arr)})")
+		if devPrint: print(f">-- Indices: rigid={idx} on {rigid.bone_idx} / {rigid2.bone_idx}, parent={parIdx}")
+		
+		
+		## [1] Test if already done things for siblings
+		# -> Reuse / Skip accordingly ---> not needed
+		
+		## [2] Situation
+		# -- Assume 5 -> (5_end, 7) and 7 -> (7_end)
+		# -- Assume [boneA] means (direct child of parBoneB, either boneA or the closest ancestor)
+		# parBoneB (Ctr_B_HairA_05) has bone-Link to boneA  >> Ctr_B_HairA_05_end
+		# parBoneB has two children: boneB, and (parent of) boneA
+		#           ca_slot00_0:Ctr_B_HairA_04     -[26]- bound to gparent  -- points to parBoneB
+		#           ca_slot00_0:Ctr_B_HairA_05     -[27]- bound to parBoneB -- points to Tail
+		# rigid  == ca_slot00_0:Ctr_B_HairA_05_end -[28]- bound to boneA    -- is Tail
+		# rigid2 == ca_slot00_0:Ctr_B_HairA_07     -[29]- bound to boneB    -- points to Tail
+		# joint1: ca_slot00_0:Ctr_B_HairA_05      -[21] binds 27.parent and 27 -- on parBoneB
+		# joint2: ca_slot00_0:Ctr_B_HairA_05_end  -[22] binds 27 and 28        -- on boneA
+		# joint3: ca_slot00_0:Ctr_B_HairA_07      -[23] binds 27.parent and 29 -- on boneB
+		### Desired outcome
+		# [_Rigid_1]  ca_slot00_0:Ctr_B_HairA_04     (on gparent) --> parBoneB
+		# [_Joint_1]  ca_slot00_0:Ctr_B_HairA_05     (on parBoneB) between [_Rigid_1] and [_Rigid_2]
+		# [_Rigid_2]  ca_slot00_0:Ctr_B_HairA_05     (on parBoneB) --> boneA
+		# [_Joint_X1]                                (on parBoneB) between [_Rigid_1] and [_Rigid_X1] <<< new
+		# [_Rigid_X1]                                (on parBoneB) --> boneB
+		# [_Joint_2]  ca_slot00_0:Ctr_B_HairA_05_end (on boneA) between [_Rigid_2] and [_Rigid_3]
+		# [_Rigid_3]  ca_slot00_0:Ctr_B_HairA_05_end (on boneA) --> isTail
+		# [_Rigid_4]  ca_slot00_0:Ctr_B_HairA_07     (on boneB) --> boneB.tail
+		# [_Joint_4]  ca_slot00_0:Ctr_B_HairA_07     (on boneB) between [_Rigid_X1] and [_Rigid_4] <<< from [_Rigid_1] and [_Rigid_4]
+		
+		## [3] Gather elements
+		# Get _Rigid_3 as: rigid at [idx]
+		# Get _Rigid_4 as: rigid at [idx + 1] == rigid2
+		# Get _Joint_4 as: (get Joint where rb2_idx == _Rigid_4)
+		# Get _Joint_1 as: (where same rb1_idx as _Joint_4, but with boneA as rb2_idx.bone_idx)
+		#>> Optional: record all additional with neither as rb2_idx (?)
+		_R_Idx_1 = idx
+		_R_Idx_2 = idx+1
+		_B_Idx_0 = boneB.parent_idx
+		_B_Idx_1 = arr[0]
+		_B_Idx_2 = rigid2.bone_idx
+		_Rigid_3 = rigid
+		_Rigid_4 = rigid2
+		if devPrint: print(">>> --- Testing Joints")
+		if devPrint: print(f"Find Joint where rb2_idx == {_R_Idx_2}/{pmx.rigidbodies[_R_Idx_2].name_jp}")
+		_Joint_4 = [j for j in pmx.joints if j.rb2_idx == _R_Idx_2]
+		if (len(_Joint_4) == 0): print(">>> _Joint_4 is not matched, skipping"); return
+		_Joint_4 = _Joint_4[0]
+		if devPrint: print(f"> Found _Joint_4 with {_Joint_4.rb1_idx} and {_Joint_4.rb2_idx}")
+		##>> Found the old Joint that connects the GREEN tip with tail of a Rigid that is bound to the sibling
+		if devPrint: print(f"Find Joints where rb2_idx == {_Joint_4.rb1_idx}/{pmx.rigidbodies[_Joint_4.rb1_idx].name_jp}")
+		_Joint_1 = [j for j in pmx.joints if j.rb2_idx == _Joint_4.rb1_idx] ### So go one up to allow reconnecting it to own
+		# Discard if j.rb1_idx == a_n_headfront etc.
+		if (len(_Joint_1) == 0): print(">>> _Joint_1 is not matched, skipping"); return
+		if devPrint: print([j.rb2_idx for j in _Joint_1]);
+		if devPrint: print(_Joint_1); 
+		_Joint_1 = _Joint_1[0]
+		
+		## [4] Do things
+		# Clone _Joint_1 as _Joint_X1
+		# Create new _Rigid_X1 with AddBaseBody(parBoneB -> boneB)
+		#	>> Requires some hack: Only works properly with tail_usebonelink (or copy out accordingly)
+		# Set Name to smt smt extra suffix
+		# STORE that name together with _Rigid_4.name in external list for outside the loop --> move Bodies and Joints to correct position in the list
+		# Set Rotation of _Joint_X1 to same as _Rigid_X1
+		# Set _Joint_4.rb1_idx from _Rigid_1 to _Rigid_X1
+		# Set _Rigid_4 from Green to Orange
+		
+		_Joint_X1 = pmx.joints[add_joint(pmx)]
+		props = ['movemax', 'movemin', 'movespring', 'name_en', 'name_jp', 'pos', 'rb1_idx', 'rb2_idx', 'rot', 'rotmax', 'rotmin', 'rotspring']
+		for prop in props: setattr(_Joint_X1, prop, getattr(_Joint_1, prop))#_Joint_X1[prop] = _Joint_1[prop]
+		
+		def AddBodyHack(idx, radius, body):
+			bone   = pmx.bones[idx]
+			pos    = Vector3.FromList(bone.pos)
+			#-------------
+			num3: float = 0.0
+			zero = Vector3.Zero()
+			#----
+			vector = Vector3.FromList(pmx.bones[bone.tail].pos) - pos
+			num3 = vector.Length()
+			zero = pos + 0.5 * vector
+			#----
+			#body = pmx.rigidbodies[add_rigid(pmx)] # ====
+			body.shape = 2 # Capsule
+			x: float = radius
+			if (radius <= 0.0): x = num3 * 0.2
+			body.size = Vector3(x, num3, 0.0).ToList()
+			body.pos = zero.ToList()
+			m: Matrix = GetPoseMatrix_Bone(pmx, idx)
+			body.rot = MatrixToEuler_ZXY(m).ToDegree().ToList()
+		#-------------
+		bone = parBoneB
+		bk_tail = bone.tail
+		bk_uses = bone.tail_usebonelink
+		bone.tail_usebonelink = True
+		bone.tail = _B_Idx_2
+		print(f">> Create new RigidBody from {_B_Idx_0}/{bone.name_jp} to {_B_Idx_2}/{pmx.bones[_B_Idx_2].name_jp}")
+		#-------------
+		body_num = len(pmx.rigidbodies)
+		name = pmx.bones[_B_Idx_0].name_jp + "_EDIT"
+		mode = pmx.rigidbodies[_Joint_1.rb2_idx].phys_mode ## Use the same mode as the Body this should replace (_Rigid_1)
+		AddBaseBody(pmx, [_B_Idx_0], mode, 0.0, True, name, group=3)
+		body = pmx.rigidbodies[body_num]
+		AddBodyHack(_B_Idx_0, 0.0, body)
+		body.size[1] -= (body.size[0]*10) * 0.2 ## Apply Shrinking from AddBodyChainWithJoints
+		#-------------
+		bone.tail_usebonelink = bk_uses
+		bone.tail = bk_tail
+		# Set Rotation of _Joint_X1 to same as _Rigid_X1
+		# Set _Joint_4.rb1_idx from _Rigid_1 to _Rigid_X1
+		# Set _Rigid_4 from Green to Orange
+		print(f">> Create new Joint     onto {_B_Idx_0}/{bone.name_jp} between {_Joint_X1.rb1_idx} and <new>={body_num}")
+		print(f">>--> Based on {_Joint_1.name_jp}")
+		_Joint_X1.rot = body.rot
+		_Joint_X1.rb2_idx = body_num
+		_Joint_4.rb1_idx  = body_num
+		_Rigid_4.phys_mode = 1 #  TODO: Better set like sibling == _Rigid_2
+		#if (_Joint_1.name_jp.endswith("01")):
+		#	print(">-- Constrain this one back to Green cause looks like a root")
+		#	#_Rigid_4.phys_mode = 0
+		#	body.phys_mode = pmx.rigidbodies[_Joint_1.rb2_idx].phys_mode
+		#	#pmx.rigidbodies[_Joint_1.rb2_idx].phys_mode
+		pass#------------[End def]
+	[figureOutName(idx) for idx in resArr]
+	#TODO: Properly sort-in the new Physics so that all is in order again
+	return resArr
 
 ## [Step XX] -- Merge some bones
 def merge_bone_weights(pmx, input_filename_pmx=None):
@@ -1692,12 +1864,13 @@ def cleanup_free_things(pmx, _opt = { }):
 	
 	flag = _opt.get("flag", False)
 	
-	dupeBodies = {}
+	rigid_matchList = {}
 	
 	rigid_dellist = []
 	for d,body in enumerate(pmx.rigidbodies):
 		#if body.name_jp.startswith("cf_hit"): continue		if body.group == 1: continue
 		if rgx.match(body.name_jp) or flag:
+			rigid_matchList[d] = body.name_jp
 			if body.bone_idx in unusedBones:
 				#print(f"Adding [{d}]{body.name_jp} with Idx {body.bone_idx}")
 				rigid_dellist.append(d)
@@ -1731,6 +1904,7 @@ def cleanup_free_things(pmx, _opt = { }):
 		if (do_bodies or do_joints): prune_unused_bones(pmx, False)
 	__internal_cleanup(rigid_dellist)
 	##---- Unless deleting them, print afterwards
+	dupeBodies = {}
 	for d,body in enumerate(pmx.rigidbodies):
 		if rgx.match(body.name_jp):
 			dupeBodies.setdefault(body.bone_idx, [])
@@ -2038,6 +2212,8 @@ def split_rigid_chain(pmx, arr=None):
 		# Get Linked Bone of Rigid
 		bone = pmx.bones[rigid.bone_idx]
 		
+		if verbose: print(f"Split {idx}: {rigid.name_jp} and {rigid2.name_jp} (at bone {rigid.bone_idx} = {bone.name_jp})")
+		
 		# Set Rigid.Position to Bone.Position
 		rigid.pos = bone.pos
 		# Set Rigid.Rotation to [0 0 0]
@@ -2097,8 +2273,8 @@ def split_rigid_chain(pmx, arr=None):
 			if j.rb1_idx == idx and j.rb2_idx == idx3:
 				joint = j
 				break
-		if joint == None:
-			if verbose: print(f"{idx}: Not connected by joint with {idx3}, so no need to change any.")
+		if joint == None: ## TODO: Reword this: This IS a split operation, but we only did not find any joints to redo
+			#if verbose: print(f"{idx}: Not connected by joint with {idx3}, so no need to change any. ({rigid.name_jp} vs {rigid3.name_jp})")
 			return
 		
 		# Set A to RigidBody2

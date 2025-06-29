@@ -44,6 +44,14 @@ def TryLoadImage(path, name="image file"):
 	if not path:
 		print(f"[!] Cannot load {name} from empty path!")
 		return None
+	op = os.path
+	if not op.exists(path):
+		_path = op.split(path)
+		_path = op.join(_path[0], "unused", _path[1])
+		if not op.exists(_path):
+			print(f"[!] Could not load {name}, file not found...")
+			return None
+		path = _path
 	try:
 		if is_ascii(path):
 			img = cv2.imread(path, cv2.IMREAD_UNCHANGED)

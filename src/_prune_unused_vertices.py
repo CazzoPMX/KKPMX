@@ -82,7 +82,7 @@ def newval_from_range_map(v: INT_OR_INTLIST, range_map: Tuple[List[int], List[in
 		retme.reverse()
 		return retme
 	
-def delme_list_to_rangemap(delme_verts: List[int]) -> Tuple[List[int],List[int]]:
+def delme_list_to_rangemap(delme_verts: List[int], insertMode=False) -> Tuple[List[int],List[int]]:
 	"""
 	Given an ascending sorted list of ints, build a pair of lists that let me know what indices OTHER things will map
 	to when THESE indices are deleted. list1 is the index each cluster starts at, list2 is where that index will map
@@ -103,6 +103,8 @@ def delme_list_to_rangemap(delme_verts: List[int]) -> Tuple[List[int],List[int]]
 			# if the next vert ID is non-contiguous, or is the end of the list, that defines a breakpoint between ranges
 			# that means that everything from start to end IS contiguous
 			# so save the VALUE of the start, and the LENGTH of the range (which equals the length of the block)
+			factor = end_idx - start_idx
+			if (insertMode): factor = start_idx + len(delme_verts)
 			delme_range.append([delme_verts[start_idx], end_idx - start_idx])
 			start_idx = end_idx
 	# convert from [start-length] to [start-cumulativelength]

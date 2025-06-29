@@ -420,8 +420,9 @@ def __parse_json_file(pmx, data: dict, root: str):
 			elif not DEBUG_RUN:
 				msgs['no_action'].append(msgsPre + mat.name_jp + f" ({attr[GROUP]})")
 				print(">--> [MissingAction]: " + msgs['no_action'][-1])
-				else: exit()
 				if util.is_prod():  parseDict["item"](pmx, mat, attr)
+				else: exit()
+				#parseDict["item"](pmx, mat, attr)
 		except Exception as err:
 			print("--- Error while processing this Material")
 			for (k,v) in attr.items():
@@ -486,11 +487,13 @@ def __parse_json_file(pmx, data: dict, root: str):
 def parse_color(pmx, mat, attr, mode="color"):
 	print(f":: Running '{mode}' parser")
 	if Color_1 in attr:
-		if mat.tex_idx != -1 and str(mat.diffRGB) != "[0.0, 0.0, 0.0]":
+		col = attr.get(Color_1, [0,0,0])[:3]
+		skipCol = ["[1.0, 1.0, 1.0]", str([1,1,1]), str(col)]
+		if mat.tex_idx != -1 and not str(mat.diffRGB) in skipCol:
 			#mat.comment += "\r\nOld Diffuse: " + str(mat.diffRGB) + " (by parser)"
 			mat.comment = util.updateCommentRaw(mat.comment, "[Old Diffuse]:", str(mat.diffRGB) + " (because texture)")
-			mat.diffRGB = [0,0,0]
-		mat.ambRGB = attr.get(Color_1, [0,0,0])[:3]
+			mat.diffRGB = [1,1,1]
+		else: mat.diffRGB = col
 	#	mat.ambRGB = attr.get(Color_Shadow, attr[Color_1])[:3]
 	#elif Color_Shadow in attr:
 	#	mat.ambRGB = attr[Color_Shadow][:3]
@@ -935,10 +938,11 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 		#if mat.ambRGB == [1,1,1]: mat.ambRGB    = attr[Color_Shadow][:3]
 		#mat.diffRGB   = attr[Color_Shadow][:3]
 		add_toon_shader(pmx, mat, attr)
-		if mat.diffRGB == [1,1,1]:
-			mat.diffRGB = [0.5, 0.5, 0.5]
-			#mat.diffRGB   = [0,0,0]#attr[Color_Shadow][:3] smt only for black types
-			#rgb = attr[Color_Shadow][:3]
+		# TODO: Find out why this was neccessary
+		#if mat.diffRGB == [1,1,1]:
+		#	if not [x == 1 or x == 1.0 for x in attr.get(Color_1, [-1,-1,-1])[:3]]: mat.diffRGB = [0.5, 0.5, 0.5]
+		#	#mat.diffRGB   = [0,0,0]#attr[Color_Shadow][:3] smt only for black types
+		#	#rgb = attr[Color_Shadow][:3]
 	#	mat.comment += "Make toon_shader: " + str(attr[Color_Shadow]) ## Multiply each by 255 before
 	if META in attr:
 		meta = attr[META]
@@ -992,7 +996,8 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 			# [BodyTop]        --> p_cf_body_00, < clothes >
 			# [p_cf_head_bone] --> ct_head
 			# [cf_J_FaceUp_ty] --> ct_hairB, ct_hairF, ct_hairS
-			if comment in ["BodyTop","p_cf_head_bone","cf_J_FaceUp_ty"]: comment = meta[MT_PARENT]
+			isBody = False
+			if comment in ["BodyTop","p_cf_head_bone","cf_J_FaceUp_ty"]: comment = meta[MT_PARENT]; isBody = True
 			if comment and len(comment) > 0: addComment("Slot", comment)
 			addComment("CTASlot", None)
 			
@@ -1007,7 +1012,7 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 			### Give some navigation for primmats
 			if attr[NAME].startswith("mf_m_primmaterial"): addComment("PrOrg", meta[MT_RENDER])
 			
-			addComment("MatType", None)
+			addComment("MatType", "Body" if not isBody else None)
 			addOld = ("[:MatType:] Hair" not in cmtNew[-1])
 			
 			if util.isDisabled(mat): addComment("[:Disabled:]", None, isRaw=True)
@@ -1019,7 +1024,7 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 			if not mat.comment or len(mat.comment) == 0:
 				mat.comment = "\r\n".join(cmtNew[1:])
 			else:##-- This at least ensures a consistent order
-				mat.comment = "\r\n".join(cmtNew)
+				mat.comment = "\r\n".join(cmtNew[1:]) + "\r\n" + cmtNew[0]
 			mat.comment = re.sub(r"^\s*|\s*$", "", mat.comment)
 			
 			m = re.search(r"(0\.\d{5})\d*", mat.comment)
@@ -1582,6 +1587,7 @@ def set_clean_texture(pmx, input_file_name):
 	texTabu = [None, -1]
 	imgTabu = []
 	matTabu = []
+	delTabu = []
 	
 	#-- Make sure we always have unique Materials
 	for mat in pmx.materials: mat.name_jp = get_unique_name(mat.name_jp, matTabu, isFile=False)
@@ -1592,6 +1598,9 @@ def set_clean_texture(pmx, input_file_name):
 			#- Filter out invalid and disabled, and only do it once
 			if texIdx in texTabu or util.isDisabled(mat):
 				print(f"{mat.name_jp} --> '{texIdx}'")
+				continue
+			if texIdx in delTabu:
+				print(f"{mat.name_jp} --> <err:<'{texIdx}'>>")
 				continue
 			## TODO: Call 'eye_l' = 'eye' if both have same texture
 			texTabu.append(texIdx)
@@ -1609,9 +1618,8 @@ def set_clean_texture(pmx, input_file_name):
 					failed = not os.path.exists(oldFile)
 					if failed: oldFile = tmp
 				if failed:
-					print(f"{mat.name_jp} has non-existing Texture '{oldFile}'; skipping...")
-					del texTabu[texIdx] ## remove again so that you see the error for all faulty materials
-					continue
+					texTabu.remove(texIdx)
+					delTabu.append(texIdx)
 			
 			name = re.sub(r"[\*: ]+", "_", mat.name_jp)
 			if name in nameMap: token = nameMap[name]
@@ -1624,9 +1632,20 @@ def set_clean_texture(pmx, input_file_name):
 			##--- If the file already existed as renamed, accept that
 			texFile = os.path.join(texPath, name + ".png")
 			texFile = get_unique_name(texFile, imgTabu, isFile=True)
+			##--- Recover: Handle dirty directory
+			canCopy = True
+			if texIdx in delTabu:
+				if not os.path.exists(texFile):
+					print(f"{mat.name_jp} >>> skipping non-existing Texture '{oldFile}'...")
+					continue
+				print(f"{mat.name_jp} >>> Restore {texIdx} from previous run ...")
+				## Swap again since the file actually exists
+				delTabu.remove(texIdx)
+				texTabu.append(texIdx)
+				canCopy = False
 			
 			try:
-				util.copy_file(oldFile, texFile)
+				if canCopy: util.copy_file(oldFile, texFile)
 			except Exception as ex:
 				if not os.path.exists(texFile): raise ## Ignore errors if the file already exists
 			pmx.textures[texIdx] = os.path.relpath(texFile, basePath)
@@ -1639,7 +1658,7 @@ def set_clean_texture(pmx, input_file_name):
 				if os.path.exists(alphaPath):
 					texAlpha = os.path.join(texPath, name + "@alpha.png")
 					try:
-						util.copy_file(alphaPath, texAlpha)
+						if canCopy: util.copy_file(alphaPath, texAlpha)
 					except Exception as ex:
 						if not os.path.exists(texAlpha): raise ## Ignore errors if the file already exists
 					##-- Replace texture with alphaCut unless its body / bra

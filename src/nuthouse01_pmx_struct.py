@@ -279,7 +279,38 @@ class PmxBone(_BasePmx):
 				self.has_ik, self.ik_target_idx, self.ik_numloops, self.ik_angle,
 				None if self.ik_links is None else [i.list() for i in self.ik_links],
 				]
-
+	@staticmethod
+	def clone(clone):
+		return PmxBone(
+			name_jp              = clone.name_jp,              
+			name_en              = clone.name_en,              
+			pos                  = clone.pos,                  
+			parent_idx           = clone.parent_idx,           
+			deform_layer         = clone.deform_layer,         
+			deform_after_phys    = clone.deform_after_phys,    
+			has_rotate           = clone.has_rotate,           
+			has_translate        = clone.has_translate,        
+			has_visible          = clone.has_visible,          
+			has_enabled          = clone.has_enabled,          
+			tail_usebonelink     = clone.tail_usebonelink,     
+			tail                 = clone.tail,                 
+			inherit_rot          = clone.inherit_rot,          
+			inherit_trans        = clone.inherit_trans,        
+			inherit_parent_idx   = clone.inherit_parent_idx,   
+			inherit_ratio        = clone.inherit_ratio,        
+			has_fixedaxis        = clone.has_fixedaxis,        
+			fixedaxis            = clone.fixedaxis,            
+			has_localaxis        = clone.has_localaxis,        
+			localaxis_x          = clone.localaxis_x,          
+			localaxis_z          = clone.localaxis_z,          
+			has_externalparent   = clone.has_externalparent,   
+			externalparent       = clone.externalparent,       
+			has_ik               = clone.has_ik,               
+			ik_target_idx        = clone.ik_target_idx,        
+			ik_numloops          = clone.ik_numloops,          
+			ik_angle             = clone.ik_angle,             
+			ik_links             = clone.ik_links,             
+		)
 
 class PmxMorphItemGroup(_BasePmx):
 	def __init__(self, morph_idx: int, value: float):
@@ -287,6 +318,7 @@ class PmxMorphItemGroup(_BasePmx):
 		self.value = value
 	def list(self) -> list:
 		return [self.morph_idx, self.value]
+	def __str__(self): return str([self.morph_idx, self.value])
 	
 class PmxMorphItemVertex(_BasePmx):
 	def __init__(self, vert_idx: int, move: List[float]):

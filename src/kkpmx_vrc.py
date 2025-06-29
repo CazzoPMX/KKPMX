@@ -246,6 +246,7 @@ def rename_bones_for_export(pmx, input_file_name):
 	
 	vrcFlags = {}
 	vrcFlags["detailed"] = True
+	#TODO: Inquiry about UserPrompt for "Simplify Heavy, keep NSFW, Light (no detailed)"
 	def __getFlag(_dict, _flag): return _dict.get(_flag, False)
 	getFlag = lambda _flag: __getFlag(vrcFlags, _flag)
 	
@@ -261,9 +262,11 @@ def rename_bones_for_export(pmx, input_file_name):
 	
 	if (getFlag("detailed")):
 		print(f"==== Stage 0-pre: Rerun Simplify-lite")
+		flag_SFW = util.ask_yes_no("Merge certain Bones for SFW export", "y")
 		spec_opt = {
 			kkspec.OPT_SILENT: True,
-			kkspec.OPT_SFW: True,
+			kkspec.OPT_CHEST: True,
+			kkspec.OPT_SFW: flag_SFW,
 			"soloMode": False,
 			"fullClean": True,
 		}
@@ -386,7 +389,8 @@ def rename_bones_for_export(pmx, input_file_name):
 	def addToIdx(_nameJP, _dst):
 		_idx1 = find_bone(pmx, _nameJP, False)
 		if _idx1 == -1:
-			values = name_map[_nameJP]
+			values = name_map.get(_nameJP, None)
+			if not values: return
 			_nameEN = "".join(values[2:])# + values[3] + values[4]
 			_idx1 = find_bone(pmx, _nameEN, False)
 			if _idx1 == -1: return
@@ -422,12 +426,19 @@ def rename_bones_for_export(pmx, input_file_name):
 			_bLeft = pmx.bones[fbx("cf_s_bust00_L")]; _tailLeft = vrcFlags.get("tail.l", [0,0,-1])
 			_bRght = pmx.bones[fbx("cf_s_bust00_R")]; _tailRght = vrcFlags.get("tail.r", [0,0,-1])
 			
-			_bLeft.pos = pmx.bones[fbx("cf_hit_bust02_L")].pos
-			_bRght.pos = pmx.bones[fbx("cf_hit_bust02_R")].pos
-			_bLeft.tail_usebonelink = False
-			_bLeft.tail = _tailLeft
-			_bRght.tail_usebonelink = False
-			_bRght.tail = _tailRght
+			_bArr = util.find_bones(pmx, ["cf_hit_bust02_L", "左胸操作"], False, False)
+			_bArr = [x for x in _bArr if x]
+			if any(_bArr):
+				_bLeft.pos = _bArr[0].pos
+				_bLeft.tail_usebonelink = False
+				_bLeft.tail = _tailLeft
+			
+			_bArr = util.find_bones(pmx, ["cf_hit_bust02_R", "右胸操作"], False, False)
+			_bArr = [x for x in _bArr if x]
+			if any(_bArr):
+				_bRght.pos = _bArr[0].pos
+				_bRght.tail_usebonelink = False
+				_bRght.tail = _tailRght
 			
 			#### Delete everything else to orphan the physics
 			def get_or_ret(_name):
@@ -441,12 +452,12 @@ def rename_bones_for_export(pmx, input_file_name):
 			delDict.append(get_or_ret("cf_d_bust01_L"))
 			delDict.append(get_or_ret("cf_j_bust01_L"))
 			delDict.append(get_or_ret("cf_d_bust02_L"))
-			delDict.append(get_or_ret("cf_d_bust01_R"))
-			delDict.append(get_or_ret("cf_j_bust01_R"))
-			delDict.append(get_or_ret("cf_d_bust02_R"))
 			delDict.append(get_or_ret("左胸操作"))
 			delDict.append(get_or_ret("AH1_L"))
 			delDict.append(get_or_ret("AH2_L"))
+			delDict.append(get_or_ret("cf_d_bust01_R"))
+			delDict.append(get_or_ret("cf_j_bust01_R"))
+			delDict.append(get_or_ret("cf_d_bust02_R"))
 			delDict.append(get_or_ret("右胸操作"))
 			delDict.append(get_or_ret("AH1_R"))
 			delDict.append(get_or_ret("AH2_R"))
@@ -458,6 +469,8 @@ def rename_bones_for_export(pmx, input_file_name):
 			util.rename_bone(pmx, "cf_d_siri_L", "Butt.L", True)
 			util.rename_bone(pmx, "cf_d_siri_R", "Butt.R", True)
 			util.rename_bone(pmx, "cf_d_sk_top", "Skirt-Root", True)
+			util.rename_bone(pmx, "cf_d_spinesk_00", "Sailor.Tie", True)
+			util.rename_bone(pmx, "cf_d_backsk_00", "Sailor.Cape", True)
 			
 		## TODO: Add Twists from tempTwist()
 	else:
@@ -657,6 +670,7 @@ def rename_bones_for_export(pmx, input_file_name):
 	prune_unused_bones(pmx, True)
 	
 	print("-- Scan again....")
+	foundNether = []
 	for _bone in pmx.bones:
 		_name = _bone.name_jp
 		if _name.startswith("DELME_") or "DELME" in _bone.name_en: ###
@@ -682,8 +696,33 @@ def rename_bones_for_export(pmx, input_file_name):
 		elif _name.startswith("cf_hit_"):
 			_bone.name_jp = re.sub("cf_hit_", "PhyAnchor-", _name)
 			_bone.has_visible = False
+		elif _name.startswith("cf_J_Vag"): foundNether.append(_bone)
 			
 	delete_multiple_bones(pmx, delList)
+	
+	if any(foundNether):
+		_curIdx = find_bone(pmx, foundNether[0].name_jp, False)
+		_pos = pmx.bones[_curIdx].pos
+		_newPar = add_bone(pmx, name_jp=f"NetherBone", _solo=True)
+		insert_single_bone(pmx, _newPar, _curIdx)
+		
+		_par = pmx.bones[find_bone(pmx, "RightUpperLeg")]
+		_newPar.pos        = [_pos[0], _pos[1], _par.pos[2]]
+		_newPar.parent_idx = _par.parent_idx
+		_idx = find_bone(pmx, _newPar.name_jp)
+		for b in foundNether: b.parent_idx = _idx
+	##--- Then it is equally likely that we still have chest physics
+	if find_bone(pmx, "AH1_L", False) == -1:
+		util.set_parent_if_found(pmx, "左胸操作", n["UpperChest"], True)
+		util.set_parent_if_found(pmx, "左AH1", "Breast.L", True)
+		util.set_parent_if_found(pmx, "左AH2", "Breast.L", True)
+		util.set_parent_if_found(pmx, "左胸操作接続", "Breast.L", True)
+		util.set_parent_if_found(pmx, "左胸操作衝突", "Breast.L", True)
+		util.set_parent_if_found(pmx, "右胸操作", n["UpperChest"], True)
+		util.set_parent_if_found(pmx, "右AH1", "Breast.R", True)
+		util.set_parent_if_found(pmx, "右AH2", "Breast.R", True)
+		util.set_parent_if_found(pmx, "右胸操作接続", "Breast.R", True)
+		util.set_parent_if_found(pmx, "右胸操作衝突", "Breast.R", True)
 	
 	#print("Delete kokan and other genital bones")
 	#print("Simplify Chest")
@@ -715,19 +754,24 @@ def rename_bones_for_export(pmx, input_file_name):
 
 	return end(pmx if True else None, input_file_name, "_export", ["Did stuff"])
 rename_bones_for_export.__doc__ = """
--- Removes NSFW Bones for VRC ToS compliance
+
+Transforms a MMD style model into a VRC style model.
+Afterwards it can be imported into Blender and re-exported as FBX
+
+Actions:
+-- Removes NSFW Bones for VRC ToS compliance (prompts to keep)
 -- Rename Armature for Humanoid Skeleton
 -- Reorder into expected Hierarchy
 -- Merges most body/facial bones as required
 -- -- Accessories are left in as-is as an exercise for the user
 -- Assembles basic morphs for VRC (AEIOU Blink Smile)
--- Converts all Groups Morphs into Vertex Morphs
+-- Converts all Group Morphs into Vertex Morphs
 -- Removes all non-Vertex Morphs
 
 [Options] (at the end):
--- Asks if Group-Components should be deleted or kept
--- Asks if all Physics should be deleted
--- Asks if all Displayframes should be deleted
+-- Asks if former Group-Components should be deleted or kept
+-- Asks if all Physics(RBod/Joints) should be deleted (ignored by FBX)
+-- Asks if all Displayframes should be deleted (ignored by FBX)
 
 [Output]: PMX file '[modelname]_export.pmx'
 """
@@ -797,11 +841,13 @@ def tempTwist(pmx, input_filename_pmx): ## Untwist ArmTwist for Reexport of VRM 
 	return end(pmx, input_filename_pmx, "_fixed", "Swapping Twist")
 
 
-def prepare_for_export(pmx): ## TODO: Remap the manually translated morphs from [core] or remove them
+def prepare_for_export(pmx, isVRC=True): ## TODO: Remap the manually translated morphs from [core] or remove them
 	from kkpmx_morphs import translateItem, addOrReplace, make_vert_morph, infixes, make_vert_item
-	for morph in pmx.morphs:
-		morph.name_jp = translateItem(morph.name_jp)
-		morph.name_en = translateItem(morph.name_en, True)
+	from _translation_tools import is_jp, is_latin
+	if not isVRC:
+		for morph in pmx.morphs:
+			morph.name_jp = translateItem(morph.name_jp)
+			morph.name_en = translateItem(morph.name_en, True)
 		
 	### -- Generate the basic VRM ones at least
 	arr = [[],[]]
@@ -811,9 +857,10 @@ def prepare_for_export(pmx): ## TODO: Remap the manually translated morphs from 
 	addOrReplaceOther = lambda jp,en,it: addOrReplace(pmx, jp, en, 4, it, morphtype=1)
 	
 	print(f"=== Generate VRC Morphs ===")
-	holder = {"newMorphs": []}
+	holder = {"newMorphs": [], "skipCombine": not isVRC}
 	
 	def combine_morph(srcJP, srcEN, dst, callback):
+		if holder["skipCombine"]: return
 		print(f"= Combine {srcJP}....")
 		def gather(srcJP, srcEN):
 			m_idx = find_morph(pmx, srcJP, False)
@@ -856,7 +903,8 @@ def prepare_for_export(pmx): ## TODO: Remap the manually translated morphs from 
 		combine_group(_arr, morphs)
 		#print(f"Call callback for {srcJP}/{srcEN} with {len(_arr)}")
 		#holder["newMorphs"].push((dst, _arr, callback))
-		callback(dst, dst, _arr)
+		if isVRC: callback(dst, dst, _arr)
+		else: callback(srcJP, srcEN, _arr)
 	## // https://docs.vrchat.com/docs/avatars-30#blendshape--bone-based-visemes
 	#---- https://visagetechnologies.com/uploads/2012/08/MPEG-4FBAOverview.pdf
 	#---- https://docs.vrcft.io/docs/tutorial-avatars/tutorial-avatars-extras/unified-blendshapes#ue-blended-shapes
@@ -895,12 +943,16 @@ def prepare_for_export(pmx): ## TODO: Remap the manually translated morphs from 
 	#], "", "vrm.smug", addOrReplaceMouth)
 	tlDict = { x[0]: x[1] for x in infixes }
 	tabu = {}
-	sortList = { "B":[], "E":[], "M":[] }
+	sortList = { "B":[], "E":[], "M":[], "O":[] }
+	holder["skipCombine"] = False
 	for m in pmx.morphs:
 		# Reduce name
 		name = m.name_jp
-		if not name.startswith("["): continue
-		prefix   = name[1]; name = name[4:]
+		if not name.startswith("["):
+			if isVRC or is_latin(name): continue
+			prefix = {1: "B", 2: "E", 3: "M"}.get(m.panel, "O")
+			print(f"> Identify morph {name} as {prefix}")
+		else: prefix   = name[1]; name = name[4:]
 		isOpen   = name.endswith("_op")
 		isClosed = name.endswith("_cl")
 		if isOpen or isClosed: name = name[:-3]
@@ -1010,3 +1062,33 @@ def prepare_for_export(pmx): ## TODO: Remap the manually translated morphs from 
 	calc_one_eye_X(eyeR, "vrm.hitomiX-small-right")
 	calc_one_eye_Y(eyeL, "vrm.hitomiY-small-left")
 	calc_one_eye_Y(eyeR, "vrm.hitomiY-small-right")
+############################
+def run__vrcMorphs(pmx, input_file_name):
+	from kkpmx_core import end
+	from kkpmx_morphs import OPT_sort_useVRC, OPT_sort_delVMorph
+	prepare_for_export(pmx, False)
+
+	flag_pruneVMorphs = util.ask_yes_no("-- Delete Morph-Components? [Allows assembling custom expressions, but heavy]")
+	_optSort = {
+		OPT_sort_useVRC: False,
+		OPT_sort_delVMorph: flag_pruneVMorphs
+	}
+	sort_morphs(pmx, _optSort)
+	return end(pmx if True else None, input_file_name, "_baked", ["Baked Expression Morphs", f"Sorted Morphs: {_optSort}"])
+run__vrcMorphs.__doc__ = """
+
+Bakes ALL group morphs into singular vertex morphs.
+Remark: In contrast to VRC-Converter, this one does NOT delete non-Vertex morphs.
+
+[Options] (at the end):
+-- Asks if pre-baking Group-VertexMorphs should be deleted or kept
+
+To be specific, selecting "Yes" deletes all VertexMorphs except if
+- name_jp contains CN, JP, or KR characters
+- name_jp starts with "[x]", x being any of a-zA-Z0-9_
+- the morph is part of the "AuxMorphs" Displayframe
+
+Please keep an unbaked backup until you are certain all morphs behave as needed
+
+[Output]: PMX file '[modelname]_baked.pmx'
+"""

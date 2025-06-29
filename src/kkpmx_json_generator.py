@@ -324,19 +324,23 @@ def GenerateJsonFile__Body(pmx, arr, json_tree, parent_tree):
 	##	write COMMENT_HEAD
 	arr.append(Comment("== Head ==", end=True))
 	##	>	cf_m_mayuge_00 -- Comment(": Type 3 (vertical short)")
-	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_mayuge_00", opt_Comment: Comment(idx="Eyebrows") })
+	write_entity2(pmx, arr, json_tree, { opt_Name: "cf_m_mayuge_00", opt_Comment: Comment(idx="Eyebrows") })
 	#arr.append(("cf_m_mayuge_00*1", "cf_m_mayuge_00")) ## @todo: Add option to produce merged if no textures
-	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_noseline_00", opt_Comment: Comment(idx="Nose") })
+	write_entity2(pmx, arr, json_tree, { opt_Name: "cf_m_noseline_00", opt_Comment: Comment(idx="Nose") })
 	
+	write_entity2(pmx, arr, json_tree, { opt_Name: "cf_m_tooth", opt_Comment: Comment(idx="Teeth")})
+	write_entity2(pmx, arr, json_tree, { opt_Name: "cf_m_canine", opt_Comment: Comment(idx="Teeth (Canine)")})
 	##	>	cf_m_eyeline_00_up
-	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_eyeline_00_up", opt_Comment: Comment(idx="Upper Eye-line") } )
+	write_entity2(pmx, arr, json_tree, { opt_Name: "cf_m_eyeline_00_up", opt_Comment: Comment(idx="Upper Eye-line") } )
 	##	>	cf_m_eyeline_kage
 	#>> Kage is embedded in "eyeline up" and as such has no actual mesh. However, for unknown reasons it contains the skincolor (at least in KKS)
 	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_eyeline_kage", opt_Comment: Comment("Part of up, but we use it for getting the skincolor", idx="Part of Eyeline")})
 	##	>	cf_m_eyeline_down
-	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_eyeline_down", opt_Comment: Comment(idx="Lower Eye-line")})
+	write_entity2(pmx, arr, json_tree, { opt_Name: "cf_m_eyeline_down", opt_Comment: Comment(idx="Lower Eye-line")})
 	##	>	cf_m_sirome_00
 	#"cf_m_sirome_00": {}, // [Eye Whites]: Pattern 4
+	write_entity2(pmx, arr, json_tree, { opt_Name: "cf_m_sirome_00", opt_Comment: Comment(idx="Eyewhite")})
+	#write_entity2(pmx, arr, json_tree, { opt_Name: "cf_m_sirome_00", opt_Iter: 1, opt_Comment: Comment(idx="Eyewhite (Right)")})
 	##	>	cf_m_hitomi_00
 	write_entity(pmx, arr, json_tree, { opt_Name: "cf_m_hitomi_00",
 		opt_Group: "eye",
@@ -511,6 +515,45 @@ cat_to_Title = {
 
 
 tabuKeys = { "keys": [] }
+
+
+def write_entity2(pmx, arr, json_tree, opt):
+	name   = opt
+	isDict = type(opt) == dict
+	if isDict: name = opt.get(opt_Name)
+	else: opt = {}
+	_verbose = verbose()
+	
+	#-- Support for multiple names of an entity
+	isBody = local_state[opt_Mode] == "Body"
+	if isBody: nameFilter = name.split('|') if "|" in name else [ name ]
+	if _verbose: print(f"------------- {name}")
+	
+	targetBase = {}
+	if not isBody: _filter = re.compile(re.escape(name) + r'([#*]-?\d+)*$')
+	else: _filter = re.compile('(' + '|'.join([re.escape(n) for n in nameFilter])  + ')' + r'([#*]-?\d+)*$')
+	
+	#for kv in json_tree.items():
+	#	_m = _filter.match(kv[0])
+	#	if _m: print(f"[Key]: Found {kv[0]}")
+	
+	_elem = list(filter(lambda kv: _filter.match(kv[0]), json_tree.items()))
+	#print(_elem)
+	
+	cnt = 0; val = {}
+	for matElem in _elem:
+		mat = matElem[1]
+		render = mat.get("render",{})
+		for (k,r) in render.items(): ## mat
+			val[cnt] = r.get(ren_Enabled, "False") == "True"
+			cnt = cnt + 1
+	#print(val)
+	_elem2 = list(sorted(val.items(), key=lambda kv: not kv[1])) ## Sort to have enabled ones first (?)
+	#print(slist)
+	for item in _elem2:
+		opt[opt_Iter] = int(item[0])
+		write_entity(pmx, arr, json_tree, opt)
+
 def write_entity(pmx, arr, json_tree, opt):
 	"""
 #	Search in [json_tree] for all entities named 'opt' (if str) or opt[opt_Name] (if dict)
@@ -811,6 +854,7 @@ def generate_render_tree(pmx, tree, json_ren):
 		renArr[r[ren_Parent]].append(key) ## --> "Parent": { RENDER: BODY, ...}, ...
 		#if len(renArr[r[ren_Material]]) > 1:
 		#	print("[] Warning: Render '{}' contains multiple materials!".format(key))
+		if r[ren_Render] == "cf_O_face": tabuKeys["faceRen"] = r[ren_Material] ## Lazy Hack to allow grouping Face Elements
 	if genFiles: util.write_json(renArr, "_gen\#1R01_renArr", True) ### Dict of { "parent": [ "render", ...] }
 	## "ca_slot00": [ <All Render with "parent"="ca_slot00"> ], ....
 	#::>>> Prints dict of slots with their Render Bones

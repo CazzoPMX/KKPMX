@@ -596,18 +596,39 @@ Most modes will always create a new file and append a suffix (see [Output]).
 
 ### (23)   Export into VRChat-Format
 
->  - Removes NSFW Bones for VRC ToS compliance
+>  Transforms a MMD style model into a VRC style model.
+>  Afterwards it can be imported into Blender and re-exported as FBX
+>  
+>  Actions:
+>  - Removes NSFW Bones for VRC ToS compliance (prompts to keep)
 >  - Rename Armature for Humanoid Skeleton
 >  - Reorder into expected Hierarchy
 >  - Merges most body/facial bones as required
 >    - Accessories are left in as-is as an exercise for the user
 >  - Assembles basic morphs for VRC (AEIOU Blink Smile)
->  - Converts all Groups Morphs into Vertex Morphs
+>  - Converts all Group Morphs into Vertex Morphs
 >  - Removes all non-Vertex Morphs
 >  
 >  `[Options]` (at the end):
->  - Asks if Group-Components should be deleted or kept
->  - Asks if all Physics should be deleted
->  - Asks if all Displayframes should be deleted
+>  - Asks if former Group-Components should be deleted or kept
+>  - Asks if all Physics(RBod/Joints) should be deleted (ignored by FBX)
+>  - Asks if all Displayframes should be deleted (ignored by FBX)
 >  
 >  `[Output]`: PMX file '`[modelname]`_export.pmx'
+
+### (24)   └  Bake expression morphs
+
+>  Bakes ALL group morphs into singular vertex morphs.
+>  Remark: In contrast to VRC-Converter, this one does NOT delete non-Vertex morphs.
+>  
+>  `[Options]` (at the end):
+>  - Asks if pre-baking Group-VertexMorphs should be deleted or kept
+>  
+>  To be specific, selecting "Yes" deletes all VertexMorphs except if
+>  - name_jp contains CN, JP, or KR characters
+>  - name_jp starts with "`[x]`", x being any of a-zA-Z0-9_
+>  - the morph is part of the "AuxMorphs" Displayframe
+>  
+>  Please keep an unbaked backup until you are certain all morphs behave as needed
+>  
+>  `[Output]`: PMX file '`[modelname]`_baked.pmx'

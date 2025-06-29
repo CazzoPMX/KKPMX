@@ -19,6 +19,8 @@ from kkpmx_utils import Vector3, Matrix
 
 OPT_SFW = "reduceToSFW"
 OPT_SILENT = "runSilent"
+OPT_CHEST = "reduceChest"
+
 def chooser():
 	## Choose between the options
 	pass
@@ -118,6 +120,10 @@ def add_sirome_morph(pmx):
 		# Get Vertices
 		# Verify it being standard form
 		faces = from_material_get_faces(pmx, mat_idx, returnIdx=False)
+		if (len(faces) == 0): ## Actually the default Head Sirome
+			_mat = pmx.materials[mat_idx]
+			_mat.comment = util.updateCommentRaw(_mat.comment, "[:IrisNote:]", f"Not enough vertices to allow proper EyeMorphing.")
+			return morph_items
 		cntMap = util.DictAppend(0)
 		# Get Center Vertex
 		[cntMap.extend(vertIdx, 1) for vertIdx in util.flatten(faces)]
@@ -192,8 +198,9 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 	## -  Keep Chin bones separate, but merge into one		// Seems to have Mouth vertices too, clean up
 	## (def RemoveFromOrg): set WeightMap to self, add to [persistList]	### reference the initial map
 	verbose = util.is_verbose() or _opt.get(util.OPT_INFO, False)
+	verboseDev = False and not util.is_prod()
 	def RemoveFromOrg(bones, opt=None):
-		if verbose:
+		if verboseDev:
 			if opt: print(f"Update {opt} to keep:\n{bones}")
 			else:   print(f"Update these to stay:\n{bones}")
 		for idx in bones:
@@ -204,7 +211,7 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 	def RemoveAndMerg(bones, keepIdx=-1):
 		if not bones and keepIdx == -1: return
 		first = bones[0] if keepIdx == -1 else keepIdx
-		if verbose: print(f"Update these to be first:\n[{first}]: {bones[1:] if keepIdx == -1 else bones}")
+		if verboseDev: print(f"Update these to be first:\n[{first}]: {bones[1:] if keepIdx == -1 else bones}")
 		for idx in bones:
 			weightMap[idx] = first
 		persistList.append(first)
@@ -219,6 +226,7 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 		flag_all = util.is_allYes() or util.ask_yes_no("Simplify everything", "n")
 	flag_Silent = _opt.get(OPT_SILENT, util.is_auto())
 	flag_SFW = _opt.get(OPT_SFW, flag_SFW)
+	flag_CHS = _opt.get(OPT_CHEST, flag_SFW)
 	def ask_yes_no_ifUser(_msg, _def):
 		_defRet = _def == "y"
 		if flag_Silent: return _defRet
@@ -281,9 +289,10 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 	#--##--#
 	boneIdx = find_bone(pmx, "cf_s_waist02")
 	flagWaist = False
-	if flag_SFW:
+	if flag_CHS:
 		RemoveAndMerg(fullMap["cf_s_bust00_L"])                         ## Chest
 		RemoveAndMerg(fullMap["cf_s_bust00_R"])                         ## Chest
+	if flag_SFW:
 		RemoveAndMerg(fullMap.get("cf_J_Vagina_root", []), boneIdx)   ## Nether (true child of cf_s_waist02)
 	if flag_SFW or flag_all or ask_yes_no_ifUser("Simplify waist area", "n"):
 		## Nether (actually children of cf_j_waist02 but that is no vertex bone) -- will also merge nether Slots
@@ -302,7 +311,8 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 	#	if bones[0] != -1: weightMap[bones[1]] = bones[0]; weightMap[bones[2]] = bones[0]
 	
 	
-	if flag_all or ask_yes_no_ifUser("Merge Toe Bones", "n"):
+	flagToes = False
+	if ask_yes_no_ifUser("Merge Toe Bones", "n"):
 		flagToes = find_bone(pmx, "cf_j_toes_L", False)
 		RemoveAndMerg(fullMap.get("cf_j_toes_L", []))
 		RemoveAndMerg(fullMap.get("cf_j_toes_R", []))
@@ -383,7 +393,7 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 		##-- Add the ca_slot into usedBones for now
 		orgPar  = idx if parIdx in multiList else -1
 		orgName = slotName
-		doPrint = False#"ca_slot16" in slotName or "ca_slot14" in slotName # or orgPar != -1
+		doPrint = False or verbose#"ca_slot16" in slotName or "ca_slot14" in slotName # or orgPar != -1
 		if orgPar != -1: ### If we are in a nested Split, make the bone name reference it correctly
 			(multName, oldName) = multiMap[orgPar]
 			multIdx  = multiSlot[multName]
@@ -395,14 +405,14 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 			myMap    = fullMap.get(oldName, {}) ## use the correct Map
 			slotRB   = util.find_all_in_sublist(oldName, pmx.rigidbodies, False)
 			####
-		doPrint = False
+		#doPrint = False
 		
 		# Down here instead of at fetch to include the redirect-check
 		if len(slotRB) < 1: print(f"[!]: No rigids found for idx={idx} ('{slotName}')!");
 		elif slotRB[0].name_jp.endswith("_r"): slotRB = slotRB[1:] ## Skip the _r one (reason? <forgot....>)
 		
 		
-		if doPrint: print(f":--- Start {idx}: {slotName} (in multiList: {orgPar != -1})")
+		if doPrint: print(f"\n:--- Start {idx}: {slotName} (in multiList: {orgPar != -1})")
 		###--- [A] Keep ca_slot (use this for Tails ?)
 		if keepSlotRoot: usedBones.append(idx)
 		###--- [B] Treat it as any other
@@ -444,6 +454,7 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 			#-- if sole child, and this was unused, keep parent & go to next
 			#-- -OR- if we reach a split without ever reducing, then set that new root & stop ==> [CASE]: UnusedChain >onto> any SplitBone
 			if (diff == 1) or (enableMulti and (diff > 1 and newParent)):
+				# TODO: parIdx is never updated properly during first cycle
 				if doPrint: print(f": Check {boneIdx}/{boneName} used: {boneIdx in usedBones} -- cIdx={cMap[0]} with Is Parent({parIdx}, {newParent} > {not boneIdx in usedBones})")
 				cIdx = cMap[0] ## [child index]: First child since Parent that is used -- Target of RigidBody (will have FULL own subtree)
 				isMulti = (diff > 1)
@@ -457,7 +468,18 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 				## A SplitBone is always considered used (all completely unused chains are already gone (citation-needed))
 				if (enableMulti and isMulti): usedBones.append(boneIdx)
 				## If this is unused, skip it and go to next ==> [CASE]: UnusedBone <after< UsedBone or UnusedBone
-				if not boneIdx in usedBones: newParent = True
+				if not boneIdx in usedBones: 
+					newParent = True
+					##[250626]: Actually using hadOneUsedParent properly ==> [CASE]: UnusedBone <after< UsedBone
+					_parIdx = pmx.bones[boneIdx].parent_idx
+					if editRB is not None: ## Needs at least one parent
+						(_flag, _editRB) = reduceSlots(slotRB, _parIdx)
+						if _editRB is not None: ## ... but only allow that if we can actually skip over something
+							# ==> [CASE]: A RigidBody using boneIdx, and a Joint using it as rb2_idx exist
+							#TEST: May fail when we have a situation with multiple subsequent such bones
+							if _parIdx in usedBones:
+								hadOneUsedParent = True
+								storedRbkID = find_rigid(pmx, _editRB.name_jp)
 				## Else if used but at least one parent was not, rebind ==> [CASE]: UsedBone <after< UnusedBone
 				elif newParent:
 					newParent = False
@@ -492,6 +514,7 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 							if len(joints) == 0:
 								print(f".... Uh, found no joints on {editRB.name_jp} to fix, so stop processing ")
 								return (hadOneUsedParent, storedRbkID, -1)
+							if doPrint: print(f">-> Gap-Connection: Connect {joints[0].name_jp} with {storedRbkID} instead of {joints[0].rb1_idx}")
 							joints[0].rb1_idx = storedRbkID
 							storedRbkID = -2
 						## -OR- we are a split preparing for such a situation, so just treat like Fresh Multi
@@ -509,7 +532,7 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 							for cIdx in cMap:
 								(hadOneUsedParent, storedRbkID, isBreak) = doMagic(parIdx, boneIdx, cIdx, hadOneUsedParent, storedRbkID)
 								if isBreak == -1 or (not isMulti): break ## Panic exit to avoid breaking more
-								if storedRbkID == -2: break ## Unimplemented if empty bones happen inbetween multiple times, so just stop processing
+								#if storedRbkID == -2: break ## Unimplemented if empty bones happen inbetween multiple times, so just stop processing
 								if isBreak != 0: break; ## Idk what I thought, but it works for now.
 							if isBreak == -1: break;
 					### Reset ParIdx since this is used
@@ -678,7 +701,7 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 		if bone.name_jp.startswith("cf_hit"):
 			bone.has_visible = False
 	
-	if flag_SFW:
+	if flag_CHS:
 		idx = fbx("cf_d_bust00")
 		if idx != -1: pmx.bones[idx].name_en = "Chest Root"
 	

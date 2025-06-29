@@ -99,7 +99,8 @@ def get_choices():
 		("",	11, "Slice helper", slice_helper),
 		("",	13, "Draw Shader", PropParser.draw_toon_shader, True),
 		("",	14, "Adjust for Raycast", PropParser.convert_color_for_RayMMD),
-		("",	15, "Export into VRChat-Format", kkvrc.rename_bones_for_export),
+		("",	20, "Export into VRChat-Format", kkvrc.rename_bones_for_export),
+		("  └",	21, "Bake expression morphs", kkvrc.run__vrcMorphs),
 	]
 	for x in [z[3] for z in arr]:
 		if x is None: continue
@@ -913,6 +914,7 @@ rgxBase += '|' + '|'.join(accMats)
 rgxBase += '|\\b(' + '|'.join(jpMats + jpHair) + ')'
 rgxBase += '|' + '|'.join(enMats)
 rgxBasnt = '|'.join(accOnlyMats)
+rgxAnim  = '|'.join(accMatsNoHair)
 
 rgxAcc  = '|'.join(accOnlyMats + jpAccs + enAccs)
 rgxSkip = '|'.join(["Bonelyfans","shadowcast","Standard"])
@@ -1001,6 +1003,7 @@ Mode Interactions:
 		slotOrder.append(slotAlways)
 		slotOrder.append(["ct_clothesTop", "ct_top_parts_A", "ct_top_parts_B", "ct_top_parts_C", "ct_clothesBot", "ct_bra", "ct_shorts", "ct_panst"])
 		slotOrder.append(["ct_gloves", "ct_socks", "ct_shoes_outer", "ct_shoes_inner"])
+		slotOrder.append(["a_n_kemono"]) ## Fake slot for Ears, Tails, Wings
 		slotOrder.append(util.flatten([slot_dict["body"], slot_dict["upper"], slot_dict["hand"]]))
 		slotOrder.append(util.flatten([slot_dict["nether"], slot_dict["lower"], slot_dict["foot"]]))
 		for item in util.flatten(slotOrder): dictSlots[item] = []
@@ -1050,6 +1053,13 @@ Mode Interactions:
 		if re.search(rgxSkip, mat.name_jp): continue
 		
 		## Just for completeness sake, because they rarely have an own entry
+		matCat = ""
+		if (util.readFromComment(mat.comment, "MatCat", True)):
+			matCat = util.readFromComment(mat.comment, "MatCat")
+			if (matCat == "Head"):
+				mat.comment = util.updateComment(mat.comment, "Slot", "ct_head", True)
+			mat.comment = util.deleteComment(mat.comment, "MatCat")
+			#addComment("MatType", "Body" if not isBody else None)
 		if re.search(r"(cf_m_sirome_00)|(cf_m_tooth)", name_both, re.I):
 			mat.comment = util.updateComment(mat.comment, "Slot", "ct_head", True)
 		
@@ -1069,6 +1079,9 @@ Mode Interactions:
 			## Things like to be named body, so only count them if they are proper.
 			if re.search("body", name_both, re.I): isBody = m in slotBody
 			
+			# If a Tail or Wings are recognized, put them into __Wings / __Tail instead of their slot
+			if re.search(rgxAnim, name_both, re.I): m = "a_n_kemono";
+			
 			## Hard override if we have an appropriate TypeString
 			typeStr = util.readFromComment(mat.comment, 'MatType')
 			if typeStr:
@@ -1081,7 +1094,9 @@ Mode Interactions:
 					typeStr = mt.BODY.value
 					mat.comment = util.updateComment(mat.comment, 'MatType', typeStr, _replace=True)
 			
+
 			## === match is not empty and not(ignoreBody and isBody): 
+			if matCat == "Head" and isHidden: continue
 			#	yesBody    + isBody: True and True = True > False
 			if m is not None and len(m) > 0 and not (not f_body and m in slotBody):
 				dictSlots[m] = dictSlots.get(m, [])
@@ -1130,6 +1145,7 @@ Mode Interactions:
 		
 		## Sort into Body, Accessories, Cloth
 		if isBody or isDisabled: continue
+		if matCat == "Head" and isHidden: continue
 		appender = __append_itemmorph_sub if isHidden else __append_itemmorph_mul
 		if re.search(rgxAcc, name_both, re.I) and not isTrueClo: appender(itemsAcc, idx)
 		else: appender(itemsCloth, idx)
