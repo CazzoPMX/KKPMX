@@ -435,9 +435,12 @@ def add_TDA(pmx): ## Note: Add specific morphs as empty placeholder (JP, EN="Pla
 	# def: Search all morphs with "_winkl" in their name -- Could also search for the alternative name in case it was renamed
 	if not util.is_auto():
 		eyeOpenness = util.ask_number("Set Impact Value for Eye-Morphs", 0.00, 1.00, 0.66)
+		tongueReach = util.ask_number("Set Impact Value for Tongue-Morphs", 0.00, 1.00, 0.85)
 	else:
 		eyeOpenness = 0.66
+		tongueReach = 0.85
 	local_state["eyeOpenness"] = eyeOpenness
+	local_state["tongueReach"] = tongueReach
 	
 	find_all_morphs_eyes = lambda prefix,infix,suffix,value=eyeOpenness: find_all_morphs(morphs, prefix, infix, suffix, value, exclude="_siro[LR]")
 	
@@ -530,21 +533,24 @@ def add_TDA(pmx): ## Note: Add specific morphs as empty placeholder (JP, EN="Pla
 	#-# お				o					Say "O"			O	Open L+T for O
 	#-# ん				n					Say “N”			C	MC for N
 	#-# *２				*2					Say "*" (big)	O	Open WIDE for *
-	addOrReplaceMouth("あ", "A",  find_all_morphs(morphs, "kuti", "_a", "_s", 1.0, True) )
+	addOrReplaceMouth2 = lambda jp,en,it: addOrReplaceMouth(jp, en, replace_one_morph(it, "sita", value=tongueReach))
+	addOrReplaceMouth2("あ", "A",  find_all_morphs(morphs, "kuti", "_a", "_s", 1.0, True) )
+	#addOrReplaceMouth("え", "E",  eMorphs)
 	addOrReplaceMouth("い", "I",  find_all_morphs(morphs, "kuti", "_i", "_s", 0.75, True) )
 	addOrReplaceMouth("う", "U",  find_all_morphs(morphs, "kuti", "_u", "_s", 0.75, True) + [ (defT_Op, 0.75), (defY_Op, 0.1) ])
 	
-	#addOrReplaceMouth("え", "E",  find_all_morphs(morphs, "kuti", "_e", "_s", 1.0, True) ) # idk maybe change tongue to 0.95
+	#addOrReplaceMouth2("え", "E",  find_all_morphs(morphs, "kuti", "_e", "_s", 1.0, True) ) # idk maybe change tongue to 0.95
 	eMorphs = find_all_morphs(morphs, "kuti", "_e", "_s", 1.0, True)
-	eMorphs = replace_one_morph(eMorphs, "sita", value=0.85)
+	eMorphs = replace_one_morph(eMorphs, "sita", value=tongueReach)
 	addOrReplaceMouth("え", "E",  eMorphs)
 	
 	addOrReplaceMouth("お", "O",  find_all_morphs(morphs, "kuti", "_o", "_s", 1.0, True)	+ [ (defT_Op, 0.75), (defY_Op, 0.5), (defZ_Op, 0.5) ])
+	#: Keep track: maybe use kuti_ha.ha00_egao_op instead
 	addOrReplaceMouth("ん", "N",  find_all_morphs(morphs, "kuti", "_n", "_s", 1.0, True) )
-	addOrReplaceMouth("あ２", "A (Large)",  find_all_morphs(morphs, "kuti", "_a", "_l", 1.0, True) )
+	addOrReplaceMouth2("あ２", "A (Large)",  find_all_morphs(morphs, "kuti", "_a", "_l", 1.0, True) )
 	addOrReplaceMouth("い２", "I (Large)",  find_all_morphs(morphs, "kuti", "_i", "_l", 0.75, True) )
 	addOrReplaceMouth("う２", "U (Large)",  find_all_morphs(morphs, "kuti", "_u", "_l", 0.75, True) + [ (defT_Op, 0.75), (defY_Op, 0.1) ])
-	addOrReplaceMouth("え２", "E (Large)",  find_all_morphs(morphs, "kuti", "_e", "_l", 1.0, True) )
+	addOrReplaceMouth2("え２", "E (Large)",  find_all_morphs(morphs, "kuti", "_e", "_l", 1.0, True) )
 	addOrReplaceMouth("お２", "O (Large)",  find_all_morphs(morphs, "kuti", "_o", "_l", 1.0, True) + [ (defT_Op, 0.75), (defY_Op, 0.33), (defZ_Op, 0.5) ])
 
 	#-# ▲				*					°▲°				O	L as-such, X infront of T+Z	
@@ -704,6 +710,8 @@ def hotfix_generate_all_morphs(pmx, morphs, eyeOpenness):
 	#arr += [x[0] for x in infixes_2]
 	
 	local_state["useEN"] = find_morph(pmx, "eyes.default.close", False) != -1
+	eyeOpenness = local_state.get("eyeOpenness", eyeOpenness)
+	tongueReach = local_state.get("tongueReach", 1.00)
 	
 	defT_Op = find_one_morph(morphs, "kuti_ha.ha00_def_op")   ## Default open teeth
 	defY_Op = find_one_morph(morphs, "kuti_yaeba.y00_def_op") ## Default open canine
@@ -721,7 +729,7 @@ def hotfix_generate_all_morphs(pmx, morphs, eyeOpenness):
 		name_en = translateItem_2(_name, False).strip(".")
 		#print(f"---Translate '{act}::{_name}' into {name_en}")
 		
-		if act == "M" and _name.endswith("_op"):
+		if act == "M" and _name.endswith("_op") or _name.endswith("_pero_cl"):
 			names = [x[0] for x in _arr]
 			def doIt(defElem):
 				if defElem == "": return True
@@ -729,7 +737,8 @@ def hotfix_generate_all_morphs(pmx, morphs, eyeOpenness):
 				return any([x.startswith(prefix) for x in names])
 			if not doIt(defT_Op): _arr.append((defT_Op, 1))
 			if not doIt(defY_Op): _arr.append((defY_Op, 1))
-			if not doIt(defZ_Op): _arr.append((defZ_Op, 1))
+			if not doIt(defZ_Op): _arr.append((defZ_Op, tongueReach))
+			else: _arr = [(x[0], tongueReach if x[0].startswith("kuti_sita") else x[1]) for x in _arr]
 		
 		if act == "E": addOrReplaceEye  (f"[E] {name_jp}", f"[E] {name_en}", _arr)
 		### TODO: Some morphs need default teeth & tongue: eating cat triangle
@@ -760,7 +769,8 @@ def hotfix_generate_all_morphs(pmx, morphs, eyeOpenness):
 
 def combine_standards(pmx): ## Replace EN Name for Standard Morphs.. (but most are Materials)
 	rename_if_foundEN(pmx, "bounce",				"MMD-Pose")
-	rename_if_foundEN(pmx, "unbounce",				"T-Pose")
+	rename_if_foundEN(pmx, "A-Pose",				"MMD-Pose")
+	rename_if_foundEN(pmx, "T-Pose",				"T-Pose")
 	rename_if_foundEN(pmx, "cf_m_face_00",			"Face")
 	rename_if_foundEN(pmx, "cf_m_body",				"Body")
 	rename_if_foundEN(pmx, "cm_m_body",				"Body")
@@ -917,7 +927,7 @@ def putAuxIntoGroup(pmx):
 	from kkpmx_special import get_special_morphs
 	showWarning = False
 	names = [
-		"bounce", "unbounce",
+		"A-Pose", "T-Pose",
 		"hitomiX-small", "hitomiY-small", "hitomiX-big", "hitomiY-big", "hitomi-small",
 		"hitomi-up", "hitomi-down", "hitomi-left", "hitomi-right",
 		"Move Model downwards", "Move Body downwards",

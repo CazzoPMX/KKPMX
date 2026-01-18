@@ -362,6 +362,15 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 		if len(_RB) > 0: return (True, _RB[0])
 		return (False, None)
 	######
+	def printParent(_idx, _parIdx):
+		if (_idx == -1 or _parIdx == -1): return
+		_bone = pmx.bones[_idx]
+		_par  = pmx.bones[_parIdx]
+		_cur  = pmx.bones[_bone.parent_idx]
+		if _parIdx == _bone.parent_idx: return ## Happened on the above ones
+		if not verbose: return
+		print(f":> {_idx}/{_bone.name_jp} changes from {_cur.name_jp} to {_par.name_jp}")
+	######
 	keepSlotRoot   = False
 	enableMulti    = True                 ## TestFlag: Fix chains where the nothing is used till a split
 	enableMultiRec = enableMulti and True ## TestFlag: Append Splits as new individual chains
@@ -448,6 +457,7 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 					usedBones.append(rootIdx)
 					if tailIdx in usedBones: usedBones.remove(tailIdx)
 				elif newParent: ## If we do not keep the Slot Root, rename Tail into first
+					printParent(boneIdx, parIdx)
 					if resetName: bone.name_jp = slotName
 					bone.parent_idx = parIdx
 				break
@@ -483,6 +493,7 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 				## Else if used but at least one parent was not, rebind ==> [CASE]: UsedBone <after< UnusedBone
 				elif newParent:
 					newParent = False
+					printParent(boneIdx, parIdx)
 					bone.parent_idx = parIdx
 					### Rebind the Rigging if any
 					##-Since this usually only happens on the first couple bones, this at least ensures it is clean....  (which sometimes is not the case)
@@ -496,6 +507,8 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 						editRB.rot   = newRB.rot
 						editRB.size  = newRB.size
 						editRB.shape = newRB.shape
+						if resetName: ### If we reset the name to [slotName], force this into green
+							editRB.phys_mode = 0
 						del pmx.rigidbodies[-4] ## the _root           -- Will be a Round Root Body
 						del pmx.rigidbodies[-3] ## the parent          -- Will connect new Parent and Current
 						del pmx.rigidbodies[-2] ## the main on boneIdx -- Will connect Current and Child (on most accs this was the weird one)
@@ -506,6 +519,8 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 						breakVar = 0
 						#### if already had a used parent but then an unused inbetween, store the previous new rigidbody for that situation
 						if not hadOneUsedParent: storedRbkID = find_rigid(pmx, editRB.name_jp)
+						if storedRbkID != -1:   print(f">> hadOneUsedParent: {hadOneUsedParent} --> {storedRbkID}=>{pmx.rigidbodies[storedRbkID].name_jp} ({editRB.name_jp})")
+						elif storedRbkID == -1: print(f">> hadOneUsedParent: {hadOneUsedParent} --> {-1} ({editRB.name_jp})")
 						## on the child in question, get the joint that used this bone's rigid as rb2 and replace the first with said rigid above.
 						if hadOneUsedParent:
 							curRBId = find_rigid(pmx, editRB.name_jp)
@@ -537,6 +552,7 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 							if isBreak == -1: break;
 					### Reset ParIdx since this is used
 					if resetName:## If we do not keep the Slot Root, rename the first into it ==> [CASE]: >from> UnusedChain
+						print(f":>> Rename {boneIdx}/{bone.name_jp} into {slotName} [>> resetName]")
 						bone.name_jp = slotName
 						resetName = False
 					parIdx = boneIdx
@@ -557,7 +573,7 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 						__tmp = pmx.bones[__idx]
 						if doPrint: print(f":>>> Testing {__idx} = {__tmp.name_jp} with parent {__tmp.parent_idx}")
 						if __tmp.parent_idx != boneIdx: continue
-						if doPrint: print(f":>>>> Pushing {__idx}")
+						if doPrint: print(f":>>>> Pushing {__idx} for keep")
 						multiMap[__idx] = (slotName, __tmp.name_jp) ## Provide the original name to get the correct Map
 						multiList.append(__idx)
 						checkSlot.append(__idx)
@@ -630,6 +646,9 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 		if toe != -1 and toe in usedBones: soloFixMap[toe] = idxArr[1]; usedBones.remove(toe)
 		toe = fbx("cf_j_toes_R")
 		if toe != -1 and toe in usedBones: soloFixMap[toe] = idxArr[3]; usedBones.remove(toe)
+	#	## Mouth:
+	#	# cf_J_Mouth_L has a few (or even 1) on the wrong side
+	#	idxArr.append(fbx("cf_J_Mouth_L")); idxArr.append(fbx("cf_J_Mouth_R"))
 	
 	(idx_LF,idx_LT,idx_RF,idx_RT,idx_LL,idx_RL) = idxArr
 	threshold = pmx.bones[fb("右足ＩＫ")].pos[1]
@@ -716,18 +735,21 @@ def simplify_armature(pmx, input_file_name, _opt = { }):
 	
 	SemiStd_05_Waist(pmx)  # Create WaistCancel for DBones to attach onto
 	SemiStd_09_DBones(pmx) # Move vertices from Legs/Feet/IK into D-Bones
+	SemiStd_04_Groove(pmx) # Add groove bone
 	
 	#-- TODO:
 	# Move Twists  into DispFrame "腕" or "腕Twist" -- currently in [ExtraBones]
 	# Move D-Bones into DispFrame "足OP"
 	# Fix extra entry of [moremorphs]
 	
+	cleanup_free_things(pmx)
 	
 	#--##--#
 	# -- TODO: if from [auto_mode], ignore 2nd Translation attempt
 	import model_overall_cleanup
 	model_overall_cleanup.__main(pmx, input_file_name, False, False)
 	_opt["fullClean"] = _opt.get("fullClean", flag_all)
+	_opt["flag"] = True
 	cleanup_free_things(pmx, _opt)
 	if _opt.get("soloMode", True):
 		return end(pmx if True else None, input_file_name, "_reduced", ["Simplified Armature"])
@@ -755,8 +777,36 @@ User Choices:
   - If unhappy with the result, call this again using [modelname]_better.pmx
 """
 
+def cleanup_materials(pmx):
+	from _prune_unused_vertices import newval_from_range_map, delme_list_to_rangemap
+	item_dellist = []
+	for d, mat in enumerate(pmx.materials):
+		if mat.name_jp.startswith("DELETE ME"):
+			print(f"> Delete {d}: {mat.name_en}")
+			item_dellist.append(d)
+			
+	item_dellist2 = sorted(item_dellist)
+	# build the rangemap to determine how index references will be modified from this deletion
+	item_shiftmap = delme_list_to_rangemap(item_dellist2)
+	for f in reversed(item_dellist):
+		pmx.materials.pop(f)
+	
+	for d, morph in enumerate(pmx.morphs):
+		# ignore unless material morph
+		if morph.morphtype != 8: continue
+		i = 0
+		while i < len(morph.items):
+			if core.binary_search_isin(morph.items[i].mat_idx, item_dellist):
+				morph.items.pop(i)
+			else:
+				morph.items[i].mat_idx = newval_from_range_map(morph.items[i].mat_idx, item_shiftmap)
+				i += 1
+	######
+	pass##
 
 
+##############################
+### Semi-Standard-Bones fill-ins
 def EntryBoneNext(pmx, newParent, newBone):
 	from _prune_unused_bones import insert_single_bone
 	from kkpmx_utils import find_bone
@@ -768,6 +818,70 @@ def EntryBoneFore(pmx, newChild, newBone):
 	from kkpmx_utils import find_bone
 	idx = find_bone(pmx, newChild.name_jp)
 	insert_single_bone(pmx, newBone, idx)
+
+### SemiStd_00_MasterBone     => added by Plugin already
+### SemiStd_01_ArmTwist       => kkpmx_rigging.repair_some_bones
+### SemiStd_02_WristTwist     => kkpmx_rigging.repair_some_bones
+### SemiStd_03_UpperChest:    Adds "上半身2" => exists by default
+### SemiStd_04_Groove:        Adds "グルーブ" => Used by MMD Motions
+### SemiStd_05_Waist:         Adds "腰" => Tells MMD & VRC where the Hips are
+### SemiStd_06:               <unused>
+### SemiStd_07_HeelIK:        Adds "右足IK親"/"左足IK親" based on "右足ＩＫ"/"左足ＩＫ"
+### SemiStd_08_Camera:        Adds "操作中心" as new master bone <ignored>
+### SemiStd_10_DummyGrab:     Adds "右ダミー"/"左ダミー" based on Wrist
+### SemiStd_11_ShoulderCancel => kkpmx_rigging.repair_some_bones
+### SemiStd_12_UpperThumb:    Adds "右親指０" and reweights from Wrist and Thumb1 accordingly
+
+def SemiStd_04_Groove(pmx):
+	from kkpmx_utils import Vector3, find_bone, find_disp
+	from kkpmx_rigging import add_bone
+	from kkpmx_utils import process_weight
+	from kkpmx_morphs import find_or_replace_disp
+	
+	currentState = pmx
+	def SearchBone(p,n):
+		_idx = find_bone(p, n, False)
+		if _idx == -1: return None
+		return p.bones[_idx]
+	def ToOffset(bone, value):
+		bone.tail_usebonelink = False
+		bone.tail = value
+	GetFrameBone = lambda p,n,f: p.frames[find_disp(p, n, f)]
+	toIdx = lambda b: find_bone(pmx, b.name_jp, True)
+	true = True
+	false = False
+	null = None
+	
+	text = "グルーブ" # string
+	text3 = "センター" # string
+	nameE = "groove" # string
+	iPXBone11_FindCenter = None; # IPXBone
+	iPXBone12_FindGroove = SearchBone(currentState, text); # IPXBone
+	if (iPXBone12_FindGroove == None):
+		iPXBone11_FindCenter = SearchBone(currentState, text3);
+		if (iPXBone11_FindCenter != None):
+			floatXX = Vector3.FromList(iPXBone11_FindCenter.pos) # float3 
+			floatXX.Y += 0.2
+			iPXBone12_FindGroove = add_bone(pmx,
+				has_rotate = True,                            
+				has_translate = True,                        
+				name_jp = text,                               
+				pos = floatXX.ToList(),                        
+				parent_idx = toIdx(iPXBone11_FindCenter),     
+				name_en = nameE,                              
+				_solo=True
+			);
+			ToOffset(iPXBone12_FindGroove, Vector3.FromList([0, 1.4, 0]).ToList())
+			iPXBone11_FindCenter_Idx = toIdx(iPXBone11_FindCenter)
+			EntryBoneNext(currentState, iPXBone11_FindCenter, iPXBone12_FindGroove); ## As before, insert before replacing
+			for IPXBone13_item in currentState.bones:
+				#// If Bone is not "Center End" and has same Parent as [LowerBody], then set as Waist
+				if (IPXBone13_item.parent_idx != -1 and IPXBone13_item.parent_idx == iPXBone11_FindCenter_Idx and IPXBone13_item.name_jp != "センター先"):
+					if IPXBone13_item.name_jp == iPXBone12_FindGroove.name_jp: continue
+					IPXBone13_item.parent_idx = toIdx(iPXBone12_FindGroove);
+
+			frameBone = GetFrameBone(currentState, "センター", True) # IPXNode 
+			frameBone.items.append([False, toIdx(iPXBone12_FindGroove)])
 
 def SemiStd_05_Waist(pmx):
 	from kkpmx_utils import Vector3, find_bone, find_disp
@@ -801,7 +915,7 @@ def SemiStd_05_Waist(pmx):
 	if (iPXBone10_FindWaist == None):
 		iPXBone8_FindLower = SearchBone(currentState, name);
 		iPXBone7_LowerParent_idx = iPXBone8_FindLower.parent_idx;
-		iPXBone7_LowerParent = pmx.bones[iPXBone7_LowerParent_idx]
+		iPXBone7_LowerParent = None if iPXBone7_LowerParent_idx == -1 else pmx.bones[iPXBone7_LowerParent_idx];
 		iPXBone9_FindLegR = SearchBone(currentState, "右足");
 		
 		if (iPXBone7_LowerParent != None and iPXBone8_FindLower != None and iPXBone9_FindLegR != None):

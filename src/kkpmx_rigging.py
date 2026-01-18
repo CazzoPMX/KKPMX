@@ -1425,15 +1425,24 @@ def rig_rough_detangle(pmx, custArr=None): ## << HAS TODO
 		bk_uses = bone.tail_usebonelink
 		bone.tail_usebonelink = True
 		bone.tail = _B_Idx_2
+		radius = 0.0
 		print(f">> Create new RigidBody from {_B_Idx_0}/{bone.name_jp} to {_B_Idx_2}/{pmx.bones[_B_Idx_2].name_jp}")
 		#-------------
 		body_num = len(pmx.rigidbodies)
 		name = pmx.bones[_B_Idx_0].name_jp + "_EDIT"
 		mode = pmx.rigidbodies[_Joint_1.rb2_idx].phys_mode ## Use the same mode as the Body this should replace (_Rigid_1)
-		AddBaseBody(pmx, [_B_Idx_0], mode, 0.0, True, name, group=3)
+		AddBaseBody(pmx, [_B_Idx_0], mode, radius, True, name, group=3)
 		body = pmx.rigidbodies[body_num]
-		AddBodyHack(_B_Idx_0, 0.0, body)
-		body.size[1] -= (body.size[0]*10) * 0.2 ## Apply Shrinking from AddBodyChainWithJoints
+		AddBodyHack(_B_Idx_0, radius, body) ### TEST: am I doing things twice???
+		#TODO: Things are not reduced in size *AT ALL* and stay gigantic as if not edited
+		if radius <= 0.0:
+			## Reduce height by the size of a Joint, relative to the radiius
+			# --- Otherwise the ends overlap too much
+			for bodyX in pmx.rigidbodies[body_num:]:
+				#msg = f"Size: {bodyX.size[1]}"
+				bodyX.size[1] -= (bodyX.size[0]*10) * 0.2 ## 0.1 are exactly 0.2
+				#print(msg + f" -> {bodyX.size[1]}")
+		#body.size[1] -= (body.size[0]*10) * 0.2 ## Apply Shrinking from AddBodyChainWithJoints
 		#-------------
 		bone.tail_usebonelink = bk_uses
 		bone.tail = bk_tail
@@ -1733,7 +1742,7 @@ def handle_special_materials(pmx):
 def cleanup_free_bodies(pmx, outParam={}):
 	local_state.setdefault(RBD__CLEANUP, {})
 	#if local_state[RBD__CLEANUP] is None: return
-	verbose = _verbose()
+	verbose = _verbose() or True
 	
 	##-- Maybe add an option to ask if they should stay
 	
@@ -1761,15 +1770,15 @@ def cleanup_free_bodies(pmx, outParam={}):
 	rigid_dict = {}
 	for idx,rigid in enumerate(pmx.rigidbodies):
 		#if not rigid.name_jp.startswith("ca_slot"):
-		if not re.search(r"^(ca_slot|cf_j_sk_)", rigid.name_jp): continue
+		if not re.search(r"^(ca_slot|cf_j_sk_)|_EDIT:", rigid.name_jp): continue
 		b = rigid.bone_idx
 		if not b or b < 0: b = -1 ## Just to be safe.
 		if b in rigid_dict: rigid_dict[b] += [idx]
 		else: rigid_dict[b] = [idx]
 	
 	if verbose:
-		#print("------- [rigid_dict]")
-		#for x in rigid_dict: print(f"- {x}: {rigid_dict[x]}")
+		print("------- [rigid_dict]")
+		for x in rigid_dict: print(f"- {x}: {rigid_dict[x]}")
 		print("------- [List of chains to check]")
 		zz = local_state[RBD__CLEANUP]
 		for x in zz: print(f"- {x}: {zz[x]}")
@@ -1852,7 +1861,7 @@ def fix_slot_collisions(pmx):
 	######
 	pass #
 
-## [Mode 05]
+## [Mode 05] -- the one also used from external
 def cleanup_free_things(pmx, _opt = { }):
 	from _prune_unused_bones import prune_unused_bones, identify_unused_bones_base
 	from _prune_unused_vertices import newval_from_range_map, delme_list_to_rangemap
@@ -1860,7 +1869,13 @@ def cleanup_free_things(pmx, _opt = { }):
 	if type(_opt) is str: _opt = { "flag": False }
 	else: _opt.setdefault("flag", False)
 	
-	rgx = re.compile(r'^((cf_J_hair)|(ca_slot))')# or body.name_jp.startswith("cf_j_j_sk"):
+	rgx = re.compile(r'^((cf_J_hair)|(ca_slot))|_EDIT')# or body.name_jp.startswith("cf_j_j_sk"):
+	rgxTabu = re.compile(r'^[左右]胸|a_n_headf[lr]ont|^RB_|グルーブ')
+	slots = [i for (i,b) in enumerate(pmx.bones) if b.name_jp.startswith("ca_slot")]
+	
+	from collections import Counter
+	usedByJoint = util.flatten([[j.rb1_idx, j.rb2_idx] for (i,j) in enumerate(pmx.joints)])
+	usedByJoint = Counter(x for x in usedByJoint)
 	
 	flag = _opt.get("flag", False)
 	
@@ -1868,11 +1883,21 @@ def cleanup_free_things(pmx, _opt = { }):
 	
 	rigid_dellist = []
 	for d,body in enumerate(pmx.rigidbodies):
+		#print(f"[{d}] :: {body.name_jp}")
 		#if body.name_jp.startswith("cf_hit"): continue		if body.group == 1: continue
 		if rgx.match(body.name_jp) or flag:
 			rigid_matchList[d] = body.name_jp
+			if rgxTabu.match(body.name_jp): continue
 			if body.bone_idx in unusedBones:
-				#print(f"Adding [{d}]{body.name_jp} with Idx {body.bone_idx}")
+				print(f"Discard [{d}]{body.name_jp} on Idx {body.bone_idx}")
+				rigid_dellist.append(d)
+			if body.bone_idx in slots and usedByJoint[d] < 2: #not (d in usedByJoint):
+				if body.phys_mode == 0: ## Only the "_r" ones
+					msg = f"~~ Allow [{d}]{body.name_jp} on Idx {body.bone_idx}"
+					msg += " (despite being unused by any joint)" if usedByJoint[d] == 0 else " (despite being used by only one joint)"
+					print(msg)
+					continue
+				print(f"Discard [{d}]{body.name_jp} on Idx {body.bone_idx} (not used by any joint)")
 				rigid_dellist.append(d)
 	
 	def __internal_cleanup(rigid_dellist):
@@ -1919,7 +1944,7 @@ def cleanup_free_things(pmx, _opt = { }):
 		msg = "\n>\t".join(["The following bones have duplicate rigidbodies:"] + msgs)
 		flag = _opt.get("fullClean", False)
 		if not flag: print(msg)
-		if _opt.get("fullClean", False) or util.ask_yes_no("Clean them up (cleans the factory Rigids, keeps the new ones)", "n"):
+		if flag or util.ask_yes_no("Clean them up (cleans the factory Rigids, keeps the new ones)", "n"):
 			__internal_cleanup(rigid_dellist)
 
 ########
@@ -2251,8 +2276,11 @@ def split_rigid_chain(pmx, arr=None):
 		rigid3.phys_mode = 0
 		
 		# Get responsible List of Joints
-		try:    prefix = re.search("(ca_slot\d+)", rigid.name_jp)[1]
-		except: prefix = rigid.name_jp.split(':')[0]
+		try:    prefix = re.search("(ca_slot\d+[\*\d]*)", rigid.name_jp)[1]
+		except:
+			print(f"> Failed to cut out prefix -- using <<{rigid.name_jp.split(':')}>> instead")
+			print(f">> Look on <<" + str(re.search('(ca_slot\d+[\*\d]*)', rigid.name_jp)) + ">>")
+			prefix = rigid.name_jp.split(':')[0]
 		if prefix in slot_map: joints = slot_map[prefix]
 		else:
 			joints = [x for x in pmx.joints if x.name_jp.startswith(prefix)]

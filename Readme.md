@@ -60,6 +60,10 @@ I am open to help you convert cards into VRC/VRM depending on complexity, see th
 
  - [KKBP](https://github.com/FlailingFog/KK-Blender-Porter-Pack)
 
+It seems that the original github page was taken down for whatever reason, but you can find backups when searching for [KK Blender Porter Pack].<br/>
+Still, I want to thank them for doing the project in the first place, cause it helped me fixing certain issues over time (including my own cursed Texture exports).
+
+
 ## Misc
 
 
@@ -83,9 +87,11 @@ Some less obvious things when working with Console applications
 
 ![Shading Workaround](img/ShadingWorkaround.png)
 
-IMPORTANT: Since the textures are now rendered in-game, the current Light/Shadow Settings apply to them.<br/>
+IMPORTANT [until 2.3.1]: Since the textures are now rendered in-game, the current Light/Shadow Settings apply to them.<br/>
 When keeping the default settings, most textures will get a darker tint due to that.<br/>
-For the time being, this can be fixed by setting the Light Settings in the [Visual Settings] to [No Shadows].
+For the time being, this can be fixed by setting the Light Settings in the [Visual Settings] to [No Shadows].<br/>
+<br/>
+Starting [2.4.0], Shadows are disabled during generation and hence cause no issues anymore.
 
  0. Load the desired character and costume.
  0. Change Pose, Expression, Clothing State, or Accessory Visibility as necessary.
@@ -94,7 +100,12 @@ Alternatively (instead of 'Looking at') you can focus on yourself py pressing '5
 Any Eye and/or Mouth Position works, as long as the Eyes stay open and the mouth closed (aka Smiling, Sleepy, ...)
     - While the Tool-Chain is indifferent of whatever pose is used, it might produce funny results in MMD.
     - The same goes for facial expressions, which are further morphed by MMD-Sequences.
- 0. Click on [Export] in the upper left corner -- It may take a short moment depending on size.
+ 0. Click on the [Export] button -- It may take a short moment depending on size.
+    - [3.4.0]+ I had to change the way the Plugin runs, so it will not freeze anymore immediately.<br/>
+Please take care to not do anything until the process is completed to avoid corrupting the export.
+    - [3.4.0]+ For the same reason, there is currently a bug that causes the Hair and most accessories to disappear after the process is done.<br/>
+This does not affect anything (nor does it prevent editing, saving, or re-export) and will disappear when reloading the model (or changing textures).<br/>
+While inconvenient, this indicates the completion of the process for the time being. I apologize if that causes confusion while using the plugin.
  - Will add a folder called `ModelFullName + Random 4-Digit number` under `C:\koikatsu_model` with the following contents
     - The model.pmx file and the main textures associated with it
     - A file called `{CharName}.json` which contains technical details for the kkpmx_core.exe
@@ -110,9 +121,11 @@ Or the [one after](#what-i-do-when-working-on-a-model-aka-what-to-do-if-you-dont
 
 The model should be (almost) ready, but some last adjustments have to be done manually.
 
- 0. Delete all materials called DELETE_ME - These are cleanup artifcats
- 0. [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
- 0. Go to the [TransformView (F9)] -> Search for [bounce] -> Set to 100% -> Menu=[File]: Update Model
+ 0. Delete materials called DELETE_ME if you happen to see any - These are cleanup artifcats
+ 0. The script applies what is needed from the 'Semi-Standard Bone Plugin' by itself'. 
+    - If you still feel the need to run it yourself, you can find it at
+	 - >> [Edit(E)] -> Plugin(P) -> User -> Semi-Standard Bone Plugin -> Semi-Standard Bones (PMX) -> default or all (except `[Camera Bone]`)
+ 0. Go to the [TransformView (F9)] -> Search for [A-Pose] -> Set to 100% -> Menu=[File]: Update Model
 
 ## Alternative chain of actions
 

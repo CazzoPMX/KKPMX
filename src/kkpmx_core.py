@@ -90,7 +90,7 @@ def get_choices():
 		("╟─",   0, "Main Sorter", lambda p,f: file_sort_textures.__main(f, False)),
 		("╟─",   0, "Main Cleanup", lambda p,f: model_overall_cleanup.__main(p, f, False)),
 		("╟┬",  19, "Re-run Simplify", simplify_armature),
-		("║└─",  0, "Cleanup Physics", lambda p,f: main_wrapper(p,f, kkrig.cleanup_free_things, "_phyClean")), ## (pmx, _opt = { }):
+		("║└─",  0, "Cleanup Physics", lambda p,f: main_wrapper(p,f, lambda p,f: kkrig.cleanup_free_things(p, { "flag": True }), "_phyClean")), ## (pmx, _opt = { }):
 		("╙─",	 4, "Isolate protruding surfaces", runOverhang),
 		("",	 6, "----------", __do),
 		("",	 8, "Export Material to CSV", export_material_surface),
@@ -479,16 +479,16 @@ Which is why this also standardizes color and toon,
 		setPanel("お", 3)
 		setPanel("まばたき", 2)
 		setPanel("笑い", 2)
-		setPanel("bounce", 4)
+		setPanel("A-Pose", 4)
 		
 		### Add an reverse morph for 'bounce' (and rename it from bounse)
 		bounce = find_morph(pmx, "bounse", False)
 		if bounce != -1:
-			pmx.morphs[bounce].name_jp = "bounce"
-			pmx.morphs[bounce].name_en = "bounce"
+			pmx.morphs[bounce].name_jp = "A-Pose"
+			pmx.morphs[bounce].name_en = "A-Pose"
 			pmx.morphs[bounce].panel   = 4
-		if find_morph(pmx, "unbounce", False) == -1:
-			pmx.morphs.append(pmxstruct.PmxMorph("unbounce", "unbounce", 4, 2, [
+		if find_morph(pmx, "T-Pose", False) == -1:
+			pmx.morphs.append(pmxstruct.PmxMorph("T-Pose", "T-Pose", 4, 2, [
 				pmxstruct.PmxMorphItemBone(find_bone(pmx, "右腕", False), [0,0,0], [0,0,35]),
 				pmxstruct.PmxMorphItemBone(find_bone(pmx, "左腕", False), [0,0,0], [0,0,-35]),
 			]))
@@ -768,10 +768,14 @@ There are some additional steps that cannot be done by a script; They will be me
 	section("Final Cleanup over the whole model - KKRIG")
 	kkrig.cleanup_free_things(pmx, _opt)
 	from kkpmx_morphs import sort_bones_into_frames
-	section("Final Cleanup over the whole model - Sort Bones")
+	section("Final Cleanup over the whole model - Sort DisplayFrames")
 	try:
 		sort_bones_into_frames(pmx)
 	except KeyboardInterrupt as ki: print(ki)
+	
+	from kkpmx_special import cleanup_materials
+	section("Final Cleanup over the whole model - Purge deleted Materials")
+	cleanup_materials(pmx)
 	
 	path = end(pmx, input_filename_pmx, "_better2", "Cleaned up Physics")
 	util.copy_file(path, input_filename_pmx)

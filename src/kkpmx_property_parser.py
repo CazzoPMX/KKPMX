@@ -265,7 +265,7 @@ def __parse_json_file(pmx, data: dict, root: str):
 	
 	if util.is_auto() or DEBUG_RUN:
 		local_state[OPT_CACHE] = True
-		local_state[OPT_IMG]   = True
+		local_state[OPT_IMG]   = not os.path.exists(os.path.join(root, "model_mat_backup.pmx"))
 	else:
 		TEST_BODY = util.ask_yes_no("Re-run Body only", "n")
 		TEST_EYES = util.ask_yes_no("Re-run Eyes only", "n")
@@ -1010,7 +1010,9 @@ def process_common_attrs(pmx, mat, attr): ## @open: rimpower, rimV, Color_Shadow
 			### Add Top sub slots as extra line
 			if re.match("ct_top_parts_", par): addComment("TopId", par)
 			### Give some navigation for primmats
-			if attr[NAME].startswith("mf_m_primmaterial"): addComment("PrOrg", meta[MT_RENDER])
+			if attr[NAME].startswith("mf_m_primmaterial"):
+				addComment("PrOrg", meta[MT_RENDER])
+				mat.flaglist[0] = True ## Force 2-Side for PrimMat cause looking weird
 			
 			addComment("MatType", "Body" if not isBody else None)
 			addOld = ("[:MatType:] Hair" not in cmtNew[-1])
