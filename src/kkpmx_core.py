@@ -1350,6 +1350,7 @@ If all faces of a given material are considered invisible, it will be ignored an
 	disabled = []
 	processed = []
 	delDisp = util.ask_yes_no("Auto-delete disabled Materials", "y", check=opt.get("delDisp", None))
+	alphaThreshold = 10 ## Alpha Value between 0...255 below which a pixel is considered "invisible"
 	
 	skipAsking = util.is_auto() or not util.ask_yes_no("Confirm before deleting big", "n")
 	
@@ -1370,6 +1371,7 @@ If all faces of a given material are considered invisible, it will be ignored an
 		print(f"\n=== Scanning [{mat_idx:2}]({mat.faces_ct:5}) " + mat.name_jp)
 		isPrim = util.is_primmat(mat)
 		delME = False
+		devVerbose = False#not util.is_prod() and mat.name_jp == "ls_t_high_neck01"
 		
 		if mat.faces_ct == 0:
 			print(f"> Material has no faces, skipping...")
@@ -1466,7 +1468,7 @@ If all faces of a given material are considered invisible, it will be ignored an
 		#>	if [img(coord).Alpha == 0]: add idx to list
 			if coord[0] == h: coord[0] -= 1
 			if coord[1] == w: coord[1] -= 1
-			if (img[coord[0], coord[1], coord[2]] == 0):
+			if (img[coord[0], coord[1], coord[2]] <= alphaThreshold):
 				new_verts.append(vert_idx[idx])
 				vert_uv[vert_idx[idx]] = coord
 		#>	#if any in list:
@@ -1501,9 +1503,9 @@ If all faces of a given material are considered invisible, it will be ignored an
 					coordA = util.arrAvg(vA, coord, True)
 					coordB = util.arrAvg(coord, vB, True)
 					#print(coord)
-					_flag = img[coord[0], coord[1], coord[2]] != 0
-					_flag |= img[coordA[0], coordA[1], coordA[2]] != 0
-					_flag |= img[coordB[0], coordB[1], coordB[2]] != 0
+					_flag = img[coord[0], coord[1], coord[2]] > alphaThreshold
+					_flag |= img[coordA[0], coordA[1], coordA[2]] > alphaThreshold
+					_flag |= img[coordB[0], coordB[1], coordB[2]] > alphaThreshold
 					return _flag
 				def avgCheck2(vA, vB):
 					coord = util.arrAvg(vA, vB, True)
@@ -1528,6 +1530,14 @@ If all faces of a given material are considered invisible, it will be ignored an
 				faces = new_faces
 			else: print(f">>> Deleting {len(faces)}...")
 			#>	push list to **.delete_faces(pmx, faces)
+			if devVerbose:
+				_verts = []
+				for face_idx in faces:
+					for _vert in pmx.faces[face_idx]:
+						if _vert in _verts: continue
+						_verts.append(_vert)
+						pmx.verts[_vert].pos[1] += 1
+						pmx.verts[_vert].pos[2] += 1
 			delete_faces(pmx, faces);processed.append(mat_idx)
 			#>	call **.prune_unused_vertices(pmx, moreinfo)
 			changed = True

@@ -29,8 +29,8 @@ OPT_AUTO = "automatic"
 ALL_YES = "all_yes"
 OPT_INFO = "moreinfo"
 
-VERSION_DATE = "2026-01-18"
-VERSION_TAG = "3.4.0"
+VERSION_DATE = "2026-02-07"
+VERSION_TAG = "3.4.1"
 
 def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
@@ -152,6 +152,9 @@ def read_file(data, path):
 	
 def write_file_append(data, path):
 	with open(path, "a", encoding='utf-8') as f: f.write(data)
+
+def write_file(data, path):
+	with open(path, "w", encoding='utf-8') as f: f.write(data)
 
 ######
 ## Generic
