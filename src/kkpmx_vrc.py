@@ -736,8 +736,8 @@ def rename_bones_for_export(pmx, input_file_name):
 	
 	if not util.is_univrm():
 		print(f"==== Stage 8: Morphs & Cleanup")
-		from kkpmx_morphs import OPT_sort_useVRC, OPT_sort_delVMorph
-		prepare_for_export(pmx)
+		from kkpmx_morphs import OPT_sort_useVRC, OPT_sort_delVMorph, OPT_sort_noNSFW
+		prepare_for_export(pmx, True)
 		
 		flag_pruneVMorphs = util.ask_yes_no("-- Delete Morph-Components? [Allows assembling custom expressions, but heavy]")
 		if util.ask_yes_no("-- Delete all Physics (RBodies/Joints)? [Discarded on Blender import anyway]", "y"):
@@ -746,7 +746,8 @@ def rename_bones_for_export(pmx, input_file_name):
 		flag_pruneDispFrames = util.ask_yes_no("-- Delete all Displayframes? [Discarded on Blender import anyway]", "y")
 		_optSort = {
 			OPT_sort_useVRC: True,
-			OPT_sort_delVMorph: flag_pruneVMorphs
+			OPT_sort_delVMorph: flag_pruneVMorphs,
+			OPT_sort_noNSFW: flag_SFW,
 		}
 		sort_morphs(pmx, _optSort)
 		if flag_pruneDispFrames: pmx.frames = []
@@ -978,7 +979,7 @@ def prepare_for_export(pmx, isVRC=True): ## TODO: Remap the manually translated 
 		mList.sort(key=lambda v: v[2]) ## Sort by final Name
 		for data in mList: combine_morph(*data)
 	###########
-	return
+	#return
 	###########
 	## Calc hitomi-small
 	eyeL = find_mat(pmx, "Eye.Left")
@@ -1065,7 +1066,7 @@ def prepare_for_export(pmx, isVRC=True): ## TODO: Remap the manually translated 
 ############################
 def run__vrcMorphs(pmx, input_file_name):
 	from kkpmx_core import end
-	from kkpmx_morphs import OPT_sort_useVRC, OPT_sort_delVMorph
+	from kkpmx_morphs import OPT_sort_useVRC, OPT_sort_delVMorph, OPT_sort_noNSFW
 	prepare_for_export(pmx, False)
 
 	flag_pruneVMorphs = util.ask_yes_no("-- Delete Morph-Components? [Allows assembling custom expressions, but heavy]")

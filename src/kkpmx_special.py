@@ -784,10 +784,16 @@ def cleanup_materials(pmx):
 		if mat.name_jp.startswith("DELETE ME"):
 			print(f"> Delete {d}: {mat.name_en}")
 			item_dellist.append(d)
-			
+
 	item_dellist2 = sorted(item_dellist)
-	# build the rangemap to determine how index references will be modified from this deletion
-	item_shiftmap = delme_list_to_rangemap(item_dellist2)
+	item_shiftmap = None
+	try:
+		# build the rangemap to determine how index references will be modified from this deletion
+		item_shiftmap = delme_list_to_rangemap(item_dellist2)
+	except:
+		if (len(item_dellist) == 0): return;
+		print("Error while trying to delete surplus materials.... must be done manually")
+		return
 	for f in reversed(item_dellist):
 		pmx.materials.pop(f)
 	
@@ -969,7 +975,7 @@ def SemiStd_05_Waist(pmx):
 						has_visible = False,
 						_solo = True
 					)
-					#iPXBone7_LowerParent.Parent = iPXBone8_FindLower; 
+					#iPXBone7_LowerParent.Parent = iPXBone8_FindLower;
 					EntryBoneFore(currentState, iPXBone7_LowerParent, iPXBone8_FindLower); # Insert 腰キャンセル右 before 右足
 					iPXBone7_LowerParent.parent_idx = toIdx(iPXBone8_FindLower)
 

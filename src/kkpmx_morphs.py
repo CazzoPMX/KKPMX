@@ -795,6 +795,7 @@ def combine_standards(pmx): ## Replace EN Name for Standard Morphs.. (but most a
 
 OPT_sort_useVRC = "targetVRC"
 OPT_sort_delVMorph = "pruneVMorphs"
+OPT_sort_noNSFW = "noNSFW"
 def sort_morphs(pmx, _opt = {}):
 	""" Sort all morphs into groups and add separators """
 	exported  = []; nameExp = "== Export Morphs =="
@@ -807,6 +808,7 @@ def sort_morphs(pmx, _opt = {}):
 	
 	flag_vrc = _opt.get(OPT_sort_useVRC, False)
 	flag_vmorph = _opt.get(OPT_sort_delVMorph, False)
+	flag_sfw = _opt.get(OPT_sort_noNSFW, False)
 	
 	if flag_vrc: print("=== Sort Morphs ===")
 	
@@ -869,6 +871,10 @@ def sort_morphs(pmx, _opt = {}):
 			newMorphs.append(make_separator(pmx, _sep))
 			baseIdx += 1
 		for i,m in enumerate(_list):
+			if _opt.get(OPT_sort_noNSFW, False):
+				if m.name_jp == "Mouth.Sucking":
+					#flag_sfw = False ## Only one entry exists
+					continue
 			newMorphs.append(m)
 			oldMorphs[m.name_jp][1] = baseIdx + i
 		baseIdx = len(newMorphs)
@@ -879,11 +885,13 @@ def sort_morphs(pmx, _opt = {}):
 		materials = [] # Remove Materials
 		bones = [] # Remove Bone & UV Morphs
 		if flag_vmorph: vertices = [] # Remove all sub-parts since they are not needed anymore
+
 	baseIdx = sorter(baseIdx, exported)           ; skipIdx.append(baseIdx)
 	baseIdx = sorter(baseIdx, materials, nameMat) ; skipIdx.append(baseIdx)
 	baseIdx = sorter(baseIdx, groups, nameGr1)    ; skipIdx.append(baseIdx)
 	baseIdx = sorter(baseIdx, bones, nameExt)     #; skipIdx.append(baseIdx)
 	baseIdx = sorter(baseIdx, groups2, nameGr2)   ; skipIdx.append(baseIdx)
+	
 	if flag_vrc and not flag_vmorph:
 		nameVrt = "== Components for Custom Combination =="
 		newMorphs.append(make_separator(pmx, "-- Delete these if you have no use for them"))

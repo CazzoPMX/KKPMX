@@ -1168,6 +1168,9 @@ def handle_body_overtex1(pmx, attr):
 	#mask = attr["tex1mask"]     # 1 -- Original vs. color overlay
 	#-----------
 	if NotFound(attr, t__overtex1): return
+	if NotFound(attr, Color_Tex1):
+		print("Error: Body.t__overtex1 exists, but has no primary color. Skipping")
+		return
 	
 	arg1 = quote(get_working_texture(attr))
 	arg2 = quote(attr[t__overtex1])
