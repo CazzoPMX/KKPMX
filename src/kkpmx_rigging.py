@@ -976,6 +976,7 @@ def __rig_acc_joints(pmx, _patch_bone_array, limit): ## TODO: Make the tail end 
 		for bone in bones:
 			b = bone
 			#printBone(b)
+			#-- Get highest ca_slot of this bone
 			while (b and not reSlot.match(pmx.bones[b].name_jp)): b = pmx.bones[b].parent_idx
 			_bone = pmx.bones[b].parent_idx
 			if not (reSlotPar.match(pmx.bones[_bone].name_jp)):
@@ -1290,11 +1291,33 @@ def rig_rough_detangle(pmx, custArr=None): ## << HAS TODO
 	print(f"> Found {len(arr)} entries to verify")
 	
 	resArr = split_rigid_chain(pmx, arr)
+	#---- Overrun handler
+	overrunMap = {}
+	overrunList = []
+	def RegisterForOverrun(_idx, _body):
+		if _idx in overrunList:
+			_body.phys_mode = 0 ## Force to green
+			return;
+		overrunMap.setdefault(_idx, [])
+		overrunMap[_idx].append(_body)
+		#-- If too big, make all green
+		if (len(overrunMap[_idx]) > 5):
+			overrunList.append(_idx)
+			for rb in overrunMap[_idx]:
+				rb.phys_mode = 0
+			#-- Add the parent too for good measure
+			_parent = pmx.bones[_idx].parent_idx
+			if _parent == -1: return;
+			overrunList.append(_parent)
+			if _parent in overrunMap:
+				for rb in overrunMap[_parent]:
+					rb.phys_mode = 0
+	##------
 	####[Extra Step: Check if the chains *should* be connected but at a different spot]
 	# Split 124: ca_slot00_0:Ctr_B_HairA_05_end and ca_slot00_0:Ctr_B_HairA_07 (at bone 283 = Ctr_B_HairA_05_end)
 	# 124: Not connected by joint with 125, so no need to change any. (ca_slot00_0:Ctr_B_HairA_05_end vs ca_slot00_0:Ctr_B_HairA_07)
 	# Need: Iterate backwards, so that Bone insert does not destroy everything
-	def figureOutName(idx):
+	def SimulateExtraBoneTails(idx):
 		devPrint = False
 		rigid  = pmx.rigidbodies[idx]; ## The Tail one
 		rigid2 = pmx.rigidbodies[idx+1]; ## The new Head
@@ -1426,14 +1449,19 @@ def rig_rough_detangle(pmx, custArr=None): ## << HAS TODO
 		bone.tail_usebonelink = True
 		bone.tail = _B_Idx_2
 		radius = 0.0
-		print(f">> Create new RigidBody from {_B_Idx_0}/{bone.name_jp} to {_B_Idx_2}/{pmx.bones[_B_Idx_2].name_jp}")
+		bName_Src = bone.name_jp
+		bName_Dst = pmx.bones[_B_Idx_2].name_jp
+		print(f">> Create new RigidBody from B:{_B_Idx_0}/{bName_Src} to B:{_B_Idx_2}/{bName_Dst}")
 		#-------------
 		body_num = len(pmx.rigidbodies)
-		name = pmx.bones[_B_Idx_0].name_jp + "_EDIT"
+		name = bName_Dst + "_EDIT" #-- Ultimately results in "{bName_Dst}_EDIT:{bName_Src}"
 		mode = pmx.rigidbodies[_Joint_1.rb2_idx].phys_mode ## Use the same mode as the Body this should replace (_Rigid_1)
 		AddBaseBody(pmx, [_B_Idx_0], mode, radius, True, name, group=3)
 		body = pmx.rigidbodies[body_num]
-		AddBodyHack(_B_Idx_0, radius, body) ### TEST: am I doing things twice???
+		AddBodyHack(_B_Idx_0, radius, body) # Calculate correct angle of hot-insert body
+		RegisterForOverrun(_B_Idx_0, body) # Count siblings and make all green if beyond threshold
+		if devPrint: print(f">>--> Called {body_num}/{name}")
+		
 		#TODO: Things are not reduced in size *AT ALL* and stay gigantic as if not edited
 		if radius <= 0.0:
 			## Reduce height by the size of a Joint, relative to the radiius
@@ -1449,19 +1477,24 @@ def rig_rough_detangle(pmx, custArr=None): ## << HAS TODO
 		# Set Rotation of _Joint_X1 to same as _Rigid_X1
 		# Set _Joint_4.rb1_idx from _Rigid_1 to _Rigid_X1
 		# Set _Rigid_4 from Green to Orange
-		print(f">> Create new Joint     onto {_B_Idx_0}/{bone.name_jp} between {_Joint_X1.rb1_idx} and <new>={body_num}")
-		print(f">>--> Based on {_Joint_1.name_jp}")
+		print(f">> Create new Joint     onto B:{_B_Idx_0}/{bName_Src} between RB:{_Joint_X1.rb2_idx} and <new>={body_num}")
+		print(f">>--> Based on J:{_Joint_1.name_jp}")
+
+		_Joint_X1.name_jp = _Joint_X1.name_jp + "x" + bName_Dst
+		_Joint_X1.pos = pmx.bones[_B_Idx_2].pos
 		_Joint_X1.rot = body.rot
-		_Joint_X1.rb2_idx = body_num
-		_Joint_4.rb1_idx  = body_num
+		_Joint_X1.rb1_idx = _Joint_X1.rb2_idx ## Start on the rigid we want to replicate
+		_Joint_X1.rb2_idx = body_num          ## Connect it to the new joint
+		_Joint_4.rb1_idx  = body_num          ## Replace the original RB on the original target with the new RB
 		_Rigid_4.phys_mode = 1 #  TODO: Better set like sibling == _Rigid_2
+		
 		#if (_Joint_1.name_jp.endswith("01")):
 		#	print(">-- Constrain this one back to Green cause looks like a root")
 		#	#_Rigid_4.phys_mode = 0
 		#	body.phys_mode = pmx.rigidbodies[_Joint_1.rb2_idx].phys_mode
 		#	#pmx.rigidbodies[_Joint_1.rb2_idx].phys_mode
 		pass#------------[End def]
-	[figureOutName(idx) for idx in resArr]
+	[SimulateExtraBoneTails(idx) for idx in resArr]
 	#TODO: Properly sort-in the new Physics so that all is in order again
 	return resArr
 
@@ -2633,6 +2666,9 @@ def adjust_collision_groups(grp, bodies=[]): ## For a given group, adjust collid
 	if grp in [GRP_SKIRT]:                ## [4]: Prevent conflict between Skirt and Tail
 		mask = merge_collision_groups([GRP_TAIL, GRP_SKIRT]) ## 4 & 13
 	
+	if grp in [GRP_DEFHAIR, GRP_BODYACC]:
+		mask = merge_collision_groups([GRP_DEFHAIR, GRP_BODYACC]) ## Ignore each other to avoid getting stuck
+	
 	# GRP_DEFHAIR :3: Currently only itself
 	# GRP_SKIRT   :4: Currently only itself
 	# GRP_HAIRACC --> Hair, Body ?
@@ -2675,6 +2711,34 @@ def perform_on_weights(vert, cond, newIdx):
 #----
 def printStage(text): print(f"-------- Stage '{text}' ...")
 def printSubStage(text): print(f"---- {text}")
+
+def printJoints(pmx, _name):
+	#if is_prod(): return
+	#---- Debug Printer
+	def getRBName(_idx):
+		_name = "---"
+		if _idx == -1: _name = "---"
+		else:
+			rb = pmx.rigidbodies[_idx]
+			if rb is not None:  _name = f"{rb.name_jp}@{rb.bone_idx}"
+		return f"{_idx:3}=[{_name}]"
+		
+	for i,j in enumerate(pmx.joints):
+		if not _name in j.name_jp: continue
+		print(f"[{j.name_jp}]: {getRBName(j.rb1_idx)}, {getRBName(j.rb2_idx)}")
+
+def printBones(pmx, _names):
+	print("-----------------")
+	from kkpmx_utils import find_bones
+	_arr = find_bones(pmx, _names)
+	_idx  = _arr[0]
+	_idx2 = _arr[1]
+	for i,bone in enumerate(pmx.bones):
+		if (i < _idx):  continue
+		if (i > _idx2): break
+		print(f"[{i:3}]: {bone.name_jp}")
+	print("-----------------")
+
 #----
 
 def print_map(_mapObj):

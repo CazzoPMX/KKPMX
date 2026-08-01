@@ -29,8 +29,8 @@ OPT_AUTO = "automatic"
 ALL_YES = "all_yes"
 OPT_INFO = "moreinfo"
 
-VERSION_DATE = "2026-07-20"
-VERSION_TAG = "3.4.3"
+VERSION_DATE = "2026-08-01"
+VERSION_TAG = "3.4.4"
 
 def main_starter(callback, message="Please enter name of PMX input file"):
 	"""
